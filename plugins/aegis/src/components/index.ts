@@ -13,7 +13,3 @@ export { AegisCostAnalyticsPage } from './AegisCostAnalyticsPage';
 export { AegisPolicyManagementPage } from './AegisPolicyManagementPage';
 export { AegisUserManagementPage } from './AegisUserManagementPage';
 export { AegisAuditLogPage } from './AegisAuditLogPage';
-export { AegisCostAnalyticsPage } from './AegisCostAnalyticsPage';
-export { AegisPolicyManagementPage } from './AegisPolicyManagementPage';
-export { AegisUserManagementPage } from './AegisUserManagementPage';
-export { AegisAuditLogPage } from './AegisAuditLogPage';
