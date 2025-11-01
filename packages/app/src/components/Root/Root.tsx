@@ -6,6 +6,10 @@ import CloudQueueIcon from '@material-ui/icons/CloudQueue';
 import DashboardIcon from '@material-ui/icons/Dashboard';
 import DescriptionIcon from '@material-ui/icons/Description';
 import ExtensionIcon from '@material-ui/icons/Extension';
+import AssessmentIcon from '@material-ui/icons/Assessment';
+import PolicyIcon from '@material-ui/icons/Policy';
+import SupervisorAccountIcon from '@material-ui/icons/SupervisorAccount';
+import HistoryIcon from '@material-ui/icons/History';
 import HomeIcon from '@material-ui/icons/Home';
 import LaptopMacIcon from '@material-ui/icons/LaptopMac';
 import LockIcon from '@material-ui/icons/Lock';
@@ -189,6 +193,26 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
             <SidebarDivider />
 
             <NavSection label="Admin" icon={<SettingsIcon />}>
+              <SidebarItem
+                icon={AssessmentIcon}
+                to="aegis/admin/usage"
+                text="Usage & Cost"
+              />
+              <SidebarItem
+                icon={PolicyIcon}
+                to="aegis/admin/policies"
+                text="Policies"
+              />
+              <SidebarItem
+                icon={SupervisorAccountIcon}
+                to="aegis/admin/users"
+                text="Users"
+              />
+              <SidebarItem
+                icon={HistoryIcon}
+                to="aegis/admin/audit"
+                text="Audit Logs"
+              />
               <SidebarItem icon={HomeIcon} to="catalog" text="Catalog" />
               <SidebarItem icon={ExtensionIcon} to="api-docs" text="APIs" />
               <SidebarItem icon={DescriptionIcon} to="docs" text="Docs" />

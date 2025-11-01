@@ -9,6 +9,10 @@ import {
   workloadDetailsRouteRef,
   launchWorkspaceRouteRef,
   createWorkspaceRouteRef,
+  costAnalyticsRouteRef,
+  policyManagementRouteRef,
+  userManagementRouteRef,
+  auditLogRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -66,5 +70,47 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
         m => m.LaunchWorkspacePage,
       ),
     mountPoint: createWorkspaceRouteRef,
+  }),
+);
+
+export const AegisCostAnalyticsAdminPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisCostAnalyticsAdminPage',
+    component: () =>
+      import('./components/AegisCostAnalyticsPage').then(
+        m => m.AegisCostAnalyticsPage,
+      ),
+    mountPoint: costAnalyticsRouteRef,
+  }),
+);
+
+export const AegisPolicyManagementAdminPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisPolicyManagementAdminPage',
+    component: () =>
+      import('./components/AegisPolicyManagementPage').then(
+        m => m.AegisPolicyManagementPage,
+      ),
+    mountPoint: policyManagementRouteRef,
+  }),
+);
+
+export const AegisUserManagementAdminPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisUserManagementAdminPage',
+    component: () =>
+      import('./components/AegisUserManagementPage').then(
+        m => m.AegisUserManagementPage,
+      ),
+    mountPoint: userManagementRouteRef,
+  }),
+);
+
+export const AegisAuditLogAdminPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisAuditLogAdminPage',
+    component: () =>
+      import('./components/AegisAuditLogPage').then(m => m.AegisAuditLogPage),
+    mountPoint: auditLogRouteRef,
   }),
 );

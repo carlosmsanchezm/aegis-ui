@@ -27,3 +27,27 @@ export const createWorkspaceRouteRef = createSubRouteRef({
   parent: rootRouteRef,
   path: '/workspaces/create',
 });
+
+export const costAnalyticsRouteRef = createSubRouteRef({
+  id: 'aegis-cost-analytics',
+  parent: rootRouteRef,
+  path: '/admin/usage',
+});
+
+export const policyManagementRouteRef = createSubRouteRef({
+  id: 'aegis-policy-management',
+  parent: rootRouteRef,
+  path: '/admin/policies',
+});
+
+export const userManagementRouteRef = createSubRouteRef({
+  id: 'aegis-user-management',
+  parent: rootRouteRef,
+  path: '/admin/users',
+});
+
+export const auditLogRouteRef = createSubRouteRef({
+  id: 'aegis-audit-log',
+  parent: rootRouteRef,
+  path: '/admin/audit',
+});
