@@ -14,7 +14,7 @@ import {
   StatusPending,
   CopyTextButton,
 } from '@backstage/core-components';
-import { Box, Button, Typography } from '@material-ui/core';
+import { Box, Button, Paper, Typography, makeStyles } from '@material-ui/core';
 import {
   alertApiRef,
   discoveryApiRef,
@@ -36,6 +36,48 @@ import {
   buildKubectlDescribeCommand,
 } from '../api/aegisClient';
 import { ConnectModal } from './ConnectModal';
+
+const useStyles = makeStyles(theme => ({
+  costPaper: {
+    backgroundColor: 'var(--aegis-card-surface)',
+    border: '1px solid var(--aegis-card-border)',
+    boxShadow: 'var(--aegis-card-shadow)',
+    borderRadius: theme.shape.borderRadius * 2,
+    padding: theme.spacing(3),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2.5),
+  },
+  costHeader: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(0.75),
+  },
+  costMetrics: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: theme.spacing(2),
+  },
+  costMetricCard: {
+    padding: theme.spacing(2),
+    borderRadius: theme.shape.borderRadius * 1.5,
+    border: `1px dashed ${theme.palette.divider}`,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+  },
+  costMetricLabel: {
+    fontSize: theme.typography.pxToRem(12),
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    fontWeight: 600,
+    color: theme.palette.text.secondary,
+  },
+  costMetricValue: {
+    fontSize: theme.typography.pxToRem(22),
+    fontWeight: 700,
+  },
+}));
 
 const statusChip = (status: string) => {
   const mapped = mapDisplayStatus(status);
@@ -79,6 +121,7 @@ const SYSTEM_ACK_FLAG = 'aegis.system.use.ack';
 const RULES_ACK_FLAG = 'aegis.rules.of.behavior.ack';
 
 export const WorkloadDetailsPage: FC = () => {
+  const classes = useStyles();
   const { id } = useParams<{ id: string }>();
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
@@ -421,6 +464,52 @@ export const WorkloadDetailsPage: FC = () => {
                 </RouterLink>
               </Typography>
             )}
+
+            <Paper elevation={0} className={classes.costPaper}>
+              <div className={classes.costHeader}>
+                <Typography variant="h6">Cost Analysis</Typography>
+                <Typography variant="body2" color="textSecondary">
+                  Synthetic estimates for this workload based on GPU tenancy and
+                  storage utilization in the current billing cycle.
+                </Typography>
+              </div>
+              <div className={classes.costMetrics}>
+                {[
+                  {
+                    label: 'Total Cost to Date',
+                    value: '$24,680',
+                    helper: 'Includes compute, storage, and network egress',
+                  },
+                  {
+                    label: 'Estimated Run Rate',
+                    value: '$186 / day',
+                    helper: 'Projected using trailing 7-day utilization',
+                  },
+                  {
+                    label: 'Budget Utilization',
+                    value: '72% of $34,000 cap',
+                    helper: 'Alerts fire at 85% threshold',
+                  },
+                  {
+                    label: 'Last Invoice Amount',
+                    value: '$6,240',
+                    helper: 'Billed on Apr 30, 2024',
+                  },
+                ].map(metric => (
+                  <Box key={metric.label} className={classes.costMetricCard}>
+                    <Typography className={classes.costMetricLabel}>
+                      {metric.label}
+                    </Typography>
+                    <Typography className={classes.costMetricValue}>
+                      {metric.value}
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      {metric.helper}
+                    </Typography>
+                  </Box>
+                ))}
+              </div>
+            </Paper>
           </Box>
         )}
       </Content>

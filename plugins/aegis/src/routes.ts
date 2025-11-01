@@ -27,3 +27,21 @@ export const createWorkspaceRouteRef = createSubRouteRef({
   parent: rootRouteRef,
   path: '/workspaces/create',
 });
+
+export const costDashboardRouteRef = createSubRouteRef({
+  id: 'aegis-cost-dashboard',
+  parent: rootRouteRef,
+  path: '/finops/cost-dashboard',
+});
+
+export const quotaManagementRouteRef = createSubRouteRef({
+  id: 'aegis-quota-management',
+  parent: rootRouteRef,
+  path: '/finops/quotas',
+});
+
+export const billingAlertsRouteRef = createSubRouteRef({
+  id: 'aegis-billing-alerts',
+  parent: rootRouteRef,
+  path: '/finops/alerts',
+});

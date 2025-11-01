@@ -9,6 +9,9 @@ import {
   workloadDetailsRouteRef,
   launchWorkspaceRouteRef,
   createWorkspaceRouteRef,
+  costDashboardRouteRef,
+  quotaManagementRouteRef,
+  billingAlertsRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -66,5 +69,38 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
         m => m.LaunchWorkspacePage,
       ),
     mountPoint: createWorkspaceRouteRef,
+  }),
+);
+
+export const AegisCostAnalyticsPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisCostAnalyticsPage',
+    component: () =>
+      import('./components/AegisCostDashboardPage').then(
+        m => m.AegisCostDashboardPage,
+      ),
+    mountPoint: costDashboardRouteRef,
+  }),
+);
+
+export const AegisQuotaManagementFinOpsPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisQuotaManagementFinOpsPage',
+    component: () =>
+      import('./components/AegisQuotaManagementPage').then(
+        m => m.AegisQuotaManagementPage,
+      ),
+    mountPoint: quotaManagementRouteRef,
+  }),
+);
+
+export const AegisBillingAlertsFinOpsPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisBillingAlertsFinOpsPage',
+    component: () =>
+      import('./components/AegisBillingAlertsPage').then(
+        m => m.AegisBillingAlertsPage,
+      ),
+    mountPoint: billingAlertsRouteRef,
   }),
 );
