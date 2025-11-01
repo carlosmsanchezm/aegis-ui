@@ -1,19 +1,19 @@
 import { makeStyles, useTheme } from '@material-ui/core';
 
-const useStyles = makeStyles(theme => ({
+const useStyles = makeStyles({
   glyph: {
-    width: theme.spacing(7),
-    height: theme.spacing(7),
+    width: 36,
+    height: 36,
   },
-}));
+});
 
 const LogoIcon = () => {
   const classes = useStyles();
   const theme = useTheme();
   const paletteMode = (theme.palette as any)?.mode ?? theme.palette.type;
   const isDark = paletteMode === 'dark';
-  const stroke = isDark ? '#F4F4F3' : '#050505';
-  const fill = isDark ? '#F4F4F3' : '#050505';
+  const stroke = isDark ? theme.palette.primary.light : theme.palette.primary.dark;
+  const fill = isDark ? theme.palette.primary.light : theme.palette.primary.main;
 
   return (
     <svg
