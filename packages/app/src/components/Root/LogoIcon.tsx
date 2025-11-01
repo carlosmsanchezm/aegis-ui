@@ -2,16 +2,18 @@ import { makeStyles, useTheme } from '@material-ui/core';
 
 const useStyles = makeStyles({
   glyph: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
   },
 });
 
 const LogoIcon = () => {
   const classes = useStyles();
   const theme = useTheme();
-  const stroke = theme.palette.type === 'dark' ? '#F4F4F3' : '#050505';
-  const fill = theme.palette.type === 'dark' ? '#F4F4F3' : '#050505';
+  const paletteMode = (theme.palette as any)?.mode ?? theme.palette.type;
+  const isDark = paletteMode === 'dark';
+  const stroke = isDark ? theme.palette.primary.light : theme.palette.primary.dark;
+  const fill = isDark ? theme.palette.primary.light : theme.palette.primary.main;
 
   return (
     <svg
