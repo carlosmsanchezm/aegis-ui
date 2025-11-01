@@ -1,6 +1,8 @@
 import { PropsWithChildren, ReactNode } from 'react';
 import { makeStyles } from '@material-ui/core';
 import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
+import AccountBalanceIcon from '@material-ui/icons/AccountBalance';
+import AssessmentIcon from '@material-ui/icons/Assessment';
 import BuildIcon from '@material-ui/icons/Build';
 import CloudQueueIcon from '@material-ui/icons/CloudQueue';
 import DashboardIcon from '@material-ui/icons/Dashboard';
@@ -12,6 +14,8 @@ import LockIcon from '@material-ui/icons/Lock';
 import SecurityIcon from '@material-ui/icons/Security';
 import SettingsIcon from '@material-ui/icons/Settings';
 import TimelineIcon from '@material-ui/icons/Timeline';
+import TrendingUpIcon from '@material-ui/icons/TrendingUp';
+import WarningIcon from '@material-ui/icons/Warning';
 import GroupIcon from '@material-ui/icons/Group';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
@@ -183,6 +187,26 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
                 singularTitle="My Group"
                 pluralTitle="My Groups"
                 icon={GroupIcon}
+              />
+            </NavSection>
+
+            <SidebarDivider />
+
+            <NavSection label="FinOps" icon={<AccountBalanceIcon />}>
+              <SidebarItem
+                icon={TrendingUpIcon}
+                to="aegis/finops/cost-dashboard"
+                text="Cost Dashboard"
+              />
+              <SidebarItem
+                icon={AssessmentIcon}
+                to="aegis/finops/quotas"
+                text="Quotas"
+              />
+              <SidebarItem
+                icon={WarningIcon}
+                to="aegis/finops/alerts"
+                text="Billing Alerts"
               />
             </NavSection>
 
