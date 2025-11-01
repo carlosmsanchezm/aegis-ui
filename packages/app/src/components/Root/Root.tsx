@@ -1,5 +1,6 @@
 import { PropsWithChildren, ReactNode } from 'react';
 import { makeStyles } from '@material-ui/core';
+import clsx from 'clsx';
 import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
 import BuildIcon from '@material-ui/icons/Build';
 import CloudQueueIcon from '@material-ui/icons/CloudQueue';
@@ -36,24 +37,30 @@ import { NotificationsSidebarItem } from '@backstage/plugin-notifications';
 const useSidebarLogoStyles = makeStyles(theme => ({
   root: {
     width: '100%',
-    minHeight: theme.spacing(13),
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'flex-start',
+    padding: theme.spacing(2.5, 2.5, 1.5),
+  },
+  rootCollapsed: {
     justifyContent: 'center',
-    marginBottom: -14,
+    padding: theme.spacing(2.5, 0, 1.5),
   },
   link: {
     display: 'flex',
     alignItems: 'center',
-    gap: theme.spacing(2),
+    gap: theme.spacing(2.5),
     width: '100%',
-    paddingLeft: theme.spacing(3),
-    paddingRight: theme.spacing(2),
+    color: 'inherit',
+    padding: theme.spacing(0, 1.5),
+    borderRadius: theme.shape.borderRadius * 2,
   },
   linkCollapsed: {
+    width: 'auto',
     justifyContent: 'center',
     paddingLeft: 0,
     paddingRight: 0,
+    gap: 0,
   },
 }));
 
@@ -83,11 +90,11 @@ const SidebarLogo = () => {
   const { isOpen } = useSidebarOpenState();
 
   return (
-    <div className={classes.root}>
+    <div className={clsx(classes.root, { [classes.rootCollapsed]: !isOpen })}>
       <Link
         to="/"
         underline="none"
-        className={`${classes.link} ${!isOpen ? classes.linkCollapsed : ''}`.trim()}
+        className={clsx(classes.link, { [classes.linkCollapsed]: !isOpen })}
         aria-label="Home"
       >
         {isOpen ? <LogoFull /> : <LogoIcon />}
