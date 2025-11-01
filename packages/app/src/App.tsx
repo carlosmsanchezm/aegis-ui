@@ -49,6 +49,9 @@ import {
   AegisWorkloadListPage,
   AegisWorkloadDetailsPage,
   AegisCreateWorkspacePage,
+  AegisCostDashboardPage,
+  AegisQuotaManagementPage,
+  AegisBillingAlertsPage,
 } from '@internal/plugin-aegis';
 import { keycloakAuthApiRef } from './apis';
 
@@ -132,6 +135,18 @@ const routes = (
     <Route
       path="/aegis/workspaces/create"
       element={<AegisCreateWorkspacePage />}
+    />
+    <Route
+      path="/aegis/finops/cost-dashboard"
+      element={<AegisCostDashboardPage />}
+    />
+    <Route
+      path="/aegis/finops/quotas"
+      element={<AegisQuotaManagementPage />}
+    />
+    <Route
+      path="/aegis/finops/alerts"
+      element={<AegisBillingAlertsPage />}
     />
   </FlatRoutes>
 );

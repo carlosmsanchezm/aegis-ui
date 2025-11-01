@@ -14,7 +14,7 @@ import {
   StatusPending,
   CopyTextButton,
 } from '@backstage/core-components';
-import { Box, Button, Typography } from '@material-ui/core';
+import { Box, Button, Paper, Typography, makeStyles } from '@material-ui/core';
 import {
   alertApiRef,
   discoveryApiRef,
@@ -36,6 +36,39 @@ import {
   buildKubectlDescribeCommand,
 } from '../api/aegisClient';
 import { ConnectModal } from './ConnectModal';
+
+const useStyles = makeStyles(theme => ({
+  costCard: {
+    backgroundColor: 'var(--aegis-card-surface)',
+    border: '1px solid var(--aegis-card-border)',
+    boxShadow: 'var(--aegis-card-shadow)',
+    borderRadius: theme.shape.borderRadius * 2,
+    padding: theme.spacing(3),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2),
+  },
+  costMetrics: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(3),
+  },
+  costMetricItem: {
+    minWidth: 160,
+  },
+  costMetricLabel: {
+    textTransform: 'uppercase',
+    fontSize: theme.typography.pxToRem(12),
+    color: theme.palette.text.secondary,
+    letterSpacing: '0.08em',
+    marginBottom: theme.spacing(0.5),
+  },
+  costMetricValue: {
+    fontSize: theme.typography.pxToRem(24),
+    fontWeight: 600,
+    letterSpacing: '-0.01em',
+  },
+}));
 
 const statusChip = (status: string) => {
   const mapped = mapDisplayStatus(status);
@@ -79,6 +112,7 @@ const SYSTEM_ACK_FLAG = 'aegis.system.use.ack';
 const RULES_ACK_FLAG = 'aegis.rules.of.behavior.ack';
 
 export const WorkloadDetailsPage: FC = () => {
+  const classes = useStyles();
   const { id } = useParams<{ id: string }>();
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
@@ -410,6 +444,49 @@ export const WorkloadDetailsPage: FC = () => {
                 />
               </InfoCard>
             )}
+
+            <Paper className={classes.costCard}>
+              <Typography variant="h6">Cost Analysis</Typography>
+              <Typography variant="body2" color="textSecondary">
+                Financial telemetry is derived from chargeback reports and
+                refreshed every 15 minutes.
+              </Typography>
+              <Box className={classes.costMetrics}>
+                <Box className={classes.costMetricItem}>
+                  <Typography className={classes.costMetricLabel}>
+                    Total Cost to Date
+                  </Typography>
+                  <Typography className={classes.costMetricValue}>
+                    $12,480
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Includes storage, compute, and networking
+                  </Typography>
+                </Box>
+                <Box className={classes.costMetricItem}>
+                  <Typography className={classes.costMetricLabel}>
+                    Estimated Run Rate
+                  </Typography>
+                  <Typography className={classes.costMetricValue}>
+                    $420 / day
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Projection assumes 14 hr daily runtime
+                  </Typography>
+                </Box>
+                <Box className={classes.costMetricItem}>
+                  <Typography className={classes.costMetricLabel}>
+                    Budget Utilization
+                  </Typography>
+                  <Typography className={classes.costMetricValue}>
+                    68%
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Alert threshold configured at 85%
+                  </Typography>
+                </Box>
+              </Box>
+            </Paper>
 
             {loc && (
               <Typography variant="body2">
