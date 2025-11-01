@@ -4,3 +4,8 @@ export { WorkloadDetailsPage } from './WorkloadDetailsPage';
 export { AegisCostDashboardPage } from './AegisCostDashboardPage';
 export { AegisQuotaManagementPage } from './AegisQuotaManagementPage';
 export { AegisBillingAlertsPage } from './AegisBillingAlertsPage';
+export { AegisOpsMetricsPage } from './AegisOpsMetricsPage';
+export { AegisResourceDetailsPage } from './AegisResourceDetailsPage';
+export { AegisLogExplorerPage } from './AegisLogExplorerPage';
+export { AegisAlertsDashboardPage } from './AegisAlertsDashboardPage';
+export { AegisClusterConfigPage } from './AegisClusterConfigPage';
