@@ -49,6 +49,10 @@ import {
   AegisWorkloadListPage,
   AegisWorkloadDetailsPage,
   AegisCreateWorkspacePage,
+  AegisStrategicOverviewPage,
+  AegisResilienceSlaPage,
+  AegisGovernanceDashboardPage,
+  AegisAuditReportPage,
 } from '@internal/plugin-aegis';
 import { keycloakAuthApiRef } from './apis';
 
@@ -123,6 +127,22 @@ const routes = (
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/notifications" element={<NotificationsPage />} />
     <Route path="/aegis" element={<AegisPage />} />
+    <Route
+      path="/aegis/executive/overview"
+      element={<AegisStrategicOverviewPage />}
+    />
+    <Route
+      path="/aegis/executive/resilience"
+      element={<AegisResilienceSlaPage />}
+    />
+    <Route
+      path="/aegis/executive/governance"
+      element={<AegisGovernanceDashboardPage />}
+    />
+    <Route
+      path="/aegis/executive/audit"
+      element={<AegisAuditReportPage />}
+    />
     <Route path="/aegis/dashboard" element={<AegisDashboardPage />} />
     <Route path="/aegis/telemetry" element={<AegisTelemetryPage />} />
     <Route path="/aegis/posture" element={<AegisPosturePage />} />

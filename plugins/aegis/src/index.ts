@@ -5,6 +5,10 @@ export {
   AegisWorkloadDetailsPage,
   AegisLaunchWorkspacePage,
   AegisCreateWorkspacePage,
+  AegisStrategicOverviewPage,
+  AegisResilienceSlaPage,
+  AegisGovernanceDashboardPage,
+  AegisAuditReportPage,
 } from './plugin';
 export {
   rootRouteRef,
@@ -12,4 +16,8 @@ export {
   workloadDetailsRouteRef,
   launchWorkspaceRouteRef,
   createWorkspaceRouteRef,
+  executiveOverviewRouteRef,
+  resilienceRouteRef,
+  governanceRouteRef,
+  auditRouteRef,
 } from './routes';
