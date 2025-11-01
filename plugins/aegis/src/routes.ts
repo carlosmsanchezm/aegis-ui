@@ -27,3 +27,33 @@ export const createWorkspaceRouteRef = createSubRouteRef({
   parent: rootRouteRef,
   path: '/workspaces/create',
 });
+
+export const operationsMetricsRouteRef = createSubRouteRef({
+  id: 'aegis-operations-metrics',
+  parent: rootRouteRef,
+  path: '/operations/metrics',
+});
+
+export const operationsResourceDetailsRouteRef = createSubRouteRef({
+  id: 'aegis-operations-resource-details',
+  parent: rootRouteRef,
+  path: '/operations/resources/:resourceId',
+});
+
+export const operationsLogExplorerRouteRef = createSubRouteRef({
+  id: 'aegis-operations-log-explorer',
+  parent: rootRouteRef,
+  path: '/operations/logs',
+});
+
+export const operationsAlertsRouteRef = createSubRouteRef({
+  id: 'aegis-operations-alerts',
+  parent: rootRouteRef,
+  path: '/operations/alerts',
+});
+
+export const operationsConfigRouteRef = createSubRouteRef({
+  id: 'aegis-operations-config',
+  parent: rootRouteRef,
+  path: '/operations/config',
+});

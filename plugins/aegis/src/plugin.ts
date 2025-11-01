@@ -9,6 +9,11 @@ import {
   workloadDetailsRouteRef,
   launchWorkspaceRouteRef,
   createWorkspaceRouteRef,
+  operationsMetricsRouteRef,
+  operationsResourceDetailsRouteRef,
+  operationsLogExplorerRouteRef,
+  operationsAlertsRouteRef,
+  operationsConfigRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -66,5 +71,60 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
         m => m.LaunchWorkspacePage,
       ),
     mountPoint: createWorkspaceRouteRef,
+  }),
+);
+
+export const AegisOpsMetricsPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisOpsMetricsPage',
+    component: () =>
+      import('./components/AegisOpsMetricsPage').then(
+        m => m.AegisOpsMetricsPage,
+      ),
+    mountPoint: operationsMetricsRouteRef,
+  }),
+);
+
+export const AegisNodeDetailsPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisNodeDetailsPage',
+    component: () =>
+      import('./components/AegisNodeDetailsPage').then(
+        m => m.AegisNodeDetailsPage,
+      ),
+    mountPoint: operationsResourceDetailsRouteRef,
+  }),
+);
+
+export const AegisLogExplorerPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisLogExplorerPage',
+    component: () =>
+      import('./components/AegisLogExplorerPage').then(
+        m => m.AegisLogExplorerPage,
+      ),
+    mountPoint: operationsLogExplorerRouteRef,
+  }),
+);
+
+export const AegisAlertsDashboardPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisAlertsDashboardPage',
+    component: () =>
+      import('./components/AegisAlertsDashboardPage').then(
+        m => m.AegisAlertsDashboardPage,
+      ),
+    mountPoint: operationsAlertsRouteRef,
+  }),
+);
+
+export const AegisClusterConfigPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisClusterConfigPage',
+    component: () =>
+      import('./components/AegisClusterConfigPage').then(
+        m => m.AegisClusterConfigPage,
+      ),
+    mountPoint: operationsConfigRouteRef,
   }),
 );

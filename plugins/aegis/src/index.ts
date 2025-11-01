@@ -5,6 +5,11 @@ export {
   AegisWorkloadDetailsPage,
   AegisLaunchWorkspacePage,
   AegisCreateWorkspacePage,
+  AegisOpsMetricsPage,
+  AegisNodeDetailsPage,
+  AegisLogExplorerPage,
+  AegisAlertsDashboardPage,
+  AegisClusterConfigPage,
 } from './plugin';
 export {
   rootRouteRef,
@@ -12,4 +17,9 @@ export {
   workloadDetailsRouteRef,
   launchWorkspaceRouteRef,
   createWorkspaceRouteRef,
+  operationsMetricsRouteRef,
+  operationsResourceDetailsRouteRef,
+  operationsLogExplorerRouteRef,
+  operationsAlertsRouteRef,
+  operationsConfigRouteRef,
 } from './routes';
