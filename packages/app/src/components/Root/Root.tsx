@@ -12,9 +12,12 @@ import LockIcon from '@material-ui/icons/Lock';
 import SecurityIcon from '@material-ui/icons/Security';
 import SettingsIcon from '@material-ui/icons/Settings';
 import TimelineIcon from '@material-ui/icons/Timeline';
+import AssessmentIcon from '@material-ui/icons/Assessment';
+import BugReportIcon from '@material-ui/icons/BugReport';
+import ListAltIcon from '@material-ui/icons/ListAlt';
+import TuneIcon from '@material-ui/icons/Tune';
 import GroupIcon from '@material-ui/icons/Group';
 import MonetizationOnIcon from '@material-ui/icons/MonetizationOn';
-import AssessmentIcon from '@material-ui/icons/Assessment';
 import EqualizerIcon from '@material-ui/icons/Equalizer';
 import NotificationsActiveIcon from '@material-ui/icons/NotificationsActive';
 import LogoFull from './LogoFull';
@@ -187,6 +190,31 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
                 singularTitle="My Group"
                 pluralTitle="My Groups"
                 icon={GroupIcon}
+              />
+            </NavSection>
+
+            <SidebarDivider />
+
+            <NavSection label="Operations" icon={<BuildIcon />}>
+              <SidebarItem
+                icon={AssessmentIcon}
+                to="aegis/operations/metrics"
+                text="Metrics"
+              />
+              <SidebarItem
+                icon={BugReportIcon}
+                to="aegis/operations/alerts"
+                text="Alerts"
+              />
+              <SidebarItem
+                icon={ListAltIcon}
+                to="aegis/operations/logs"
+                text="Logs"
+              />
+              <SidebarItem
+                icon={TuneIcon}
+                to="aegis/operations/configuration"
+                text="Configuration"
               />
             </NavSection>
 

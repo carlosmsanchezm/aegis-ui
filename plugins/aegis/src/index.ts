@@ -8,6 +8,11 @@ export {
   AegisCostAnalyticsPage,
   AegisQuotaManagementFinOpsPage,
   AegisBillingAlertsFinOpsPage,
+  AegisOpsMetricsPage,
+  AegisResourceDetailsPage,
+  AegisLogExplorerPage,
+  AegisAlertsDashboardPage,
+  AegisClusterConfigPage,
 } from './plugin';
 export {
   rootRouteRef,
@@ -18,4 +23,9 @@ export {
   costDashboardRouteRef,
   quotaManagementRouteRef,
   billingAlertsRouteRef,
+  opsMetricsRouteRef,
+  opsResourceDetailsRouteRef,
+  opsLogExplorerRouteRef,
+  opsAlertsRouteRef,
+  opsConfigRouteRef,
 } from './routes';

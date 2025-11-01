@@ -364,6 +364,13 @@ export const WorkloadDetailsPage: FC = () => {
           <Typography variant="body1" color="textSecondary">
             {id ?? '—'}
           </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => navigate(`/aegis/operations/logs${id ? `?workloadId=${encodeURIComponent(id)}` : ''}`)}
+          >
+            View Related Logs
+          </Button>
         </ContentHeader>
         <ContentHeader title="Overview">
           <Button
