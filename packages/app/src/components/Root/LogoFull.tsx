@@ -6,12 +6,12 @@ const useStyles = makeStyles(theme => ({
   root: {
     display: 'flex',
     alignItems: 'center',
-    gap: theme.spacing(2.5),
-    padding: theme.spacing(1.5, 0),
-    minHeight: theme.spacing(12),
+    gap: theme.spacing(1.75),
+    padding: theme.spacing(0.5, 0),
+    minHeight: theme.spacing(8),
   },
   image: {
-    height: theme.spacing(12),
+    height: theme.spacing(6.5),
     width: 'auto',
     maxWidth: '100%',
     flexShrink: 0,
@@ -20,11 +20,12 @@ const useStyles = makeStyles(theme => ({
   },
   wordmark: {
     fontWeight: 700,
-    fontSize: '2.35rem',
-    letterSpacing: '0.2em',
+    fontSize: '1.8rem',
+    letterSpacing: '0.14em',
     textTransform: 'uppercase',
     color: theme.palette.text.primary,
     whiteSpace: 'nowrap',
+    lineHeight: 1,
   },
 }));
 
@@ -37,6 +38,9 @@ const LogoFull = () => {
   const logoSrc = isDark
     ? '/branding/aegis-logo-full-dark.svg'
     : '/branding/aegis-logo-full.svg';
+  const wordmarkColor = isDark
+    ? theme.palette.primary.light
+    : theme.palette.primary.main;
 
   return (
     <span className={classes.root} aria-label="ÆGIS logo">
@@ -46,7 +50,11 @@ const LogoFull = () => {
         className={classes.image}
       />
       {isOpen ? (
-        <Typography component="span" className={classes.wordmark}>
+        <Typography
+          component="span"
+          className={classes.wordmark}
+          style={{ color: wordmarkColor }}
+        >
           ÆGIS
         </Typography>
       ) : null}

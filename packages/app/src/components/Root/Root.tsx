@@ -33,27 +33,68 @@ import {
 import { MyGroupsSidebarItem } from '@backstage/plugin-org';
 import { NotificationsSidebarItem } from '@backstage/plugin-notifications';
 
+const useSidebarStyles = makeStyles(theme => ({
+  root: {
+    '& [data-testid="sidebar-root"]': {
+      paddingTop: theme.spacing(1.5),
+      paddingBottom: theme.spacing(2),
+    },
+    '& [data-testid="sidebar-root"] .MuiListItem-root': {
+      borderRadius: theme.shape.borderRadius * 2,
+      paddingTop: theme.spacing(1.25),
+      paddingBottom: theme.spacing(1.25),
+      paddingLeft: theme.spacing(1.5),
+      paddingRight: theme.spacing(1.5),
+    },
+    '& [data-testid="sidebar-root"] .MuiListItemIcon-root': {
+      minWidth: theme.spacing(7),
+    },
+    '& [data-testid="sidebar-root"] .MuiListItemIcon-root .MuiSvgIcon-root': {
+      fontSize: '2.1rem',
+    },
+    '& [data-testid="sidebar-root"] .MuiSvgIcon-root': {
+      fontSize: '2rem',
+    },
+    '& [data-testid="sidebar-root"] .MuiListItemText-primary': {
+      fontSize: theme.typography.pxToRem(16),
+      fontWeight: 600,
+      letterSpacing: '-0.01em',
+    },
+    '& [data-testid="sidebar-root"] [data-testid="sidebar-pin"] .MuiSvgIcon-root': {
+      fontSize: '1.25rem',
+    },
+  },
+}));
+
 const useSidebarLogoStyles = makeStyles(theme => ({
   root: {
     width: '100%',
-    minHeight: theme.spacing(13),
+    padding: theme.spacing(2, 2, 1.5),
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: -14,
   },
   link: {
     display: 'flex',
     alignItems: 'center',
-    gap: theme.spacing(2),
+    gap: theme.spacing(1.75),
     width: '100%',
-    paddingLeft: theme.spacing(3),
-    paddingRight: theme.spacing(2),
+    flex: 1,
+    padding: theme.spacing(1.5, 1.75),
+    borderRadius: theme.shape.borderRadius * 2.5,
+    backgroundColor:
+      (theme.palette.navigation && theme.palette.navigation.background) ||
+      theme.palette.background.paper,
+    boxShadow: `inset 0 0 0 1px ${theme.palette.divider}`,
+    transition: theme.transitions.create(['background-color', 'box-shadow'], {
+      duration: theme.transitions.duration.shorter,
+    }),
   },
   linkCollapsed: {
     justifyContent: 'center',
-    paddingLeft: 0,
-    paddingRight: 0,
+    width: 'auto !important',
+    flex: '0 0 auto',
+    padding: theme.spacing(1.25),
   },
 }));
 
@@ -63,9 +104,9 @@ const useNavSectionStyles = makeStyles(theme => ({
   },
   header: {
     margin: theme.spacing(0, 2, 1),
-    fontSize: 11,
+    fontSize: theme.typography.pxToRem(12.5),
     fontWeight: 600,
-    letterSpacing: '0.12em',
+    letterSpacing: '0.16em',
     textTransform: 'uppercase',
     color: theme.palette.text.secondary,
     opacity: 0.76,
@@ -73,7 +114,7 @@ const useNavSectionStyles = makeStyles(theme => ({
   items: {
     display: 'flex',
     flexDirection: 'column',
-    gap: theme.spacing(0.5),
+    gap: theme.spacing(0.75),
     padding: theme.spacing(0, 1),
   },
 }));
@@ -116,55 +157,59 @@ const NavSection = ({ label, icon, children }: NavSectionProps) => {
 };
 
 export const Root = ({ children }: PropsWithChildren<{}>) => {
+  const classes = useSidebarStyles();
+
   return (
-    <SidebarPage>
-      <Sidebar>
-        <SidebarLogo />
-        <SidebarDivider />
+    <div className={classes.root}>
+      <SidebarPage>
+        <Sidebar>
+          <SidebarLogo />
+          <SidebarDivider />
 
-        <NavSection label="Create" icon={<AddCircleOutlineIcon />}>
-          <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspace" />
-          <SidebarItem icon={BuildIcon} to="aegis" text="Cluster" />
-        </NavSection>
-
-        <SidebarDivider />
-
-        <SidebarScrollWrapper>
-          <NavSection label="Manage" icon={<DashboardIcon />}>
-            <SidebarItem icon={LaptopMacIcon} to="aegis/workloads" text="Workspaces" />
-            <SidebarItem icon={CloudQueueIcon} to="aegis/clusters" text="Clusters" />
-            <SidebarItem icon={TimelineIcon} to="aegis/telemetry" text="Telemetry" />
-            <SidebarItem icon={SecurityIcon} to="aegis/posture" text="Live Posture" />
-            <MyGroupsSidebarItem
-              singularTitle="My Group"
-              pluralTitle="My Groups"
-              icon={GroupIcon}
-            />
+          <NavSection label="Create" icon={<AddCircleOutlineIcon />}>
+            <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspace" />
+            <SidebarItem icon={BuildIcon} to="aegis" text="Cluster" />
           </NavSection>
 
           <SidebarDivider />
 
-          <NavSection label="Admin" icon={<SettingsIcon />}>
-            <SidebarItem icon={HomeIcon} to="catalog" text="Catalog" />
-            <SidebarItem icon={ExtensionIcon} to="api-docs" text="APIs" />
-            <SidebarItem icon={DescriptionIcon} to="docs" text="Docs" />
-            <NotificationsSidebarItem />
-            <SidebarItem icon={SettingsIcon} to="settings" text="Settings" />
-          </NavSection>
-        </SidebarScrollWrapper>
+          <SidebarScrollWrapper>
+            <NavSection label="Manage" icon={<DashboardIcon />}>
+              <SidebarItem icon={LaptopMacIcon} to="aegis/workloads" text="Workspaces" />
+              <SidebarItem icon={CloudQueueIcon} to="aegis/clusters" text="Clusters" />
+              <SidebarItem icon={TimelineIcon} to="aegis/telemetry" text="Telemetry" />
+              <SidebarItem icon={SecurityIcon} to="aegis/posture" text="Live Posture" />
+              <MyGroupsSidebarItem
+                singularTitle="My Group"
+                pluralTitle="My Groups"
+                icon={GroupIcon}
+              />
+            </NavSection>
 
-        <SidebarSpace />
-        <SidebarDivider />
+            <SidebarDivider />
 
-        <SidebarGroup
-          label="Profile"
-          icon={<UserSettingsSignInAvatar />}
-          to="/settings"
-        >
-          <SidebarSettings />
-        </SidebarGroup>
-      </Sidebar>
-      {children}
-    </SidebarPage>
+            <NavSection label="Admin" icon={<SettingsIcon />}>
+              <SidebarItem icon={HomeIcon} to="catalog" text="Catalog" />
+              <SidebarItem icon={ExtensionIcon} to="api-docs" text="APIs" />
+              <SidebarItem icon={DescriptionIcon} to="docs" text="Docs" />
+              <NotificationsSidebarItem />
+              <SidebarItem icon={SettingsIcon} to="settings" text="Settings" />
+            </NavSection>
+          </SidebarScrollWrapper>
+
+          <SidebarSpace />
+          <SidebarDivider />
+
+          <SidebarGroup
+            label="Profile"
+            icon={<UserSettingsSignInAvatar />}
+            to="/settings"
+          >
+            <SidebarSettings />
+          </SidebarGroup>
+        </Sidebar>
+        {children}
+      </SidebarPage>
+    </div>
   );
 };
