@@ -9,6 +9,10 @@ import {
   workloadDetailsRouteRef,
   launchWorkspaceRouteRef,
   createWorkspaceRouteRef,
+  strategicOverviewRouteRef,
+  resilienceOverviewRouteRef,
+  governanceRouteRef,
+  auditRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -66,5 +70,49 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
         m => m.LaunchWorkspacePage,
       ),
     mountPoint: createWorkspaceRouteRef,
+  }),
+);
+
+export const AegisStrategicOverviewPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisStrategicOverviewPage',
+    component: () =>
+      import('./components/AegisStrategicOverviewPage').then(
+        m => m.AegisStrategicOverviewPage,
+      ),
+    mountPoint: strategicOverviewRouteRef,
+  }),
+);
+
+export const AegisResilienceSlaPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisResilienceSlaPage',
+    component: () =>
+      import('./components/AegisResilienceSlaPage').then(
+        m => m.AegisResilienceSlaPage,
+      ),
+    mountPoint: resilienceOverviewRouteRef,
+  }),
+);
+
+export const AegisGovernanceDashboardPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisGovernanceDashboardPage',
+    component: () =>
+      import('./components/AegisGovernanceDashboardPage').then(
+        m => m.AegisGovernanceDashboardPage,
+      ),
+    mountPoint: governanceRouteRef,
+  }),
+);
+
+export const AegisAuditReportPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisAuditReportPage',
+    component: () =>
+      import('./components/AegisAuditReportPage').then(
+        m => m.AegisAuditReportPage,
+      ),
+    mountPoint: auditRouteRef,
   }),
 );
