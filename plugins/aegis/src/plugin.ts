@@ -17,6 +17,10 @@ import {
   opsLogExplorerRouteRef,
   opsAlertsRouteRef,
   opsConfigRouteRef,
+  costAnalyticsRouteRef,
+  policyManagementRouteRef,
+  userManagementRouteRef,
+  auditLogRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -77,9 +81,9 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
   }),
 );
 
-export const AegisCostAnalyticsPage = aegisPlugin.provide(
+export const AegisCostAnalyticsFinOpsPage = aegisPlugin.provide(
   createRoutableExtension({
-    name: 'AegisCostAnalyticsPage',
+    name: 'AegisCostAnalyticsFinOpsPage',
     component: () =>
       import('./components/AegisCostDashboardPage').then(
         m => m.AegisCostDashboardPage,
@@ -162,5 +166,49 @@ export const AegisClusterConfigPage = aegisPlugin.provide(
         m => m.AegisClusterConfigPage,
       ),
     mountPoint: opsConfigRouteRef,
+  }),
+);
+
+export const AegisCostAnalyticsPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisCostAnalyticsPage',
+    component: () =>
+      import('./components/AegisCostAnalyticsPage').then(
+        m => m.AegisCostAnalyticsPage,
+      ),
+    mountPoint: costAnalyticsRouteRef,
+  }),
+);
+
+export const AegisPolicyManagementPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisPolicyManagementPage',
+    component: () =>
+      import('./components/AegisPolicyManagementPage').then(
+        m => m.AegisPolicyManagementPage,
+      ),
+    mountPoint: policyManagementRouteRef,
+  }),
+);
+
+export const AegisUserManagementPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisUserManagementPage',
+    component: () =>
+      import('./components/AegisUserManagementPage').then(
+        m => m.AegisUserManagementPage,
+      ),
+    mountPoint: userManagementRouteRef,
+  }),
+);
+
+export const AegisAuditLogPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisAuditLogPage',
+    component: () =>
+      import('./components/AegisAuditLogPage').then(
+        m => m.AegisAuditLogPage,
+      ),
+    mountPoint: auditLogRouteRef,
   }),
 );

@@ -49,7 +49,7 @@ import {
   AegisWorkloadListPage,
   AegisWorkloadDetailsPage,
   AegisCreateWorkspacePage,
-  AegisCostAnalyticsPage,
+  AegisCostAnalyticsFinOpsPage,
   AegisQuotaManagementFinOpsPage,
   AegisBillingAlertsFinOpsPage,
   AegisOpsMetricsPage,
@@ -57,6 +57,10 @@ import {
   AegisLogExplorerPage,
   AegisAlertsDashboardPage,
   AegisClusterConfigPage,
+  AegisCostAnalyticsPage,
+  AegisPolicyManagementPage,
+  AegisUserManagementPage,
+  AegisAuditLogPage,
 } from '@internal/plugin-aegis';
 import { keycloakAuthApiRef } from './apis';
 
@@ -154,7 +158,7 @@ const routes = (
     />
     <Route
       path="/aegis/finops/cost-dashboard"
-      element={<AegisCostAnalyticsPage />}
+      element={<AegisCostAnalyticsFinOpsPage />}
     />
     <Route
       path="/aegis/finops/quotas"
@@ -164,6 +168,10 @@ const routes = (
       path="/aegis/finops/alerts"
       element={<AegisBillingAlertsFinOpsPage />}
     />
+    <Route path="/aegis/admin/analytics" element={<AegisCostAnalyticsPage />} />
+    <Route path="/aegis/admin/policies" element={<AegisPolicyManagementPage />} />
+    <Route path="/aegis/admin/users" element={<AegisUserManagementPage />} />
+    <Route path="/aegis/admin/audit-logs" element={<AegisAuditLogPage />} />
   </FlatRoutes>
 );
 
