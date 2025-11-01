@@ -20,6 +20,9 @@ import GroupIcon from '@material-ui/icons/Group';
 import MonetizationOnIcon from '@material-ui/icons/MonetizationOn';
 import EqualizerIcon from '@material-ui/icons/Equalizer';
 import NotificationsActiveIcon from '@material-ui/icons/NotificationsActive';
+import GavelIcon from '@material-ui/icons/Gavel';
+import PeopleOutlineIcon from '@material-ui/icons/PeopleOutline';
+import HistoryIcon from '@material-ui/icons/History';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
 import {
@@ -241,6 +244,26 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
             <SidebarDivider />
 
             <NavSection label="Admin" icon={<SettingsIcon />}>
+              <SidebarItem
+                icon={AssessmentIcon}
+                to="aegis/admin/analytics"
+                text="Usage & Cost"
+              />
+              <SidebarItem
+                icon={GavelIcon}
+                to="aegis/admin/policies"
+                text="Policies"
+              />
+              <SidebarItem
+                icon={PeopleOutlineIcon}
+                to="aegis/admin/users"
+                text="Users"
+              />
+              <SidebarItem
+                icon={HistoryIcon}
+                to="aegis/admin/audit-logs"
+                text="Audit Logs"
+              />
               <SidebarItem icon={HomeIcon} to="catalog" text="Catalog" />
               <SidebarItem icon={ExtensionIcon} to="api-docs" text="APIs" />
               <SidebarItem icon={DescriptionIcon} to="docs" text="Docs" />

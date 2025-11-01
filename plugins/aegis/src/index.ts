@@ -5,7 +5,7 @@ export {
   AegisWorkloadDetailsPage,
   AegisLaunchWorkspacePage,
   AegisCreateWorkspacePage,
-  AegisCostAnalyticsPage,
+  AegisCostAnalyticsFinOpsPage,
   AegisQuotaManagementFinOpsPage,
   AegisBillingAlertsFinOpsPage,
   AegisOpsMetricsPage,
@@ -13,6 +13,10 @@ export {
   AegisLogExplorerPage,
   AegisAlertsDashboardPage,
   AegisClusterConfigPage,
+  AegisCostAnalyticsPage,
+  AegisPolicyManagementPage,
+  AegisUserManagementPage,
+  AegisAuditLogPage,
 } from './plugin';
 export {
   rootRouteRef,
@@ -28,4 +32,8 @@ export {
   opsLogExplorerRouteRef,
   opsAlertsRouteRef,
   opsConfigRouteRef,
+  costAnalyticsRouteRef,
+  policyManagementRouteRef,
+  userManagementRouteRef,
+  auditLogRouteRef,
 } from './routes';
