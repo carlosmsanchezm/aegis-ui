@@ -13,6 +13,11 @@ import SecurityIcon from '@material-ui/icons/Security';
 import SettingsIcon from '@material-ui/icons/Settings';
 import TimelineIcon from '@material-ui/icons/Timeline';
 import GroupIcon from '@material-ui/icons/Group';
+import StarsIcon from '@material-ui/icons/Stars';
+import BarChartIcon from '@material-ui/icons/BarChart';
+import VerifiedUserIcon from '@material-ui/icons/VerifiedUser';
+import AccountBalanceIcon from '@material-ui/icons/AccountBalance';
+import AssignmentIcon from '@material-ui/icons/Assignment';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
 import {
@@ -174,6 +179,27 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
           <SidebarDivider />
 
           <SidebarScrollWrapper>
+            <NavSection label="Strategic" icon={<StarsIcon />}>
+              <SidebarItem icon={BarChartIcon} to="aegis/executive/overview" text="Overview" />
+              <SidebarItem
+                icon={VerifiedUserIcon}
+                to="aegis/executive/resilience"
+                text="Resilience"
+              />
+              <SidebarItem
+                icon={AccountBalanceIcon}
+                to="aegis/executive/governance"
+                text="Governance"
+              />
+              <SidebarItem
+                icon={AssignmentIcon}
+                to="aegis/executive/audit"
+                text="Audit"
+              />
+            </NavSection>
+
+            <SidebarDivider />
+
             <NavSection label="Manage" icon={<DashboardIcon />}>
               <SidebarItem icon={LaptopMacIcon} to="aegis/workloads" text="Workspaces" />
               <SidebarItem icon={CloudQueueIcon} to="aegis/clusters" text="Clusters" />

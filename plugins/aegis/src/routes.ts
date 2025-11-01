@@ -27,3 +27,27 @@ export const createWorkspaceRouteRef = createSubRouteRef({
   parent: rootRouteRef,
   path: '/workspaces/create',
 });
+
+export const executiveOverviewRouteRef = createSubRouteRef({
+  id: 'aegis-executive-overview',
+  parent: rootRouteRef,
+  path: '/executive/overview',
+});
+
+export const resilienceRouteRef = createSubRouteRef({
+  id: 'aegis-resilience-report',
+  parent: rootRouteRef,
+  path: '/executive/resilience',
+});
+
+export const governanceRouteRef = createSubRouteRef({
+  id: 'aegis-governance-dashboard',
+  parent: rootRouteRef,
+  path: '/executive/governance',
+});
+
+export const auditRouteRef = createSubRouteRef({
+  id: 'aegis-audit-report',
+  parent: rootRouteRef,
+  path: '/executive/audit',
+});
