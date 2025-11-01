@@ -9,6 +9,11 @@ import {
   workloadDetailsRouteRef,
   launchWorkspaceRouteRef,
   createWorkspaceRouteRef,
+  opsMetricsRouteRef,
+  opsResourceDetailsRouteRef,
+  opsLogExplorerRouteRef,
+  opsAlertsRouteRef,
+  opsConfigRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -66,5 +71,60 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
         m => m.LaunchWorkspacePage,
       ),
     mountPoint: createWorkspaceRouteRef,
+  }),
+);
+
+export const AegisOpsMetricsPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisOpsMetricsPage',
+    component: () =>
+      import('./components/AegisOpsMetricsPage').then(
+        m => m.AegisOpsMetricsPage,
+      ),
+    mountPoint: opsMetricsRouteRef,
+  }),
+);
+
+export const AegisResourceDetailsPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisResourceDetailsPage',
+    component: () =>
+      import('./components/AegisResourceDetailsPage').then(
+        m => m.AegisResourceDetailsPage,
+      ),
+    mountPoint: opsResourceDetailsRouteRef,
+  }),
+);
+
+export const AegisLogExplorerPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisLogExplorerPage',
+    component: () =>
+      import('./components/AegisLogExplorerPage').then(
+        m => m.AegisLogExplorerPage,
+      ),
+    mountPoint: opsLogExplorerRouteRef,
+  }),
+);
+
+export const AegisAlertsDashboardPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisAlertsDashboardPage',
+    component: () =>
+      import('./components/AegisAlertsDashboardPage').then(
+        m => m.AegisAlertsDashboardPage,
+      ),
+    mountPoint: opsAlertsRouteRef,
+  }),
+);
+
+export const AegisClusterConfigPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisClusterConfigPage',
+    component: () =>
+      import('./components/AegisClusterConfigPage').then(
+        m => m.AegisClusterConfigPage,
+      ),
+    mountPoint: opsConfigRouteRef,
   }),
 );
