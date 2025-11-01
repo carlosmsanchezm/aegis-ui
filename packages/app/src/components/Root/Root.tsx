@@ -12,6 +12,10 @@ import LockIcon from '@material-ui/icons/Lock';
 import SecurityIcon from '@material-ui/icons/Security';
 import SettingsIcon from '@material-ui/icons/Settings';
 import TimelineIcon from '@material-ui/icons/Timeline';
+import EqualizerIcon from '@material-ui/icons/Equalizer';
+import WarningIcon from '@material-ui/icons/Warning';
+import ListAltIcon from '@material-ui/icons/ListAlt';
+import SettingsEthernetIcon from '@material-ui/icons/SettingsEthernet';
 import GroupIcon from '@material-ui/icons/Group';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
@@ -183,6 +187,19 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
                 singularTitle="My Group"
                 pluralTitle="My Groups"
                 icon={GroupIcon}
+              />
+            </NavSection>
+
+            <SidebarDivider />
+
+            <NavSection label="Operations" icon={<EqualizerIcon />}>
+              <SidebarItem icon={EqualizerIcon} to="aegis/operations/metrics" text="Metrics" />
+              <SidebarItem icon={WarningIcon} to="aegis/operations/alerts" text="Alerts" />
+              <SidebarItem icon={ListAltIcon} to="aegis/operations/logs" text="Logs" />
+              <SidebarItem
+                icon={SettingsEthernetIcon}
+                to="aegis/operations/config"
+                text="Configuration"
               />
             </NavSection>
 
