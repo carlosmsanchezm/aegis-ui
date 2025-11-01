@@ -13,6 +13,10 @@ import SecurityIcon from '@material-ui/icons/Security';
 import SettingsIcon from '@material-ui/icons/Settings';
 import TimelineIcon from '@material-ui/icons/Timeline';
 import GroupIcon from '@material-ui/icons/Group';
+import AttachMoneyIcon from '@material-ui/icons/AttachMoney';
+import AssessmentIcon from '@material-ui/icons/Assessment';
+import AccountBalanceIcon from '@material-ui/icons/AccountBalance';
+import WarningIcon from '@material-ui/icons/Warning';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
 import {
@@ -183,6 +187,26 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
                 singularTitle="My Group"
                 pluralTitle="My Groups"
                 icon={GroupIcon}
+              />
+            </NavSection>
+
+            <SidebarDivider />
+
+            <NavSection label="FinOps" icon={<AttachMoneyIcon />}>
+              <SidebarItem
+                icon={AssessmentIcon}
+                to="aegis/finops/cost-dashboard"
+                text="Cost Dashboard"
+              />
+              <SidebarItem
+                icon={AccountBalanceIcon}
+                to="aegis/finops/quotas"
+                text="Quotas"
+              />
+              <SidebarItem
+                icon={WarningIcon}
+                to="aegis/finops/alerts"
+                text="Billing Alerts"
               />
             </NavSection>
 

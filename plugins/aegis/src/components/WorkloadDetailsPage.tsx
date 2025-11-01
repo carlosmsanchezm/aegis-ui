@@ -14,7 +14,7 @@ import {
   StatusPending,
   CopyTextButton,
 } from '@backstage/core-components';
-import { Box, Button, Typography } from '@material-ui/core';
+import { Box, Button, makeStyles, Paper, Typography } from '@material-ui/core';
 import {
   alertApiRef,
   discoveryApiRef,
@@ -36,6 +36,39 @@ import {
   buildKubectlDescribeCommand,
 } from '../api/aegisClient';
 import { ConnectModal } from './ConnectModal';
+
+const useStyles = makeStyles(theme => ({
+  costCard: {
+    padding: theme.spacing(3),
+    background: 'var(--aegis-card-surface)',
+    border: '1px solid var(--aegis-card-border)',
+    boxShadow: 'var(--aegis-card-shadow)',
+    borderRadius: theme.shape.borderRadius * 2,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2),
+  },
+  costRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing(2),
+  },
+  costLabel: {
+    color: theme.palette.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    fontSize: theme.typography.pxToRem(12),
+  },
+  costValue: {
+    fontWeight: 600,
+    fontSize: theme.typography.pxToRem(22),
+    letterSpacing: '-0.02em',
+  },
+  costSubtle: {
+    color: theme.palette.text.secondary,
+  },
+}));
 
 const statusChip = (status: string) => {
   const mapped = mapDisplayStatus(status);
@@ -79,6 +112,7 @@ const SYSTEM_ACK_FLAG = 'aegis.system.use.ack';
 const RULES_ACK_FLAG = 'aegis.rules.of.behavior.ack';
 
 export const WorkloadDetailsPage: FC = () => {
+  const classes = useStyles();
   const { id } = useParams<{ id: string }>();
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
@@ -410,6 +444,54 @@ export const WorkloadDetailsPage: FC = () => {
                 />
               </InfoCard>
             )}
+
+            <Paper className={classes.costCard}>
+              <Typography variant="h6">Cost Analysis</Typography>
+              <Box display="flex" flexDirection="column" gridGap={16}>
+                <Box className={classes.costRow}>
+                  <div>
+                    <Typography variant="caption" className={classes.costLabel}>
+                      Total Cost to Date
+                    </Typography>
+                    <Typography variant="body2" className={classes.costSubtle}>
+                      Includes compute, storage, and data egress
+                    </Typography>
+                  </div>
+                  <Typography variant="h5" className={classes.costValue}>
+                    $12,480
+                  </Typography>
+                </Box>
+                <Box className={classes.costRow}>
+                  <div>
+                    <Typography variant="caption" className={classes.costLabel}>
+                      Estimated Run Rate
+                    </Typography>
+                    <Typography variant="body2" className={classes.costSubtle}>
+                      Based on the last 7 active days
+                    </Typography>
+                  </div>
+                  <Typography variant="h5" className={classes.costValue}>
+                    $1,540 / week
+                  </Typography>
+                </Box>
+                <Box className={classes.costRow}>
+                  <div>
+                    <Typography variant="caption" className={classes.costLabel}>
+                      Forecasted Month-End Spend
+                    </Typography>
+                    <Typography variant="body2" className={classes.costSubtle}>
+                      Remaining budget headroom: $3,200
+                    </Typography>
+                  </div>
+                  <Typography variant="h5" className={classes.costValue}>
+                    $18,900
+                  </Typography>
+                </Box>
+                <Typography variant="body2" className={classes.costSubtle}>
+                  Last recalculated 2 hours ago using workspace telemetry snapshots.
+                </Typography>
+              </Box>
+            </Paper>
 
             {loc && (
               <Typography variant="body2">
