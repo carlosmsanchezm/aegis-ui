@@ -30,8 +30,10 @@ catalog:
   rules:
     - allow: [Component, System, API, Resource, Location, User, Group]
 
-proxy:
-  '/aegis':
+proxy: {}
+
+aegis:
+  proxy:
     target: http://localhost:8080
     changeOrigin: true
 

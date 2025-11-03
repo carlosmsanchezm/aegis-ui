@@ -1,11 +1,10 @@
 # Backstage override configuration for your cloud deployment
 
-proxy:
-  endpoints:
-    '/aegis':
-      target: 'https://platform-api.aegist.dev:443'
-      changeOrigin: true
-      credentials: forward
-      allowedHeaders:
-        - authorization
-        - Authorization
+aegis:
+  proxy:
+    target: 'https://platform-api.aegist.dev:443'
+    changeOrigin: true
+    credentials: forward
+    allowedHeaders:
+      - authorization
+      - Authorization
