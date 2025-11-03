@@ -36,6 +36,7 @@ import {
   buildKubectlDescribeCommand,
 } from '../api/aegisClient';
 import { ConnectModal } from './ConnectModal';
+import { keycloakAuthApiRef } from '../api/keycloakAuthApiRef';
 
 const useStyles = makeStyles(theme => ({
   costPaper: {
@@ -127,6 +128,7 @@ export const WorkloadDetailsPage: FC = () => {
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
   const alertApi = useApi(alertApiRef);
+  const keycloakAuthApi = useApi(keycloakAuthApiRef);
   const navigate = useNavigate();
 
   const [workload, setWorkload] = useState<WorkloadDTO | null>(null);
@@ -157,7 +159,13 @@ export const WorkloadDetailsPage: FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await getWorkload(fetchApi, discoveryApi, identityApi, id);
+      const res = await getWorkload(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        id,
+        keycloakAuthApi,
+      );
       setWorkload(res);
     } catch (e: any) {
       const msg = e?.message ?? String(e);
@@ -169,7 +177,7 @@ export const WorkloadDetailsPage: FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [alertApi, discoveryApi, fetchApi, identityApi, id]);
+  }, [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, id]);
 
   useEffect(() => {
     load();
@@ -194,6 +202,7 @@ export const WorkloadDetailsPage: FC = () => {
           identityApi,
           workload.id,
           client,
+          keycloakAuthApi,
         );
         setSession(created);
       } catch (e: any) {
@@ -208,7 +217,7 @@ export const WorkloadDetailsPage: FC = () => {
         setPendingSession(false);
       }
     },
-    [alertApi, discoveryApi, fetchApi, identityApi, workload?.id],
+    [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, workload?.id],
   );
 
   useEffect(() => {
@@ -277,6 +286,7 @@ export const WorkloadDetailsPage: FC = () => {
         discoveryApi,
         identityApi,
         session.sessionId,
+        keycloakAuthApi,
       );
       setSession(renewed);
     } catch (e: any) {
@@ -289,7 +299,7 @@ export const WorkloadDetailsPage: FC = () => {
     } finally {
       setSessionLoading(false);
     }
-  }, [alertApi, discoveryApi, fetchApi, identityApi, session?.sessionId]);
+  }, [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, session?.sessionId]);
 
   const handleRevoke = useCallback(async () => {
     if (!session?.sessionId) {
@@ -303,6 +313,7 @@ export const WorkloadDetailsPage: FC = () => {
         discoveryApi,
         identityApi,
         session.sessionId,
+        keycloakAuthApi,
       );
       setSession(null);
       alertApi.post({ message: 'Session revoked', severity: 'info' });
@@ -316,7 +327,7 @@ export const WorkloadDetailsPage: FC = () => {
     } finally {
       setSessionLoading(false);
     }
-  }, [alertApi, discoveryApi, fetchApi, identityApi, session?.sessionId]);
+  }, [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, session?.sessionId]);
 
   const handleSystemAck = useCallback(() => {
     setSystemAcked(true);

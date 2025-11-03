@@ -43,6 +43,7 @@ import {
   buildKubectlDescribeCommand,
 } from '../api/aegisClient';
 import { createWorkspaceRouteRef } from '../routes';
+import { keycloakAuthApiRef } from '../api/keycloakAuthApiRef';
 
 const statusChip = (status: string) => {
   const mapped = mapDisplayStatus(status);
@@ -68,6 +69,7 @@ export const WorkloadListPage: FC = () => {
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
   const alertApi = useApi(alertApiRef);
+  const keycloakAuthApi = useApi(keycloakAuthApiRef);
   const navigate = useNavigate();
   const createWorkspaceLink = useRouteRef(createWorkspaceRouteRef);
   const createWorkspacePath = createWorkspaceLink();
@@ -93,6 +95,7 @@ export const WorkloadListPage: FC = () => {
           discoveryApi,
           identityApi,
           projectId,
+          keycloakAuthApi,
         );
         const mapped: WorkloadRow[] = items.map(w => ({
           ...w,
@@ -114,7 +117,7 @@ export const WorkloadListPage: FC = () => {
         }
       }
     },
-    [alertApi, discoveryApi, fetchApi, identityApi, projectId],
+    [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, projectId],
   );
 
   useEffect(() => {

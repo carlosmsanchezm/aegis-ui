@@ -45,10 +45,16 @@ import DeveloperModeIcon from '@material-ui/icons/DeveloperMode';
 import StorageIcon from '@material-ui/icons/Storage';
 import MemoryIcon from '@material-ui/icons/Memory';
 import TimelineIcon from '@material-ui/icons/Timeline';
-import { SubmitWorkspaceRequest, submitWorkspace } from '../api/aegisClient';
+import {
+  SubmitWorkspaceRequest,
+  submitWorkspace,
+  createCluster,
+  getClusterStatus,
+} from '../api/aegisClient';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
-import { workloadsRouteRef } from '../routes';
 
+import { workloadsRouteRef } from '../routes';
+import { keycloakAuthApiRef } from '../api/keycloakAuthApiRef';
 import type { Theme } from '@material-ui/core/styles/createMuiTheme';
 
 type WorkspaceTypeId = 'vscode' | 'jupyter' | 'cli';
@@ -212,7 +218,7 @@ const flavorCatalog: FlavorOption[] = [
   },
 ];
 
-const steps = ['Workspace basics', 'Resources & options', 'Review & launch'];
+const steps = ['Workspace basics', 'Cluster', 'Resources & options', 'Review & launch'];
 
 const workspaceTypeIcons: Record<WorkspaceTypeId, ComponentType<any>> = {
   vscode: CodeIcon,
@@ -437,6 +443,7 @@ export const LaunchWorkspacePage: FC = () => {
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
+  const keycloakAuthApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
   const navigate = useNavigate();
@@ -455,10 +462,15 @@ export const LaunchWorkspacePage: FC = () => {
     image: '',
     ports: '22',
     env: '',
+    clusterName: '',
   });
+  const [clusterJobId, setClusterJobId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const [clusterCreationInProgress, setClusterCreationInProgress] = useState(false);
+  const [clusterCreationStatus, setClusterCreationStatus] = useState<string | null>(null);
+  const [clusterCreationProgress, setClusterCreationProgress] = useState(0);
+  
   const templatesForType = useMemo(() => {
     if (!workspaceTypeId) {
       return templateCatalog;
@@ -570,42 +582,110 @@ export const LaunchWorkspacePage: FC = () => {
       return;
     }
 
-    const ports = parsePortsInput(form.ports);
-    const env = parseEnvInput(form.env);
+    if (form.clusterName.trim() && !clusterJobId) {
+      try {
+        setSubmitting(true);
+        setError(null);
+        setClusterCreationInProgress(true);
+        const { jobId } = await createCluster(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          form.clusterName.trim(),
+          keycloakAuthApi,
+        );
+        setClusterJobId(jobId);
 
-    const payload: SubmitWorkspaceRequest = {
-      id: form.workloadId.trim(),
-      projectId: form.projectId.trim(),
-      queue: form.queue.trim() || undefined,
-      workspace: {
-        flavor: form.flavor.trim() || undefined,
-        image: form.image.trim() || undefined,
-        interactive: true,
-        ports: ports.length > 0 ? ports : undefined,
-        env: Object.keys(env).length > 0 ? env : undefined,
-      },
-    };
-
-    try {
-      setSubmitting(true);
-      setError(null);
-      await submitWorkspace(fetchApi, discoveryApi, identityApi, payload);
-      alertApi.post({
-        message: `Submitted interactive workspace ${payload.id}`,
-        severity: 'success',
-      });
-      if (workloadsLink) {
-        navigate(workloadsLink());
+        const poll = setInterval(async () => {
+          try {
+            const { status, message, progress } = await getClusterStatus(
+              fetchApi,
+              discoveryApi,
+              identityApi,
+              jobId,
+              keycloakAuthApi,
+            );
+            setClusterCreationStatus(message);
+            setClusterCreationProgress(progress);
+            if (status === 'COMPLETED') {
+              clearInterval(poll);
+              setClusterCreationInProgress(false);
+              setSubmitting(false);
+            } else if (status === 'FAILED') {
+              clearInterval(poll);
+              setClusterCreationInProgress(false);
+              setSubmitting(false);
+              setError('Cluster creation failed');
+              alertApi.post({
+                message: `Failed to create cluster: ${message}`,
+                severity: 'error',
+              });
+            }
+          } catch (e: any) {
+            clearInterval(poll);
+            setClusterCreationInProgress(false);
+            setSubmitting(false);
+            const msg = e?.message ?? String(e);
+            setError(msg);
+            alertApi.post({
+              message: `Failed to get cluster status: ${msg}`,
+              severity: 'error',
+            });
+          }
+        }, 5000);
+      } catch (e: any) {
+        setSubmitting(false);
+        const msg = e?.message ?? String(e);
+        setError(msg);
+        alertApi.post({
+          message: `Failed to create cluster: ${msg}`,
+          severity: 'error',
+        });
       }
-    } catch (e: any) {
-      const msg = e?.message ?? String(e);
-      setError(msg);
-      alertApi.post({
-        message: `Failed to submit workspace: ${msg}`,
-        severity: 'error',
-      });
-    } finally {
-      setSubmitting(false);
+    } else {
+      const ports = parsePortsInput(form.ports);
+      const env = parseEnvInput(form.env);
+
+      const payload: SubmitWorkspaceRequest = {
+        id: form.workloadId.trim(),
+        projectId: form.projectId.trim(),
+        queue: form.queue.trim() || undefined,
+        workspace: {
+          flavor: form.flavor.trim() || undefined,
+          image: form.image.trim() || undefined,
+          interactive: true,
+          ports: ports.length > 0 ? ports : undefined,
+          env: Object.keys(env).length > 0 ? env : undefined,
+        },
+      };
+
+      try {
+        setSubmitting(true);
+        setError(null);
+        await submitWorkspace(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          payload,
+          keycloakAuthApi,
+        );
+        alertApi.post({
+          message: `Submitted interactive workspace ${payload.id}`,
+          severity: 'success',
+        });
+        if (workloadsLink) {
+          navigate(workloadsLink());
+        }
+      } catch (e: any) {
+        const msg = e?.message ?? String(e);
+        setError(msg);
+        alertApi.post({
+          message: `Failed to submit workspace: ${msg}`,
+          severity: 'error',
+        });
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -798,6 +878,35 @@ export const LaunchWorkspacePage: FC = () => {
 
             {activeStep === 1 && (
               <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <div className={classes.formSection}>
+                    <Typography variant="overline" color="textSecondary">
+                      Cluster
+                    </Typography>
+                    <TextField
+                      label="Cluster Name"
+                      value={form.clusterName}
+                      onChange={handleFormFieldChange('clusterName')}
+                      variant="outlined"
+                      fullWidth
+                      helperText="Name of the cluster to create or use"
+                      disabled={clusterCreationInProgress || !!clusterJobId}
+                    />
+                    {clusterCreationInProgress && (
+                      <Box sx={{ width: '100%', mt: 2 }}>
+                        <Progress value={clusterCreationProgress} />
+                        <Typography variant="body2" color="textSecondary">
+                          {clusterCreationStatus}
+                        </Typography>
+                      </Box>
+                    )}
+                  </div>
+                </Grid>
+              </Grid>
+            )}
+
+            {activeStep === 2 && (
+              <Grid container spacing={3}>
                 <Grid item xs={12} md={7}>
                   <Typography variant="overline" color="textSecondary">
                     Compute flavors
@@ -869,7 +978,7 @@ export const LaunchWorkspacePage: FC = () => {
               </Grid>
             )}
 
-            {activeStep === 2 && (
+            {activeStep === 3 && (
               <Paper elevation={0} className={classes.reviewPaper}>
                 <Typography variant="overline" color="textSecondary">
                   Launch summary
@@ -904,6 +1013,14 @@ export const LaunchWorkspacePage: FC = () => {
                       <span className={classes.reviewLabel}>Template</span>
                       <span className={classes.reviewValue}>
                         {selectedTemplate?.title ?? '—'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Cluster</span>
+                      <span className={classes.reviewValue}>
+                        {form.clusterName || 'Default'}
                       </span>
                     </div>
                   </Grid>
@@ -951,29 +1068,25 @@ export const LaunchWorkspacePage: FC = () => {
 
             <div className={classes.actionRow}>
               <Box display="flex" style={{ gap: 16 }}>
-                <Button
-                  type="button"
-                  variant="outlined"
-                  disabled={activeStep === 0 || submitting}
-                  onClick={goPreviousStep}
-                >
-                  Back
-                </Button>
-                {activeStep < steps.length - 1 && (
-                  <Button
-                    type="button"
-                    color="primary"
-                    variant="contained"
-                    disabled={
-                      submitting ||
-                      (activeStep === 0 && !canProceedFromBasics) ||
-                      (activeStep === 1 && !canProceedFromResources)
-                    }
-                    onClick={goNextStep}
-                  >
-                    Next
-                  </Button>
-                )}
+                                  <Button
+                                    type="button"
+                                    variant="outlined"
+                                    disabled={activeStep === 0 || submitting || clusterCreationInProgress}
+                                    onClick={goPreviousStep}
+                                  >
+                                    Back
+                                  </Button>
+                                {activeStep < steps.length - 1 && (
+                                  <Button
+                                    type="button"
+                                    color="primary"
+                                    variant="contained"
+                                    disabled={submitting || clusterCreationInProgress || (activeStep === 0 && !canProceedFromBasics) || (activeStep === 1 && !form.clusterName.trim()) || (activeStep === 2 && !canProceedFromResources)}
+                                    onClick={goNextStep}
+                                  >
+                                    Next
+                                  </Button>
+                                )}
               </Box>
               {activeStep === steps.length - 1 && (
                 <Box
