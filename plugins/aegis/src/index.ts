@@ -18,6 +18,8 @@ export {
   AegisUserManagementPage,
   AegisAuditLogPage,
 } from './plugin';
+export { keycloakAuthApiRef } from './api/keycloakAuthApiRef';
+export type { AccessTokenClient } from './api/aegisClient';
 export {
   rootRouteRef,
   workloadsRouteRef,

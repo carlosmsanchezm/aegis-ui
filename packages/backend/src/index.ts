@@ -11,6 +11,8 @@ import { createBackend } from '@backstage/backend-defaults';
 const backend = createBackend();
 
 backend.add(import('@backstage/plugin-app-backend'));
+backend.add(import('./plugins/aegis-ca')); // Trust platform API self-signed certificates locally
+backend.add(import('./plugins/proxy-debug')); // Debug proxy auth headers locally
 backend.add(import('@backstage/plugin-proxy-backend'));
 backend.add(import('./plugins/auth-logging')); // AU controls: capture SSO lifecycle events
 

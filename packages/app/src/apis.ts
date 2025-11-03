@@ -8,12 +8,12 @@ import {
   AuthProviderInfo,
   configApiRef,
   createApiFactory,
-  createApiRef,
   discoveryApiRef,
   oauthRequestApiRef,
 } from '@backstage/core-plugin-api';
 import { OAuth2, OAuthRequestManager } from '@backstage/core-app-api';
 import VpnKeyIcon from '@material-ui/icons/VpnKey';
+import { keycloakAuthApiRef } from '@internal/plugin-aegis';
 
 export const ensureOidcScopes = (scopes: string[]): string[] => {
   const required = ['openid', 'profile', 'email'];
@@ -27,10 +27,7 @@ export const buildKeycloakProviderInfo = (): AuthProviderInfo => ({
   icon: VpnKeyIcon,
 });
 
-export const keycloakAuthApiRef = createApiRef<OAuth2>({
-  id: 'internal.auth.keycloak',
-  description: 'OIDC auth API for Keycloak-backed sign-in',
-});
+export { keycloakAuthApiRef };
 
 export const apis: AnyApiFactory[] = [
   createApiFactory({

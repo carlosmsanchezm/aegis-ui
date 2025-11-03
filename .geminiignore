@@ -1,0 +1,115 @@
+# Dependencies and build artifacts
+node_modules/
+dist/
+build/
+.git/
+.yarn/
+.pnp.*
+*.tsbuildinfo
+packages/*/dist/
+packages/*/build/
+plugins/*/dist/
+plugins/*/build/
+
+# Test files
+*.test.ts
+*.test.tsx
+*.test.js
+*.test.jsx
+*.spec.ts
+*.spec.tsx
+*.spec.js
+*.spec.jsx
+__tests__/
+__mocks__/
+*.stories.ts
+*.stories.tsx
+*.stories.js
+*.stories.jsx
+coverage/
+.storybook/
+
+# Documentation (but keep GEMINI.md and important config docs)
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+LICENSE
+docs/
+documentation/
+
+# CI/CD and DevOps
+.github/
+.gitlab/
+.circleci/
+.travis.yml
+.drone.yml
+Jenkinsfile
+azure-pipelines.yml
+
+# Docker and container files (but keep docker-compose for reference)
+Dockerfile
+Dockerfile.*
+.dockerignore
+
+# Scripts and tooling
+scripts/
+tools/
+.husky/
+.vscode/
+.idea/
+*.code-workspace
+
+# Examples and samples
+examples/
+example/
+samples/
+demo/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+.cache/
+.next/
+out/
+.turbo/
+
+# Lock files
+*.lock
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# Assets (images, fonts, etc)
+public/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.woff
+*.woff2
+*.ttf
+*.eot
+*.pdf
+assets/
+static/
+
+# Config files NOT needed for integration
+.editorconfig
+.prettierrc
+.prettierignore
+.eslintignore
+jest.config.*
+vitest.config.*
+playwright.config.*
+cypress.json
+cypress/
+e2e/
+
+# Misc
+.env.example
+.env.local
+.env.*.local

@@ -1,0 +1,3791 @@
+=== /Users/carlossanchez/code/aegis-ui/app-config.local.yaml ===
+# Local development configuration - points to local platform-api via port-forward
+# Requires: make port-forward (forwards to localhost:10080)
+
+backend:
+  auth:
+    keys:
+      - secret: dev-secret
+
+auth:
+  session:
+    secret: dev-session-secret
+    cookie:
+      secure: false
+      sameSite: lax
+      domain: localhost
+  providers:
+    keycloak:
+      development:
+        clientId: backstage
+        clientSecret: local-backstage-client-secret
+        issuer: https://keycloak.localtest.me/realms/aegis
+        metadataUrl: https://keycloak.localtest.me/realms/aegis/.well-known/openid-configuration
+        additionalScopes:
+          - offline_access
+        callbackUrl: http://localhost:7008/api/auth/keycloak/handler/frame
+        prompt: login
+        signIn:
+          resolvers:
+            - resolver: emailMatchingUserEntityProfileEmail
+            - resolver: emailLocalPartMatchingUserEntityName
+
+proxy:
+  reviveConsumedRequestBodies: true
+  endpoints:
+    '/aegis':
+      target: 'https://platform-api.localtest.me'
+      changeOrigin: true
+      credentials: require
+      allowedHeaders:
+        - authorization
+        - Authorization
+        - Grpc-Metadata-Authorization
+        - grpc-metadata-authorization
+        - X-Forwarded-Authorization
+        - x-forwarded-authorization
+
+aegis:
+  tls:
+    caFiles:
+      - ${HOME}/aegis-local-trust.pem
+
+
+=== /Users/carlossanchez/code/aegis-ui/app-config.local-dev.yaml ===
+# Local development configuration - points to local platform-api via port-forward
+# Requires: make port-forward (forwards to localhost:10080)
+
+backend:
+  auth:
+    keys:
+      - secret: dev-secret
+
+auth:
+  session:
+    secret: dev-session-secret
+    cookie:
+      secure: false
+      sameSite: lax
+      domain: localhost
+  providers:
+    keycloak:
+      development:
+        clientId: backstage
+        clientSecret: local-backstage-client-secret
+        issuer: https://keycloak.localtest.me/realms/aegis
+        metadataUrl: https://keycloak.localtest.me/realms/aegis/.well-known/openid-configuration
+        additionalScopes:
+          - offline_access
+        callbackUrl: http://localhost:7008/api/auth/keycloak/handler/frame
+        prompt: login
+        signIn:
+          resolvers:
+            - resolver: emailMatchingUserEntityProfileEmail
+            - resolver: emailLocalPartMatchingUserEntityName
+
+proxy:
+  reviveConsumedRequestBodies: true
+  endpoints:
+    '/aegis':
+      target: 'https://platform-api.localtest.me'
+      changeOrigin: true
+      credentials: require
+      allowedHeaders:
+        - authorization
+        - Authorization
+        - Grpc-Metadata-Authorization
+        - grpc-metadata-authorization
+        - X-Forwarded-Authorization
+        - x-forwarded-authorization
+
+aegis:
+  tls:
+    caFiles:
+      - ${HOME}/aegis-local-trust.pem
+
+
+=== /Users/carlossanchez/code/aegis-ui/packages/backend/src/index.ts ===
+/*
+ * Hi!
+ *
+ * Note that this is an EXAMPLE Backstage backend. Please check the README.
+ *
+ * Happy hacking!
+ */
+
+import { createBackend } from '@backstage/backend-defaults';
+
+const backend = createBackend();
+
+backend.add(import('@backstage/plugin-app-backend'));
+backend.add(import('./plugins/aegis-ca')); // Trust platform API self-signed certificates locally
+backend.add(import('@backstage/plugin-proxy-backend'));
+backend.add(import('./plugins/auth-logging')); // AU controls: capture SSO lifecycle events
+
+// scaffolder plugin
+backend.add(import('@backstage/plugin-scaffolder-backend'));
+backend.add(import('@backstage/plugin-scaffolder-backend-module-github'));
+backend.add(
+  import('@backstage/plugin-scaffolder-backend-module-notifications'),
+);
+
+// techdocs plugin
+backend.add(import('@backstage/plugin-techdocs-backend'));
+
+// auth plugin
+backend.add(import('@backstage/plugin-auth-backend'));
+backend.add(import('./plugins/auth-keycloak-provider')); // Keycloak SSO via hardened OIDC module
+
+// catalog plugin
+backend.add(import('@backstage/plugin-catalog-backend'));
+backend.add(
+  import('@backstage/plugin-catalog-backend-module-scaffolder-entity-model'),
+);
+
+// See https://backstage.io/docs/features/software-catalog/configuration#subscribing-to-catalog-errors
+backend.add(import('@backstage/plugin-catalog-backend-module-logs'));
+
+// permission plugin
+backend.add(import('@backstage/plugin-permission-backend'));
+// See https://backstage.io/docs/permissions/getting-started for how to create your own permission policy
+backend.add(
+  import('@backstage/plugin-permission-backend-module-allow-all-policy'),
+);
+
+// search plugin
+backend.add(import('@backstage/plugin-search-backend'));
+
+// search engine
+// See https://backstage.io/docs/features/search/search-engines
+backend.add(import('@backstage/plugin-search-backend-module-pg'));
+
+// search collators
+backend.add(import('@backstage/plugin-search-backend-module-catalog'));
+backend.add(import('@backstage/plugin-search-backend-module-techdocs'));
+
+// kubernetes plugin
+backend.add(import('@backstage/plugin-kubernetes-backend'));
+
+// notifications and signals plugins
+backend.add(import('@backstage/plugin-notifications-backend'));
+backend.add(import('@backstage/plugin-signals-backend'));
+
+backend.start();
+
+
+=== /Users/carlossanchez/code/aegis-ui/packages/backend/src/plugins/aegis-ca.ts ===
+import { promises as fs } from 'fs';
+import https from 'https';
+import os from 'os';
+import path from 'path';
+import { createBackendPlugin, coreServices } from '@backstage/backend-plugin-api';
+
+const coerceToArray = (value: unknown): string[] => {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === 'string');
+  }
+
+  if (typeof value === 'string') {
+    return [value];
+  }
+
+  return [];
+};
+
+const resolvePath = (input: string) => {
+  if (input.startsWith('~/')) {
+    return path.join(os.homedir(), input.slice(2));
+  }
+
+  if (path.isAbsolute(input)) {
+    return input;
+  }
+
+  return path.resolve(process.cwd(), input);
+};
+
+const normalizePem = (pem: string) => pem.trim() + (pem.trimEnd().endsWith('\n') ? '' : '\n');
+
+export const aegisCaPlugin = createBackendPlugin({
+  pluginId: 'aegis-ca',
+  register(env) {
+    env.registerInit({
+      deps: {
+        config: coreServices.rootConfig,
+        logger: coreServices.logger,
+      },
+      async init({ config, logger }) {
+        const tlsConfig = config.getOptionalConfig('aegis.tls');
+        if (!tlsConfig) {
+          logger.debug('No aegis.tls configuration found; skipping custom CA setup');
+          return;
+        }
+
+        logger.info('Initializing Aegis CA trust loader');
+
+        const caEntries: string[] = [];
+
+        const caDataRaw = tlsConfig.getOptional('caData');
+        coerceToArray(caDataRaw).forEach(entry => {
+          if (entry.trim()) {
+            logger.debug('Loaded CA entry from inline configuration');
+            caEntries.push(normalizePem(entry));
+          }
+        });
+
+        const caFilesRaw = [
+          ...coerceToArray(tlsConfig.getOptional('caFile')),
+          ...coerceToArray(tlsConfig.getOptional('caFiles')),
+        ];
+
+        for (const rawPath of caFilesRaw) {
+          try {
+            const absolutePath = resolvePath(rawPath);
+            logger.info(`Loading CA bundle from ${absolutePath}`);
+            const data = await fs.readFile(absolutePath, 'utf8');
+            if (data.trim()) {
+              caEntries.push(normalizePem(data));
+            } else {
+              logger.warn(`CA file at ${absolutePath} is empty; skipping`);
+            }
+          } catch (error) {
+            logger.warn(`Failed to read CA file ${rawPath}: ${error}`);
+          }
+        }
+
+        if (caEntries.length === 0) {
+          logger.warn('No custom CA entries provided; skipping CA injection');
+          return;
+        }
+
+        const agent = https.globalAgent;
+        const existing = agent.options.ca;
+
+        if (!existing) {
+          agent.options.ca = [...caEntries];
+        } else if (Array.isArray(existing)) {
+          agent.options.ca = [...existing, ...caEntries];
+        } else {
+          agent.options.ca = [existing, ...caEntries];
+        }
+
+        const finalCa = agent.options.ca;
+        if (Array.isArray(finalCa)) {
+          logger.info(`https.globalAgent now has ${finalCa.length} CA entr${finalCa.length === 1 ? 'y' : 'ies'}`);
+        } else if (finalCa) {
+          logger.info('https.globalAgent now has 1 CA entry (non-array)');
+        } else {
+          logger.warn('https.globalAgent CA injection failed: options.ca is empty after update');
+        }
+
+        logger.info(`Loaded ${caEntries.length} custom CA certificate(s) for outbound HTTPS requests`);
+      },
+    });
+  },
+});
+
+export default aegisCaPlugin;
+
+
+=== /Users/carlossanchez/code/aegis-ui/packages/app/src/apis.ts ===
+import {
+  ScmIntegrationsApi,
+  scmIntegrationsApiRef,
+  ScmAuth,
+} from '@backstage/integration-react';
+import {
+  AnyApiFactory,
+  AuthProviderInfo,
+  configApiRef,
+  createApiFactory,
+  discoveryApiRef,
+  oauthRequestApiRef,
+} from '@backstage/core-plugin-api';
+import { OAuth2, OAuthRequestManager } from '@backstage/core-app-api';
+import VpnKeyIcon from '@material-ui/icons/VpnKey';
+import { keycloakAuthApiRef } from '@internal/plugin-aegis';
+
+export const ensureOidcScopes = (scopes: string[]): string[] => {
+  const required = ['openid', 'profile', 'email'];
+  const merged = new Set([...scopes, ...required]);
+  return Array.from(merged);
+};
+
+export const buildKeycloakProviderInfo = (): AuthProviderInfo => ({
+  id: 'keycloak',
+  title: 'Keycloak SSO',
+  icon: VpnKeyIcon,
+});
+
+export { keycloakAuthApiRef };
+
+export const apis: AnyApiFactory[] = [
+  createApiFactory({
+    api: oauthRequestApiRef,
+    deps: {},
+    factory: () => new OAuthRequestManager(),
+  }),
+  createApiFactory({
+    api: keycloakAuthApiRef,
+    deps: {
+      discoveryApi: discoveryApiRef,
+      oauthRequestApi: oauthRequestApiRef,
+      configApi: configApiRef,
+    },
+    factory: ({ discoveryApi, oauthRequestApi, configApi }) =>
+      OAuth2.create({
+        discoveryApi,
+        oauthRequestApi,
+        configApi,
+        environment: configApi.getOptionalString('auth.environment'),
+        provider: buildKeycloakProviderInfo(),
+        scopeTransform: ensureOidcScopes,
+      }),
+  }),
+  createApiFactory({
+    api: scmIntegrationsApiRef,
+    deps: { configApi: configApiRef },
+    factory: ({ configApi }) => ScmIntegrationsApi.fromConfig(configApi),
+  }),
+  ScmAuth.createDefaultApiFactory(),
+];
+
+
+=== /Users/carlossanchez/code/aegis-ui/plugins/aegis/src/api/aegisClient.ts ===
+import {
+  DiscoveryApi,
+  FetchApi,
+  IdentityApi,
+} from '@backstage/core-plugin-api';
+
+export type AccessTokenClient = {
+  getAccessToken: (options?: Record<string, unknown>) => Promise<string | undefined>;
+};
+
+const base64UrlDecode = (input: string): string => {
+  const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
+  if (typeof window !== 'undefined' && typeof window.atob === 'function') {
+    return window.atob(normalized);
+  }
+  if (
+    typeof globalThis !== 'undefined' &&
+    typeof (globalThis as any).atob === 'function'
+  ) {
+    return (globalThis as any).atob(normalized);
+  }
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(normalized, 'base64').toString('utf-8');
+  }
+  throw new Error('Base64 decoding is not supported in this environment');
+};
+
+export type WorkspaceSpec = {
+  flavor?: string;
+  image?: string;
+  command?: string[];
+  interactive?: boolean;
+  ports?: number[];
+  env?: Record<string, string>;
+  maxDurationSeconds?: number;
+};
+
+export type TrainingSpec = {
+  flavor?: string;
+  image?: string;
+  command?: string[];
+};
+
+export type WorkloadDTO = {
+  id?: string;
+  projectId?: string;
+  queue?: string;
+  clusterId?: string;
+  status?: string;
+  uiStatus?: string;
+  message?: string;
+  url?: string;
+  workspace?: WorkspaceSpec;
+  training?: TrainingSpec;
+};
+
+export type ConnectionSession = {
+  sessionId: string;
+  token: string;
+  sshUser?: string;
+  sshHostAlias: string;
+  vscodeUri?: string;
+  sshConfig?: string;
+  proxyUrl: string;
+  expiresAtUtc: string;
+  oneTime?: boolean;
+};
+
+export type SubmitWorkspaceRequest = {
+  id?: string;
+  projectId: string;
+  queue?: string;
+  workspace: {
+    flavor?: string;
+    image?: string;
+    command?: string | string[];
+    interactive?: boolean;
+    ports?: number[];
+    env?: Record<string, string>;
+    maxDurationSeconds?: number;
+  };
+};
+
+export type ListWorkloadsResponse = {
+  items: WorkloadDTO[];
+};
+
+export const DEFAULT_SSH_PORT = 22;
+export const DEFAULT_VSCODE_PORT = 11111;
+
+export const WORKSPACE_DEFAULT_ENV: Record<string, string> = {
+  VSCODE_QUALITY: 'stable',
+  PUID: '1000',
+  PGID: '1000',
+  PASSWORD_ACCESS: 'true',
+  USER_NAME: 'aegis',
+  USER_PASSWORD: 'aegis123',
+};
+
+const normalizeCommand = (command: string | string[] | undefined): string[] => {
+  if (Array.isArray(command)) {
+    const sanitized = command
+      .map(part => (typeof part === 'string' ? part.trim() : ''))
+      .filter(part => part.length > 0);
+    if (sanitized.length > 0) {
+      return sanitized;
+    }
+  }
+
+  const text = typeof command === 'string' ? command.trim() : '';
+  if (!text) {
+    return [];
+  }
+  return ['sh', '-c', text];
+};
+
+export const ensureWorkspacePorts = (ports?: number[]): number[] => {
+  const portSet = new Set<number>();
+  (ports ?? []).forEach(port => {
+    if (Number.isFinite(port) && port > 0) {
+      portSet.add(Math.trunc(port));
+    }
+  });
+
+  if (portSet.size === 0) {
+    portSet.add(DEFAULT_SSH_PORT);
+  }
+  portSet.add(DEFAULT_VSCODE_PORT);
+
+  return Array.from(portSet).sort((a, b) => a - b);
+};
+
+export const mergeWorkspaceEnv = (
+  user?: Record<string, string>,
+): Record<string, string> | undefined => {
+  const merged: Record<string, string> = {};
+
+  Object.entries(WORKSPACE_DEFAULT_ENV).forEach(([key, value]) => {
+    if (value) {
+      merged[key] = value;
+    }
+  });
+
+  if (user) {
+    Object.entries(user).forEach(([key, value]) => {
+      const trimmedKey = key?.trim();
+      if (!trimmedKey) {
+        return;
+      }
+      const normalizedValue =
+        typeof value === 'string' ? value.trim() : String(value ?? '');
+      if (!normalizedValue) {
+        return;
+      }
+      merged[trimmedKey] = normalizedValue;
+    });
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+};
+
+const buildProxyUrl = async (
+  discoveryApi: DiscoveryApi,
+  method: string,
+): Promise<string> => {
+  const baseUrl = await discoveryApi.getBaseUrl('proxy');
+  return `${baseUrl}/aegis/${method}`;
+};
+
+export type BackendError = {
+  error: {
+    code: string;
+    message: string;
+    details?: string;
+  };
+};
+
+type PostJsonOptions = {
+  requireAuth?: boolean;
+  authClient?: AccessTokenClient;
+};
+
+const postJson = async <TReq extends object, TRes>(
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  method: string,
+  body: TReq,
+  options?: PostJsonOptions,
+): Promise<TRes> => {
+  const url = await buildProxyUrl(discoveryApi, method);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  let identityToken: string | undefined;
+  let userEntityRef: string | undefined;
+  let providerToken: string | undefined;
+
+  try {
+    const identity = await identityApi.getBackstageIdentity({ optional: true });
+    identityToken = identity?.token;
+    userEntityRef = identity?.userEntityRef;
+  } catch (err) {
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.warn('Aegis: unable to obtain Backstage identity', err);
+    }
+  }
+
+  if (!identityToken) {
+    try {
+      const credentials = await identityApi.getCredentials();
+      identityToken = credentials.token;
+      userEntityRef = userEntityRef ?? credentials.userEntityRef;
+    } catch (err) {
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.warn('Aegis: failed to resolve credentials', err);
+      }
+    }
+  }
+
+  const authClient = options?.authClient;
+  if (authClient) {
+    try {
+      providerToken = await authClient.getAccessToken();
+      if (process.env.NODE_ENV === 'development' && providerToken) {
+        const preview = providerToken.slice(0, 24);
+        // eslint-disable-next-line no-console
+        console.debug('Aegis: using provider access token', preview, '...');
+        try {
+          const [, rawPayload] = providerToken.split('.');
+          if (rawPayload) {
+            const decoded =
+              typeof window !== 'undefined' && typeof window.atob === 'function'
+                ? window.atob(rawPayload)
+                : typeof globalThis !== 'undefined' &&
+                    typeof (globalThis as any).atob === 'function'
+                  ? (globalThis as any).atob(rawPayload)
+                  : Buffer.from(rawPayload, 'base64').toString('utf-8');
+            const payload = JSON.parse(decoded);
+            // eslint-disable-next-line no-console
+            console.debug('Aegis token payload', {
+              iss: payload.iss,
+              aud: payload.aud,
+              client_id: payload.client_id,
+              scope: payload.scope,
+              amr: payload.amr,
+            });
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('Aegis: failed to inspect provider token payload', err);
+        }
+      }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.warn('Aegis: failed to obtain provider access token', err);
+      }
+    }
+  }
+
+  const forwardToken = providerToken ?? identityToken;
+
+  if (providerToken) {
+    headers.Authorization = `Bearer ${providerToken}`;
+  } else if (identityToken) {
+    headers.Authorization = `Bearer ${identityToken}`;
+  }
+
+  if (!providerToken && options?.requireAuth) {
+    throw new Error(
+      'Authentication is required. Could not obtain a Keycloak access token.',
+    );
+  }
+
+  if (forwardToken) {
+    headers['Grpc-Metadata-Authorization'] = `Bearer ${forwardToken}`;
+    headers['grpc-metadata-authorization'] = `Bearer ${forwardToken}`;
+    headers['X-Forwarded-Authorization'] = `Bearer ${forwardToken}`;
+  }
+
+  const response = await fetchApi.fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    let errorBody: BackendError | undefined;
+    let rawText: string | undefined;
+    try {
+      rawText = await response.text();
+      errorBody = rawText ? (JSON.parse(rawText) as BackendError) : undefined;
+    } catch (e) {
+      // ignore
+    }
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.warn('Aegis request failed', {
+        method,
+        status: response.status,
+        statusText: response.statusText,
+        body: rawText,
+      });
+    }
+    const message = errorBody?.error?.message || errorBody?.error?.details || `Request failed with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  return (await response.json()) as TRes;
+};
+
+export const listWorkloads = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  projectId: string,
+  authClient?: AccessTokenClient,
+): Promise<WorkloadDTO[]> => {
+  const res = await postJson<{ projectId: string }, ListWorkloadsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    'aegis.v1.AegisPlatform/ListWorkloads',
+    { projectId },
+    { requireAuth: false, authClient },
+  );
+  return res.items ?? [];
+};
+
+export const getWorkload = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  id: string,
+  authClient?: AccessTokenClient,
+): Promise<WorkloadDTO> =>
+  postJson<{ id: string }, WorkloadDTO>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    'aegis.v1.AegisPlatform/GetWorkload',
+    { id },
+    { requireAuth: false, authClient },
+  );
+
+export const createConnectionSession = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  workloadId: string,
+  client: 'cli' | 'ssh' | 'vscode' = 'cli',
+  authClient?: AccessTokenClient,
+): Promise<ConnectionSession> =>
+  postJson<{ workloadId: string; client: string }, ConnectionSession>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    'aegis.v1.AegisPlatform/CreateConnectionSession',
+    { workloadId, client },
+    { requireAuth: true, authClient },
+  );
+
+export const renewConnectionSession = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  sessionId: string,
+  authClient?: AccessTokenClient,
+): Promise<ConnectionSession> =>
+  postJson<{ sessionId: string }, ConnectionSession>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    'aegis.v1.AegisPlatform/RenewConnectionSession',
+    { sessionId },
+    { requireAuth: true, authClient },
+  );
+
+export const revokeConnectionSession = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  sessionId: string,
+  authClient?: AccessTokenClient,
+): Promise<void> => {
+  await postJson<{ sessionId: string }, unknown>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    'aegis.v1.AegisPlatform/RevokeConnectionSession',
+    { sessionId },
+    { requireAuth: true, authClient },
+  );
+};
+
+export const submitWorkspace = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  req: SubmitWorkspaceRequest,
+  authClient?: AccessTokenClient,
+): Promise<WorkloadDTO> => {
+  const workspaceInput = req.workspace ?? {};
+  const command = normalizeCommand(workspaceInput.command);
+  const ports = ensureWorkspacePorts(workspaceInput.ports);
+  const env = mergeWorkspaceEnv(workspaceInput.env);
+  const maxDuration =
+    typeof workspaceInput.maxDurationSeconds === 'number' &&
+    Number.isFinite(workspaceInput.maxDurationSeconds)
+      ? Math.floor(workspaceInput.maxDurationSeconds)
+      : undefined;
+
+  const body = {
+    workload: {
+      ...(req.id ? { id: req.id } : {}),
+      projectId: req.projectId,
+      ...(req.queue ? { queue: req.queue } : {}),
+      workspace: {
+        flavor: workspaceInput.flavor,
+        image: workspaceInput.image,
+        interactive: true,
+        command,
+        ports,
+        ...(env ? { env } : {}),
+        ...(maxDuration ? { maxDurationSeconds: maxDuration } : {}),
+      },
+    },
+  };
+  return postJson<typeof body, WorkloadDTO>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    'aegis.v1.AegisPlatform/SubmitWorkload',
+    body,
+    { requireAuth: true, authClient },
+  );
+};
+
+export const createCluster = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  clusterName: string,
+  authClient?: AccessTokenClient,
+): Promise<{ jobId: string }> => {
+  const body = { name: clusterName };
+  return postJson<typeof body, { jobId: string }>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    'aegis.v1.AegisPlatform/CreateCluster',
+    body,
+    { requireAuth: true, authClient },
+  );
+};
+
+export const getClusterStatus = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  jobId: string,
+  authClient?: AccessTokenClient,
+): Promise<{ jobId: string; status: string; message: string; progress: number }> => {
+  const body = { jobId };
+  return postJson<
+    typeof body,
+    { jobId: string; status: string; message: string; progress: number }
+  >(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    'aegis.v1.AegisPlatform/GetClusterStatus',
+    body,
+    { requireAuth: true, authClient },
+  );
+};
+
+
+export const getFlavor = (w: WorkloadDTO): string =>
+  w?.workspace?.flavor ?? w?.training?.flavor ?? '';
+
+export const isTerminalStatus = (status?: string): boolean =>
+  status === 'SUCCEEDED' || status === 'FAILED';
+
+type DisplayStatus = {
+  label: string;
+  color: 'ok' | 'warning' | 'error' | 'progress';
+};
+
+export const mapDisplayStatus = (raw?: string): DisplayStatus => {
+  switch (raw) {
+    case 'RUNNING':
+      return { label: 'Running', color: 'progress' };
+    case 'SUCCEEDED':
+      return { label: 'Succeeded', color: 'ok' };
+    case 'FAILED':
+      return { label: 'Failed', color: 'error' };
+    case 'QUEUED_BY_KUEUE':
+      return { label: 'Queued by Kueue', color: 'warning' };
+    case 'SUBMITTED':
+      return { label: 'Submitted', color: 'warning' };
+    case 'PLACED':
+    default:
+      return { label: 'Queued', color: 'warning' };
+  }
+};
+
+export type KubernetesLocation = {
+  namespace: string;
+  kind: string;
+  name: string;
+};
+
+export const parseKubernetesUrl = (
+  url?: string,
+): KubernetesLocation | undefined => {
+  if (!url || !url.startsWith('k8s://')) {
+    return undefined;
+  }
+  // Format: k8s://namespace/kind/name (kind usually job)
+  const parts = url.replace('k8s://', '').split('/');
+  if (parts.length < 3) {
+    return undefined;
+  }
+  const [namespace, kind, ...rest] = parts;
+  return { namespace, kind, name: rest.join('/') };
+};
+
+export const buildKubectlDescribeCommand = (
+  loc?: KubernetesLocation,
+): string => {
+  if (!loc) {
+    return '';
+  }
+  return `kubectl -n ${loc.namespace} describe ${loc.kind} ${loc.name}`;
+};
+
+
+=== /Users/carlossanchez/code/aegis-ui/plugins/aegis/src/api/keycloakAuthApiRef.ts ===
+import { createApiRef } from '@backstage/core-plugin-api';
+
+import type { AccessTokenClient } from './aegisClient';
+
+export const keycloakAuthApiRef = createApiRef<AccessTokenClient>({
+  id: 'internal.auth.keycloak',
+  description: 'OIDC access token API for Keycloak-backed sessions',
+});
+
+
+=== /Users/carlossanchez/code/aegis-ui/plugins/aegis/src/components/LaunchWorkspacePage.tsx ===
+import {
+  ChangeEvent,
+  ComponentType,
+  FC,
+  FormEvent,
+  useMemo,
+  useState,
+} from 'react';
+import { Page, Content, ContentHeader, Progress, WarningPanel } from '@backstage/core-components';
+import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+  useRouteRef,
+} from '@backstage/core-plugin-api';
+import { useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Button,
+  Card,
+  CardActionArea,
+  CardContent,
+  Chip,
+  Collapse,
+  Divider,
+  FormControlLabel,
+  Grid,
+  Paper,
+  Step,
+  StepLabel,
+  Stepper,
+  Switch,
+  TextField,
+  Typography,
+} from '@material-ui/core';
+import { makeStyles } from '@material-ui/core/styles';
+import { alpha } from '@material-ui/core/styles/colorManipulator';
+import { StepIconProps } from '@material-ui/core/StepIcon';
+import CheckRoundedIcon from '@material-ui/icons/CheckRounded';
+import CodeIcon from '@material-ui/icons/Code';
+import DescriptionIcon from '@material-ui/icons/Description';
+import DeveloperModeIcon from '@material-ui/icons/DeveloperMode';
+import StorageIcon from '@material-ui/icons/Storage';
+import MemoryIcon from '@material-ui/icons/Memory';
+import TimelineIcon from '@material-ui/icons/Timeline';
+import {
+  SubmitWorkspaceRequest,
+  submitWorkspace,
+  createCluster,
+  getClusterStatus,
+} from '../api/aegisClient';
+import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
+import { workloadsRouteRef } from '../routes';
+import { keycloakAuthApiRef } from '../api/keycloakAuthApiRef';
+
+import type { Theme } from '@material-ui/core/styles/createMuiTheme';
+
+type WorkspaceTypeId = 'vscode' | 'jupyter' | 'cli';
+
+type WorkspaceTypeOption = {
+  id: WorkspaceTypeId;
+  title: string;
+  description: string;
+};
+
+type TemplateOption = {
+  id: string;
+  title: string;
+  description: string;
+  workspaceTypes: WorkspaceTypeId[];
+  defaults: {
+    flavor?: string;
+    image?: string;
+    queue?: string;
+    ports?: number[];
+    env?: Record<string, string>;
+  };
+  autoShowAdvanced?: boolean;
+};
+
+type FlavorOption = {
+  id: string;
+  title: string;
+  description: string;
+  flavor: string;
+  resources: string;
+};
+
+// TODO: Replace static catalogs with workspace profiles served by the ÆGIS control plane API.
+const workspaceTypeCatalog: WorkspaceTypeOption[] = [
+  {
+    id: 'vscode',
+    title: 'VS Code',
+    description: 'Full-featured IDE with terminal and debugging support.',
+  },
+  {
+    id: 'jupyter',
+    title: 'JupyterLab',
+    description: 'Notebook-centric environment for data exploration.',
+  },
+  {
+    id: 'cli',
+    title: 'CLI Workspace',
+    description: 'Lightweight shell session for quick administration tasks.',
+  },
+];
+
+const templateCatalog: TemplateOption[] = [
+  {
+    id: 'vscode-python',
+    title: 'Python Starter',
+    description: 'VS Code image tuned for Python, linting, and testing.',
+    workspaceTypes: ['vscode'],
+    defaults: {
+      flavor: 'cpu-medium',
+      image: 'carlosmsanchez/aegis-workspace-vscode:latest',
+      ports: [22, 11111],
+    },
+  },
+  {
+    id: 'vscode-data',
+    title: 'Data Engineering',
+    description: 'VS Code with dbt, SQL utilities, and data connectors.',
+    workspaceTypes: ['vscode'],
+    defaults: {
+      flavor: 'cpu-large',
+      image: 'ghcr.io/aegis/workspace-vscode-data:latest',
+      ports: [22, 11111],
+    },
+  },
+  {
+    id: 'jupyter-pytorch',
+    title: 'PyTorch GPU',
+    description: 'JupyterLab with CUDA, PyTorch, and ML tooling pre-installed.',
+    workspaceTypes: ['jupyter'],
+    defaults: {
+      flavor: 'gpu-standard',
+      image: 'ghcr.io/aegis/workspace-jupyter-pytorch:latest',
+      queue: 'gpu',
+      ports: [22, 8888],
+      env: {
+        NOTEBOOK_TOKEN: 'aegis',
+      },
+    },
+  },
+  {
+    id: 'jupyter-rapids',
+    title: 'RAPIDS Accelerator',
+    description: 'GPU-accelerated RAPIDS stack for large-scale analytics.',
+    workspaceTypes: ['jupyter'],
+    defaults: {
+      flavor: 'gpu-large',
+      image: 'ghcr.io/aegis/workspace-jupyter-rapids:latest',
+      queue: 'gpu',
+      ports: [22, 8888],
+    },
+  },
+  {
+    id: 'cli-ops',
+    title: 'Operations Shell',
+    description: 'Lean container with kubectl, helm, and cloud CLIs.',
+    workspaceTypes: ['cli'],
+    defaults: {
+      flavor: 'cpu-small',
+      image: 'ghcr.io/aegis/workspace-cli:latest',
+      ports: [22],
+    },
+  },
+  {
+    id: 'custom',
+    title: 'Custom Image',
+    description: 'Bring your own container image and connection settings.',
+    workspaceTypes: ['vscode', 'jupyter', 'cli'],
+    defaults: {
+      ports: [22],
+    },
+    autoShowAdvanced: true,
+  },
+];
+
+const flavorCatalog: FlavorOption[] = [
+  {
+    id: 'cpu-small',
+    title: 'Small',
+    description: '2 vCPU, 4 GiB RAM — great for quick CLI sessions.',
+    flavor: 'cpu-small',
+    resources: '2 vCPU • 4 GiB RAM',
+  },
+  {
+    id: 'cpu-medium',
+    title: 'Medium',
+    description: '4 vCPU, 16 GiB RAM — balanced choice for most notebooks.',
+    flavor: 'cpu-medium',
+    resources: '4 vCPU • 16 GiB RAM',
+  },
+  {
+    id: 'cpu-large',
+    title: 'Large',
+    description: '8 vCPU, 32 GiB RAM — heavier IDE workloads and data prep.',
+    flavor: 'cpu-large',
+    resources: '8 vCPU • 32 GiB RAM',
+  },
+  {
+    id: 'gpu-standard',
+    title: 'GPU Standard',
+    description: '1× NVIDIA T4, 4 vCPU, 32 GiB RAM — training and inference.',
+    flavor: 'gpu-standard',
+    resources: '1× T4 • 4 vCPU • 32 GiB RAM',
+  },
+  {
+    id: 'gpu-large',
+    title: 'GPU Large',
+    description: '1× NVIDIA A10, 8 vCPU, 64 GiB RAM — larger GPU workloads.',
+    flavor: 'gpu-large',
+    resources: '1× A10 • 8 vCPU • 64 GiB RAM',
+  },
+];
+
+const steps = ['Workspace basics', 'Cluster', 'Resources & options', 'Review & launch'];
+
+const workspaceTypeIcons: Record<WorkspaceTypeId, ComponentType<any>> = {
+  vscode: CodeIcon,
+  jupyter: DescriptionIcon,
+  cli: DeveloperModeIcon,
+};
+
+const useStyles = makeStyles((theme: Theme) => {
+  const isDark = theme.palette.type === 'dark';
+  const borderColor = 'var(--aegis-card-border)';
+  const surface = 'var(--aegis-card-surface)';
+  const accent = theme.palette.primary.main;
+  const selectedShadow = isDark
+    ? '0 16px 48px rgba(139, 92, 246, 0.32)'
+    : '0 24px 60px rgba(109, 40, 217, 0.25)';
+
+  return {
+    content: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(4),
+    },
+    wizardShell: {
+      backgroundColor: surface,
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      boxShadow: 'var(--aegis-card-shadow)',
+      padding: theme.spacing(4),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(3),
+    },
+    hero: {
+      color: theme.palette.text.secondary,
+      maxWidth: 560,
+      marginTop: theme.spacing(1),
+    },
+    stepper: {
+      background: 'transparent',
+      padding: theme.spacing(0, 1),
+    },
+    stepLabel: {
+      color: theme.palette.text.secondary,
+      textTransform: 'uppercase',
+      fontSize: '0.75rem',
+      letterSpacing: '0.08em',
+    },
+    selectionGrid: {
+      marginTop: theme.spacing(1),
+    },
+    selectionCard: {
+      height: '100%',
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      backgroundColor: surface,
+      transition:
+        'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease',
+    },
+    selectionCardAction: {
+      height: '100%',
+      display: 'flex',
+      alignItems: 'stretch',
+    },
+    selectionCardContent: {
+      padding: theme.spacing(3),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+      alignItems: 'flex-start',
+    },
+    selectionCardSelected: {
+      borderColor: accent,
+      backgroundColor: alpha(accent, isDark ? 0.16 : 0.1),
+      boxShadow: selectedShadow,
+      transform: 'translateY(-2px)',
+    },
+    selectionCardIcon: {
+      width: 38,
+      height: 38,
+      color: accent,
+    },
+    selectionMeta: {
+      color: theme.palette.text.secondary,
+      fontSize: '0.9rem',
+    },
+    chipRow: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1),
+    },
+    chip: {
+      backgroundColor: alpha(accent, isDark ? 0.16 : 0.12),
+      color: accent,
+      fontWeight: 600,
+      letterSpacing: '0.03em',
+      textTransform: 'uppercase',
+    },
+    formSection: {
+      backgroundColor: isDark ? alpha('#111827', 0.7) : '#FFFFFF',
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(2),
+      padding: theme.spacing(3),
+    },
+    sectionDivider: {
+      backgroundColor: 'var(--aegis-muted)',
+      margin: theme.spacing(3, 0),
+    },
+    toggleControl: {
+      marginTop: theme.spacing(1),
+      display: 'flex',
+      alignItems: 'center',
+    },
+    advancedSurface: {
+      backgroundColor: isDark ? alpha('#0F172A', 0.65) : '#F8F8F6',
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      padding: theme.spacing(3),
+      marginTop: theme.spacing(2),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(2),
+    },
+    reviewPaper: {
+      backgroundColor: surface,
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      padding: theme.spacing(3),
+    },
+    reviewRow: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(0.5),
+    },
+    reviewLabel: {
+      color: theme.palette.text.secondary,
+      fontSize: '0.8rem',
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+    },
+    reviewValue: {
+      fontWeight: 600,
+      wordBreak: 'break-word',
+    },
+    actionRow: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: theme.spacing(2),
+      marginTop: theme.spacing(4),
+    },
+    stepIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: '50%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: alpha(theme.palette.text.secondary, 0.16),
+      color: theme.palette.text.secondary,
+      fontWeight: 600,
+      transition: 'all 150ms ease',
+    },
+    stepIconActive: {
+      background: theme.palette.primary.main,
+      color: theme.palette.type === 'dark' ? '#050505' : '#F9FAFB',
+      boxShadow: `0 0 0 6px ${alpha(theme.palette.primary.main, 0.22)}`,
+    },
+    stepIconCompleted: {
+      backgroundColor: alpha(theme.palette.primary.main, 0.18),
+      color: theme.palette.primary.main,
+    },
+  };
+});
+
+const StepIconComponent = (props: StepIconProps) => {
+  const { active, completed, icon } = props;
+  const classes = useStyles();
+
+  return (
+    <div
+      className={`${classes.stepIcon} ${active ? classes.stepIconActive : ''} ${
+        completed ? classes.stepIconCompleted : ''
+      }`}
+    >
+      {completed ? <CheckRoundedIcon fontSize="small" /> : icon}
+    </div>
+  );
+};
+
+const randomId = () => {
+  if (typeof crypto?.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `workspace-${Math.random().toString(16).slice(2, 10)}`;
+};
+
+const templateEnvToText = (env?: Record<string, string>): string => {
+  if (!env) {
+    return '';
+  }
+  return Object.entries(env)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+};
+
+const portsToText = (ports?: number[]): string => {
+  if (!ports || ports.length === 0) {
+    return '';
+  }
+  return ports.join(', ');
+};
+
+const getFlavorIcon = (flavorId: string) =>
+  flavorId.startsWith('gpu') ? MemoryIcon : StorageIcon;
+
+export const LaunchWorkspacePage: FC = () => {
+  const classes = useStyles();
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const keycloakAuthApi = useApi(keycloakAuthApiRef);
+  const alertApi = useApi(alertApiRef);
+  const workloadsLink = useRouteRef(workloadsRouteRef);
+  const navigate = useNavigate();
+
+  const [activeStep, setActiveStep] = useState(0);
+  const [workspaceTypeId, setWorkspaceTypeId] =
+    useState<WorkspaceTypeId | null>(null);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [forceAdvancedOpen, setForceAdvancedOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [form, setForm] = useState({
+    workloadId: randomId(),
+    projectId: '',
+    queue: '',
+    flavor: '',
+    image: '',
+    ports: '22',
+    env: '',
+    clusterName: '',
+  });
+  const [clusterJobId, setClusterJobId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [clusterCreationInProgress, setClusterCreationInProgress] = useState(false);
+  const [clusterCreationStatus, setClusterCreationStatus] = useState<string | null>(null);
+  const [clusterCreationProgress, setClusterCreationProgress] = useState(0);
+  
+  const templatesForType = useMemo(() => {
+    if (!workspaceTypeId) {
+      return templateCatalog;
+    }
+    return templateCatalog.filter(template =>
+      template.workspaceTypes.includes(workspaceTypeId),
+    );
+  }, [workspaceTypeId]);
+
+  const selectedTemplate = useMemo(
+    () => templateCatalog.find(template => template.id === templateId) ?? null,
+    [templateId],
+  );
+
+  const selectedWorkspaceType = useMemo(
+    () =>
+      workspaceTypeCatalog.find(option => option.id === workspaceTypeId) ??
+      null,
+    [workspaceTypeId],
+  );
+
+  const handleFormFieldChange =
+    (field: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) => {
+      setForm(prev => ({ ...prev, [field]: event.target.value }));
+    };
+
+  const applyTemplate = (template: TemplateOption) => {
+    setTemplateId(template.id);
+    setForceAdvancedOpen(Boolean(template.autoShowAdvanced));
+    setAdvancedOpen(prev => prev || Boolean(template.autoShowAdvanced));
+
+    setForm(prev => ({
+      ...prev,
+      flavor: template.defaults.flavor ?? prev.flavor,
+      image:
+        template.defaults.image !== undefined
+          ? template.defaults.image
+          : prev.image,
+      queue:
+        template.defaults.queue !== undefined
+          ? template.defaults.queue
+          : prev.queue,
+      ports:
+        template.defaults.ports !== undefined
+          ? portsToText(template.defaults.ports)
+          : prev.ports,
+      env:
+        template.defaults.env !== undefined
+          ? templateEnvToText(template.defaults.env)
+          : prev.env,
+    }));
+  };
+
+  const handleWorkspaceTypeSelect = (option: WorkspaceTypeOption) => {
+    const nextTypeId = option.id;
+    setWorkspaceTypeId(nextTypeId);
+    const matchingTemplates = templateCatalog.filter(template =>
+      template.workspaceTypes.includes(nextTypeId),
+    );
+    if (matchingTemplates.length > 0) {
+      applyTemplate(matchingTemplates[0]);
+    } else {
+      setTemplateId(null);
+    }
+  };
+
+  const handleTemplateSelect = (template: TemplateOption) => {
+    applyTemplate(template);
+  };
+
+  const handleFlavorSelect = (flavor: FlavorOption) => {
+    setForm(prev => ({ ...prev, flavor: flavor.flavor }));
+  };
+
+  const handleAdvancedToggle = (event: ChangeEvent<HTMLInputElement>) => {
+    if (forceAdvancedOpen) {
+      return;
+    }
+    setAdvancedOpen(event.target.checked);
+  };
+
+  const goNextStep = () => {
+    setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
+  };
+
+  const goPreviousStep = () => {
+    setActiveStep(prev => Math.max(prev - 1, 0));
+  };
+
+  const canProceedFromBasics =
+    Boolean(workspaceTypeId) &&
+    Boolean(templateId) &&
+    Boolean(form.projectId.trim()) &&
+    Boolean(form.workloadId.trim());
+
+  const canProceedFromResources =
+    Boolean(form.flavor.trim()) && Boolean(form.image.trim());
+
+  const isSubmitDisabled =
+    submitting ||
+    !form.projectId.trim() ||
+    !form.flavor.trim() ||
+    !form.image.trim() ||
+    !form.workloadId.trim();
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (isSubmitDisabled) {
+      return;
+    }
+
+    if (form.clusterName.trim() && !clusterJobId) {
+      try {
+        setSubmitting(true);
+        setError(null);
+        setClusterCreationInProgress(true);
+        const { jobId } = await createCluster(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          form.clusterName.trim(),
+          keycloakAuthApi,
+        );
+        setClusterJobId(jobId);
+
+        const poll = setInterval(async () => {
+          try {
+            const { status, message, progress } = await getClusterStatus(
+              fetchApi,
+              discoveryApi,
+              identityApi,
+              jobId,
+              keycloakAuthApi,
+            );
+            setClusterCreationStatus(message);
+            setClusterCreationProgress(progress);
+            if (status === 'COMPLETED') {
+              clearInterval(poll);
+              setClusterCreationInProgress(false);
+              setSubmitting(false);
+            } else if (status === 'FAILED') {
+              clearInterval(poll);
+              setClusterCreationInProgress(false);
+              setSubmitting(false);
+              setError('Cluster creation failed');
+              alertApi.post({
+                message: `Failed to create cluster: ${message}`,
+                severity: 'error',
+              });
+            }
+          } catch (e: any) {
+            clearInterval(poll);
+            setClusterCreationInProgress(false);
+            setSubmitting(false);
+            const msg = e?.message ?? String(e);
+            setError(msg);
+            alertApi.post({
+              message: `Failed to get cluster status: ${msg}`,
+              severity: 'error',
+            });
+          }
+        }, 5000);
+      } catch (e: any) {
+        setSubmitting(false);
+        const msg = e?.message ?? String(e);
+        setError(msg);
+        alertApi.post({
+          message: `Failed to create cluster: ${msg}`,
+          severity: 'error',
+        });
+      }
+    } else {
+      const ports = parsePortsInput(form.ports);
+      const env = parseEnvInput(form.env);
+
+      const payload: SubmitWorkspaceRequest = {
+        id: form.workloadId.trim(),
+        projectId: form.projectId.trim(),
+        queue: form.queue.trim() || undefined,
+        workspace: {
+          flavor: form.flavor.trim() || undefined,
+          image: form.image.trim() || undefined,
+          interactive: true,
+          ports: ports.length > 0 ? ports : undefined,
+          env: Object.keys(env).length > 0 ? env : undefined,
+        },
+      };
+
+      try {
+        setSubmitting(true);
+        setError(null);
+        await submitWorkspace(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          payload,
+          keycloakAuthApi,
+        );
+        alertApi.post({
+          message: `Submitted interactive workspace ${payload.id}`,
+          severity: 'success',
+        });
+        if (workloadsLink) {
+          navigate(workloadsLink());
+        }
+      } catch (e: any) {
+        const msg = e?.message ?? String(e);
+        setError(msg);
+        alertApi.post({
+          message: `Failed to submit workspace: ${msg}`,
+          severity: 'error',
+        });
+      } finally {
+        setSubmitting(false);
+      }
+    }
+  };
+
+  const renderWorkspaceTypeCards = () => (
+    <Grid container spacing={2} className={classes.selectionGrid}>
+      {workspaceTypeCatalog.map(option => {
+        const selected = option.id === workspaceTypeId;
+        const TypeIcon = workspaceTypeIcons[option.id];
+        return (
+          <Grid item xs={12} sm={6} key={option.id}>
+            <Card
+              elevation={0}
+              className={`${classes.selectionCard} ${
+                selected ? classes.selectionCardSelected : ''
+              }`}
+            >
+              <CardActionArea
+                className={classes.selectionCardAction}
+                onClick={() => handleWorkspaceTypeSelect(option)}
+              >
+                <CardContent className={classes.selectionCardContent}>
+                  <TypeIcon className={classes.selectionCardIcon} />
+                  <Typography variant="h6">{option.title}</Typography>
+                  <Typography className={classes.selectionMeta}>
+                    {option.description}
+                  </Typography>
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          </Grid>
+        );
+      })}
+    </Grid>
+  );
+
+  const renderTemplateCards = () => (
+    <Grid container spacing={2} className={classes.selectionGrid}>
+      {templatesForType.length === 0 ? (
+        <Grid item xs={12}>
+          <Typography className={classes.selectionMeta}>
+            No templates available for the selected workspace type.
+          </Typography>
+        </Grid>
+      ) : (
+        templatesForType.map(template => {
+          const selected = template.id === templateId;
+          return (
+            <Grid item xs={12} md={6} key={template.id}>
+              <Card
+                elevation={0}
+                className={`${classes.selectionCard} ${
+                  selected ? classes.selectionCardSelected : ''
+                }`}
+              >
+                <CardActionArea
+                  className={classes.selectionCardAction}
+                  onClick={() => handleTemplateSelect(template)}
+                >
+                  <CardContent className={classes.selectionCardContent}>
+                    <Typography variant="h6">{template.title}</Typography>
+                    <Typography className={classes.selectionMeta}>
+                      {template.description}
+                    </Typography>
+                    <div className={classes.chipRow}>
+                      {template.workspaceTypes.map(type => (
+                        <Chip
+                          size="small"
+                          key={`${template.id}-${type}`}
+                          label={type.toUpperCase()}
+                          className={classes.chip}
+                        />
+                      ))}
+                    </div>
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            </Grid>
+          );
+        })
+      )}
+    </Grid>
+  );
+
+  const renderFlavorCards = () => (
+    <Grid container spacing={2} className={classes.selectionGrid}>
+      {flavorCatalog.map(option => {
+        const selected = option.flavor === form.flavor;
+        const FlavorIcon = getFlavorIcon(option.id);
+        return (
+          <Grid item xs={12} sm={6} key={option.id}>
+            <Card
+              elevation={0}
+              className={`${classes.selectionCard} ${
+                selected ? classes.selectionCardSelected : ''
+              }`}
+            >
+              <CardActionArea
+                className={classes.selectionCardAction}
+                onClick={() => handleFlavorSelect(option)}
+              >
+                <CardContent className={classes.selectionCardContent}>
+                  <FlavorIcon className={classes.selectionCardIcon} />
+                  <Typography variant="h6">{option.title}</Typography>
+                  <Typography variant="subtitle2" color="textSecondary">
+                    {option.resources}
+                  </Typography>
+                  <Typography className={classes.selectionMeta}>
+                    {option.description}
+                  </Typography>
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          </Grid>
+        );
+      })}
+    </Grid>
+  );
+
+  return (
+    <Page themeId="tool">
+      <Content>
+        <ContentHeader title="Launch Interactive Workspace">
+          <Typography variant="body1" className={classes.hero}>
+            Compose DoD/IC-grade workspaces with the same minimal flow your
+            operators expect from modern tooling. Choose a template, tune
+            compute, then launch to ÆGIS clusters in a few decisive steps.
+          </Typography>
+        </ContentHeader>
+        <form onSubmit={handleSubmit} className={classes.content}>
+          <Paper elevation={0} className={classes.wizardShell}>
+            <Stepper activeStep={activeStep} alternativeLabel className={classes.stepper}>
+              {steps.map(step => (
+                <Step key={step}>
+                  <StepLabel StepIconComponent={StepIconComponent} classes={{ label: classes.stepLabel }}>
+                    {step}
+                  </StepLabel>
+                </Step>
+              ))}
+            </Stepper>
+
+            {activeStep === 0 && (
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={5}>
+                  <div className={classes.formSection}>
+                    <Typography variant="overline" color="textSecondary">
+                      Project context
+                    </Typography>
+                    <TextField
+                      label="Project ID"
+                      value={form.projectId}
+                      onChange={handleFormFieldChange('projectId')}
+                      variant="outlined"
+                      required
+                      fullWidth
+                      helperText="Owner project for access controls and billing"
+                    />
+                    <TextField
+                      label="Workspace ID"
+                      value={form.workloadId}
+                      onChange={handleFormFieldChange('workloadId')}
+                      variant="outlined"
+                      required
+                      fullWidth
+                      helperText="Identifier visible to mission operators"
+                    />
+                    <Divider className={classes.sectionDivider} />
+                    <Typography variant="overline" color="textSecondary">
+                      Workspace type
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      Select the interactive surface to pre-wire tooling and UX
+                      expectations.
+                    </Typography>
+                  </div>
+                </Grid>
+                <Grid item xs={12} md={7}>
+                  {renderWorkspaceTypeCards()}
+                  <Divider className={classes.sectionDivider} />
+                  <Typography variant="overline" color="textSecondary">
+                    Template presets
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Start from a mission-ready template or bring your own
+                    container profile.
+                  </Typography>
+                  {renderTemplateCards()}
+                </Grid>
+              </Grid>
+            )}
+
+            {activeStep === 1 && (
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <div className={classes.formSection}>
+                    <Typography variant="overline" color="textSecondary">
+                      Cluster
+                    </Typography>
+                    <TextField
+                      label="Cluster Name"
+                      value={form.clusterName}
+                      onChange={handleFormFieldChange('clusterName')}
+                      variant="outlined"
+                      fullWidth
+                      helperText="Name of the cluster to create or use"
+                      disabled={clusterCreationInProgress || !!clusterJobId}
+                    />
+                    {clusterCreationInProgress && (
+                      <Box sx={{ width: '100%', mt: 2 }}>
+                        <Progress value={clusterCreationProgress} />
+                        <Typography variant="body2" color="textSecondary">
+                          {clusterCreationStatus}
+                        </Typography>
+                      </Box>
+                    )}
+                  </div>
+                </Grid>
+              </Grid>
+            )}
+
+            {activeStep === 2 && (
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={7}>
+                  <Typography variant="overline" color="textSecondary">
+                    Compute flavors
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Match GPU, CPU, and memory to mission objectives. ÆGIS
+                    enforces guardrails based on queue policy.
+                  </Typography>
+                  {renderFlavorCards()}
+                </Grid>
+                <Grid item xs={12} md={5}>
+                  <div className={classes.formSection}>
+                    <Typography variant="overline" color="textSecondary">
+                      Runtime configuration
+                    </Typography>
+                    <TextField
+                      label="Container image"
+                      value={form.image}
+                      onChange={handleFormFieldChange('image')}
+                      variant="outlined"
+                      required
+                      fullWidth
+                      helperText="OCI image with your workspace runtime"
+                    />
+                    <TextField
+                      label="Queue (optional)"
+                      value={form.queue}
+                      onChange={handleFormFieldChange('queue')}
+                      variant="outlined"
+                      fullWidth
+                      helperText="Override default queue for launch scheduling"
+                    />
+                    <FormControlLabel
+                      className={classes.toggleControl}
+                      control={
+                        <Switch
+                          color="primary"
+                          checked={advancedOpen || forceAdvancedOpen}
+                          onChange={handleAdvancedToggle}
+                          disabled={forceAdvancedOpen}
+                        />
+                      }
+                      label="Show advanced parameters"
+                    />
+                    <Collapse in={advancedOpen || forceAdvancedOpen}>
+                      <div className={classes.advancedSurface}>
+                        <TextField
+                          label="Expose ports"
+                          value={form.ports}
+                          onChange={handleFormFieldChange('ports')}
+                          variant="outlined"
+                          fullWidth
+                          helperText="Comma-separated port list (e.g. 22, 11111)"
+                        />
+                        <TextField
+                          label="Environment variables"
+                          value={form.env}
+                          onChange={handleFormFieldChange('env')}
+                          variant="outlined"
+                          fullWidth
+                          multiline
+                          rows={4}
+                          helperText="KEY=VALUE pairs, one per line"
+                        />
+                      </div>
+                    </Collapse>
+                  </div>
+                </Grid>
+              </Grid>
+            )}
+
+            {activeStep === 3 && (
+              <Paper elevation={0} className={classes.reviewPaper}>
+                <Typography variant="overline" color="textSecondary">
+                  Launch summary
+                </Typography>
+                <Grid container spacing={3} className={classes.selectionGrid}>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Project</span>
+                      <span className={classes.reviewValue}>
+                        {form.projectId || '—'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Workspace ID</span>
+                      <span className={classes.reviewValue}>
+                        {form.workloadId || '—'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Workspace type</span>
+                      <span className={classes.reviewValue}>
+                        {selectedWorkspaceType?.title ?? '—'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Template</span>
+                      <span className={classes.reviewValue}>
+                        {selectedTemplate?.title ?? '—'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Cluster</span>
+                      <span className={classes.reviewValue}>
+                        {form.clusterName || 'Default'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Flavor</span>
+                      <span className={classes.reviewValue}>
+                        {form.flavor || '—'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Queue</span>
+                      <span className={classes.reviewValue}>
+                        {form.queue || 'Default'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Container image</span>
+                      <span className={classes.reviewValue}>{form.image || '—'}</span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Ports</span>
+                      <span className={classes.reviewValue}>
+                        {form.ports || 'Default (22, 11111)'}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Environment variables</span>
+                      <span className={classes.reviewValue}>
+                        {form.env || 'Inherited defaults'}
+                      </span>
+                    </div>
+                  </Grid>
+                </Grid>
+              </Paper>
+            )}
+
+            <div className={classes.actionRow}>
+              <Box display="flex" style={{ gap: 16 }}>
+                                  <Button
+                                    type="button"
+                                    variant="outlined"
+                                    disabled={activeStep === 0 || submitting || clusterCreationInProgress}
+                                    onClick={goPreviousStep}
+                                  >
+                                    Back
+                                  </Button>
+                                {activeStep < steps.length - 1 && (
+                                  <Button
+                                    type="button"
+                                    color="primary"
+                                    variant="contained"
+                                    disabled={submitting || clusterCreationInProgress || (activeStep === 0 && !canProceedFromBasics) || (activeStep === 1 && !form.clusterName.trim()) || (activeStep === 2 && !canProceedFromResources)}
+                                    onClick={goNextStep}
+                                  >
+                                    Next
+                                  </Button>
+                                )}
+              </Box>
+              {activeStep === steps.length - 1 && (
+                <Box
+                  display="flex"
+                  alignItems="center"
+                  style={{ gap: 16 }}
+                >
+                  <Button
+                    type="submit"
+                    color="primary"
+                    variant="contained"
+                    disabled={isSubmitDisabled}
+                    startIcon={<TimelineIcon />}
+                  >
+                    Launch workspace
+                  </Button>
+                  {submitting && <Progress />}
+                </Box>
+              )}
+            </div>
+          </Paper>
+        </form>
+
+        {error && (
+          <Box marginTop={3}>
+            <WarningPanel severity="error" title="Workspace submission failed">
+              {error}
+            </WarningPanel>
+          </Box>
+        )}
+      </Content>
+    </Page>
+  );
+};
+
+
+=== /Users/carlossanchez/code/aegis-ui/plugins/aegis/src/components/SubmitWorkloadPage.tsx ===
+import {
+  ChangeEvent,
+  FC,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import {
+  Page,
+  Content,
+  ContentHeader,
+  Progress,
+  WarningPanel,
+  InfoCard,
+} from '@backstage/core-components';
+import {
+  useApi,
+  fetchApiRef,
+  alertApiRef,
+  discoveryApiRef,
+  identityApiRef,
+} from '@backstage/core-plugin-api';
+import {
+  Box,
+  Button,
+  Collapse,
+  Grid,
+  TextField,
+  Typography,
+} from '@material-ui/core';
+import { Link as RouterLink } from 'react-router-dom';
+import {
+  DEFAULT_SSH_PORT,
+  DEFAULT_VSCODE_PORT,
+  SubmitWorkspaceRequest,
+  WorkloadDTO,
+  getWorkload,
+  submitWorkspace,
+} from '../api/aegisClient';
+import { keycloakAuthApiRef } from '../api/keycloakAuthApiRef';
+import {
+  formatDefaultEnv,
+  parseEnvInput,
+  parsePortsInput,
+  validateEnvInput,
+  validatePortsInput,
+} from './workspaceFormUtils';
+
+const DEFAULT_ENV_TEXT = formatDefaultEnv();
+const DEFAULT_PORTS_TEXT = `${DEFAULT_SSH_PORT}, ${DEFAULT_VSCODE_PORT}`;
+
+type FormState = {
+  projectId: string;
+  queue: string;
+  flavor: string;
+  image: string;
+  command: string;
+  maxDurationSeconds: string;
+  ports: string;
+  env: string;
+};
+
+export const SubmitWorkloadPage: FC = () => {
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const alertApi = useApi(alertApiRef);
+  const keycloakAuthApi = useApi(keycloakAuthApiRef);
+
+  const [form, setForm] = useState<FormState>({
+    projectId: 'p-demo',
+    queue: 'default',
+    flavor: 'a10-mig-1g',
+    image: 'alpine:3.19',
+    command: 'echo Hello from Aegis; sleep 2',
+    maxDurationSeconds: '600',
+    ports: DEFAULT_PORTS_TEXT,
+    env: DEFAULT_ENV_TEXT,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<WorkloadDTO | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [portsError, setPortsError] = useState<string | null>(null);
+  const [envError, setEnvError] = useState<string | null>(null);
+  const [durationError, setDurationError] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const isSubmitDisabled = useMemo(
+    () =>
+      submitting ||
+      !form.projectId.trim() ||
+      !form.flavor.trim() ||
+      !form.image.trim() ||
+      Boolean(portsError) ||
+      Boolean(envError) ||
+      Boolean(durationError),
+    [
+      submitting,
+      form.projectId,
+      form.flavor,
+      form.image,
+      portsError,
+      envError,
+      durationError,
+    ],
+  );
+
+  const handleFieldChange =
+    (field: keyof FormState) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setForm(prev => ({ ...prev, [field]: value }));
+    };
+
+  const handlePortsChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const value = event.target.value;
+    setForm(prev => ({ ...prev, ports: value }));
+    setPortsError(validatePortsInput(value));
+  };
+
+  const handleEnvChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const value = event.target.value;
+    setForm(prev => ({ ...prev, env: value }));
+    setEnvError(validateEnvInput(value));
+  };
+
+  const handleDurationChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const value = event.target.value;
+    setForm(prev => ({ ...prev, maxDurationSeconds: value }));
+    if (!value.trim()) {
+      setDurationError(null);
+      return;
+    }
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      setDurationError('Duration must be a positive number');
+    } else {
+      setDurationError(null);
+    }
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const currentPortsError = validatePortsInput(form.ports);
+    const currentEnvError = validateEnvInput(form.env);
+
+    const trimmedDuration = form.maxDurationSeconds.trim();
+    let parsedDuration: number | undefined;
+    let currentDurationError: string | null = null;
+    if (trimmedDuration) {
+      const parsed = Number.parseInt(trimmedDuration, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        currentDurationError = 'Duration must be a positive number';
+      } else {
+        parsedDuration = parsed;
+      }
+    }
+
+    setPortsError(currentPortsError);
+    setEnvError(currentEnvError);
+    setDurationError(currentDurationError);
+
+    if (currentPortsError || currentEnvError || currentDurationError) {
+      return;
+    }
+
+    const envOverrides = parseEnvInput(form.env);
+    const ports = parsePortsInput(form.ports);
+    const commandText = form.command.trim();
+
+    const payload: SubmitWorkspaceRequest = {
+      projectId: form.projectId.trim(),
+      queue: form.queue.trim() || undefined,
+      workspace: {
+        flavor: form.flavor.trim(),
+        image: form.image.trim(),
+        command: commandText,
+        ports,
+        env: Object.keys(envOverrides).length > 0 ? envOverrides : undefined,
+        maxDurationSeconds: parsedDuration,
+      },
+    };
+
+    try {
+      setSubmitting(true);
+      setError(null);
+      setResult(null);
+      const created = await submitWorkspace(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        payload,
+        keycloakAuthApi,
+      );
+      setResult(created);
+      alertApi.post({
+        message: `Interactive workspace submitted: ${created.id ?? '(no id)'}`,
+        severity: 'success',
+      });
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      setError(msg);
+      alertApi.post({ message: `Submit failed: ${msg}`, severity: 'error' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    const terminalStatuses = new Set(['SUCCEEDED', 'FAILED']);
+    if (!result?.id || terminalStatuses.has(result.status ?? '')) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const fresh = await getWorkload(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          result.id!,
+          keycloakAuthApi,
+        );
+        if (cancelled) {
+          return;
+        }
+        setResult(prev => {
+          if (!prev) {
+            return fresh;
+          }
+          if (
+            prev.status === fresh.status &&
+            prev.clusterId === fresh.clusterId &&
+            prev.url === fresh.url &&
+            prev.message === fresh.message
+          ) {
+            return prev;
+          }
+          return fresh;
+        });
+      } catch {
+        /* ignore polling errors */
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [
+    result?.id,
+    result?.status,
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    keycloakAuthApi,
+  ]);
+
+  return (
+    <Page themeId="tool">
+      <Content>
+        <ContentHeader title="Launch Workspace">
+          <Typography variant="body1" color="textSecondary">
+            Create an interactive workspace that supports connection sessions.
+          </Typography>
+        </ContentHeader>
+        <ContentHeader title="Workspace Form" />
+
+        <Box marginBottom={2}>
+          <Typography variant="body2" color="textSecondary">
+            Defaults target the local demo environment. Update project, queue,
+            and flavor to match real resources before launch.
+          </Typography>
+        </Box>
+
+        <form onSubmit={handleSubmit} noValidate>
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Project ID"
+                value={form.projectId}
+                onChange={handleFieldChange('projectId')}
+                required
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Queue"
+                value={form.queue}
+                onChange={handleFieldChange('queue')}
+                helperText="Optional scheduling queue"
+              />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Flavor"
+                value={form.flavor}
+                onChange={handleFieldChange('flavor')}
+                required
+                helperText="GPU flavor or node profile"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Image"
+                value={form.image}
+                onChange={handleFieldChange('image')}
+                required
+                helperText="Container image that boots the workspace"
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label='Command (wrapped as ["sh","-c", ...])'
+                value={form.command}
+                onChange={handleFieldChange('command')}
+                helperText='Defaults to sh -c "echo hello" when left blank'
+              />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Max Duration Seconds"
+                type="number"
+                value={form.maxDurationSeconds}
+                onChange={handleDurationChange}
+                error={Boolean(durationError)}
+                helperText={
+                  durationError ??
+                  'Optional runtime budget; queue or server defaults apply when empty'
+                }
+              />
+            </Grid>
+          </Grid>
+
+          <Box marginTop={2}>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setAdvancedOpen(prev => !prev)}
+            >
+              {advancedOpen ? 'Hide advanced options' : 'Show advanced options'}
+            </Button>
+            <Collapse in={advancedOpen}>
+              <Box marginTop={2}>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Exposed ports"
+                      value={form.ports}
+                      onChange={handlePortsChange}
+                      error={Boolean(portsError)}
+                      helperText={
+                        portsError ??
+                        `Comma or space separated list. Defaults include SSH (${DEFAULT_SSH_PORT}) and VS Code (${DEFAULT_VSCODE_PORT}).`
+                      }
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Environment variables"
+                      value={form.env}
+                      onChange={handleEnvChange}
+                      error={Boolean(envError)}
+                      helperText={
+                        envError ??
+                        'Optional KEY=VALUE pairs, one per line. Keys such as AEGIS_SSH_USER, USER_NAME, and PASSWORD_ACCESS affect connection helpers.'
+                      }
+                      multiline
+                      minRows={4}
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
+            </Collapse>
+          </Box>
+
+          <Box marginTop={3} display="flex" alignItems="center" gridGap={16}>
+            <Button
+              type="submit"
+              color="primary"
+              variant="contained"
+              disabled={isSubmitDisabled}
+            >
+              Launch Workspace
+            </Button>
+            {submitting && <Progress />}
+          </Box>
+        </form>
+
+        {error && (
+          <Box marginTop={3}>
+            <WarningPanel title="Submission Error" severity="error">
+              <Typography
+                variant="body2"
+                component="pre"
+                style={{ whiteSpace: 'pre-wrap' }}
+              >
+                {error}
+              </Typography>
+            </WarningPanel>
+          </Box>
+        )}
+
+        {result && (
+          <Box marginTop={3}>
+            <InfoCard title="Workspace created">
+              <Box display="flex" flexDirection="column" gridGap={12}>
+                <Typography variant="body2">
+                  <strong>ID:</strong> {result.id ?? '—'}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Status:</strong> {result.status ?? '—'}
+                </Typography>
+                {result.clusterId && (
+                  <Typography variant="body2">
+                    <strong>Cluster:</strong> {result.clusterId}
+                  </Typography>
+                )}
+                <Typography variant="body2" color="textSecondary">
+                  The workspace must reach RUNNING before a connection session
+                  can mint successfully.
+                </Typography>
+                {result.id && (
+                  <Box>
+                    <Button
+                      component={RouterLink}
+                      to={`/aegis/workloads/${result.id}`}
+                      color="primary"
+                      variant="outlined"
+                      size="small"
+                    >
+                      View Details
+                    </Button>
+                  </Box>
+                )}
+              </Box>
+            </InfoCard>
+          </Box>
+        )}
+      </Content>
+    </Page>
+  );
+};
+
+
+=== /Users/carlossanchez/code/aegis-ui/plugins/aegis/src/components/WorkloadListPage.tsx ===
+import { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import {
+  Page,
+  Content,
+  ContentHeader,
+  Progress,
+  WarningPanel,
+  CopyTextButton,
+  StatusOK,
+  StatusWarning,
+  StatusError,
+  StatusPending,
+  Table,
+  TableColumn,
+} from '@backstage/core-components';
+import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+  useRouteRef,
+} from '@backstage/core-plugin-api';
+import {
+  Box,
+  Button,
+  Grid,
+  MenuItem,
+  Select,
+  SelectChangeEvent,
+  TextField,
+  Typography,
+} from '@material-ui/core';
+import RefreshIcon from '@material-ui/icons/Refresh';
+import {
+  WorkloadDTO,
+  getFlavor,
+  isTerminalStatus,
+  listWorkloads,
+  mapDisplayStatus,
+  parseKubernetesUrl,
+  buildKubectlDescribeCommand,
+} from '../api/aegisClient';
+import { createWorkspaceRouteRef } from '../routes';
+import { keycloakAuthApiRef } from '../api/keycloakAuthApiRef';
+
+const statusChip = (status: string) => {
+  const mapped = mapDisplayStatus(status);
+  switch (mapped.color) {
+    case 'ok':
+      return <StatusOK>{mapped.label}</StatusOK>;
+    case 'error':
+      return <StatusError>{mapped.label}</StatusError>;
+    case 'progress':
+      return <StatusPending>{mapped.label}</StatusPending>;
+    case 'warning':
+    default:
+      return <StatusWarning>{mapped.label}</StatusWarning>;
+  }
+};
+
+type WorkloadRow = WorkloadDTO & { displayStatus: string };
+
+type StatusFilter = 'all' | 'active' | 'terminal';
+
+export const WorkloadListPage: FC = () => {
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const alertApi = useApi(alertApiRef);
+  const keycloakAuthApi = useApi(keycloakAuthApiRef);
+  const navigate = useNavigate();
+  const createWorkspaceLink = useRouteRef(createWorkspaceRouteRef);
+  const createWorkspacePath = createWorkspaceLink();
+
+  const [projectId, setProjectId] = useState('p-demo');
+  const [rows, setRows] = useState<WorkloadRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [search, setSearch] = useState('');
+  const [shouldPoll, setShouldPoll] = useState(true);
+
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      try {
+        if (!silent) {
+          setLoading(true);
+        }
+        setError(null);
+        const items = await listWorkloads(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          projectId,
+          keycloakAuthApi,
+        );
+        const mapped: WorkloadRow[] = items.map(w => ({
+          ...w,
+          displayStatus: w.uiStatus ?? w.status ?? 'PLACED',
+        }));
+        setRows(mapped);
+        const anyActive = mapped.some(w => !isTerminalStatus(w.status));
+        setShouldPoll(anyActive);
+      } catch (e: any) {
+        const msg = e?.message ?? String(e);
+        setError(msg);
+        alertApi.post({
+          message: `Failed to load workloads: ${msg}`,
+          severity: 'error',
+        });
+      } finally {
+        if (!silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, projectId],
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!shouldPoll) {
+      return () => {};
+    }
+    const timer = setInterval(() => {
+      load({ silent: true });
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [shouldPoll, load]);
+
+  const handleProjectChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setProjectId(event.target.value);
+  };
+
+  const handleStatusFilter = (event: SelectChangeEvent<StatusFilter>) => {
+    setStatusFilter(event.target.value as StatusFilter);
+  };
+
+  const filteredRows = useMemo(() => {
+    return rows
+      .filter(row => {
+        if (!search) {
+          return true;
+        }
+        return row.id?.toLowerCase().includes(search.toLowerCase()) ?? false;
+      })
+      .filter(row => {
+        if (statusFilter === 'terminal') {
+          return isTerminalStatus(row.status);
+        }
+        if (statusFilter === 'active') {
+          return !isTerminalStatus(row.status);
+        }
+        return true;
+      });
+  }, [rows, search, statusFilter]);
+
+  const columns = useMemo<TableColumn<WorkloadRow>[]>(
+    () => [
+      {
+        title: 'Workload ID',
+        field: 'id',
+        render: row => (
+          <Box display="flex" alignItems="center" gridGap={8}>
+            {row.id ? (
+              <RouterLink
+                to={`/aegis/workloads/${row.id}`}
+                style={{ textDecoration: 'none' }}
+              >
+                <Typography variant="body2" color="primary">
+                  {row.id}
+                </Typography>
+              </RouterLink>
+            ) : (
+              <Typography variant="body2">—</Typography>
+            )}
+            {row.id ? <CopyTextButton text={row.id} /> : null}
+          </Box>
+        ),
+      },
+      {
+        title: 'Status',
+        field: 'displayStatus',
+        render: row => statusChip(row.displayStatus),
+      },
+      {
+        title: 'Flavor',
+        field: 'flavor',
+        render: row => (
+          <Typography variant="body2">{getFlavor(row)}</Typography>
+        ),
+      },
+      {
+        title: 'Project',
+        field: 'projectId',
+      },
+      {
+        title: 'Link',
+        field: 'url',
+        render: row => {
+          if (!row.url) {
+            return (
+              <Typography variant="body2" color="textSecondary">
+                N/A
+              </Typography>
+            );
+          }
+          const loc = parseKubernetesUrl(row.url);
+          const cmd = buildKubectlDescribeCommand(loc);
+          return (
+            <Box display="flex" alignItems="center" gridGap={8}>
+              <Typography variant="body2">{row.url}</Typography>
+              {cmd ? (
+                <CopyTextButton text={cmd} tooltip="Copy kubectl describe" />
+              ) : null}
+            </Box>
+          );
+        },
+      },
+      {
+        title: 'Actions',
+        field: 'actions',
+        sorting: false,
+        render: row => (
+          <Button
+            variant="outlined"
+            size="small"
+            component={RouterLink}
+            to={row.id ? `/aegis/workloads/${row.id}` : '#'}
+            disabled={!row.id}
+          >
+            Details
+          </Button>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const activeCount = rows.filter(r => !isTerminalStatus(r.status)).length;
+  const completedCount = rows.filter(r => isTerminalStatus(r.status)).length;
+
+  return (
+    <Page themeId="tool">
+      <Content>
+        <ContentHeader title="Workload Status">
+          <Typography variant="body1" color="textSecondary">
+            Monitor submitted workspaces and investigate their runtime posture.
+          </Typography>
+        </ContentHeader>
+        <ContentHeader title="Filters">
+          <Box display="flex" gridGap={8}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<RefreshIcon />}
+              onClick={() => load()}
+            >
+              Refresh
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              component={RouterLink}
+              to={createWorkspacePath}
+            >
+              Create New Workspace
+            </Button>
+          </Box>
+        </ContentHeader>
+
+        <Grid container spacing={2} alignItems="flex-end">
+          <Grid item xs={12} md={4}>
+            <TextField
+              label="Project ID"
+              fullWidth
+              value={projectId}
+              onChange={handleProjectChange}
+            />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <TextField
+              label="Search by Workload ID"
+              fullWidth
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+            />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <Select
+              fullWidth
+              value={statusFilter}
+              onChange={handleStatusFilter}
+              displayEmpty
+              inputProps={{ 'aria-label': 'Status filter' }}
+            >
+              <MenuItem value="all">All</MenuItem>
+              <MenuItem value="active">Active</MenuItem>
+              <MenuItem value="terminal">Terminal</MenuItem>
+            </Select>
+          </Grid>
+        </Grid>
+
+        <Box mt={2} display="flex" gridGap={16}>
+          <Typography variant="body2">Active: {activeCount}</Typography>
+          <Typography variant="body2">Completed: {completedCount}</Typography>
+        </Box>
+
+        {loading && <Progress />}
+
+        {error && (
+          <Box mt={2}>
+            <WarningPanel title="Failed to load workloads" severity="error">
+              {error}
+            </WarningPanel>
+          </Box>
+        )}
+
+        <Box mt={2}>
+          <Table
+            options={{
+              paging: false,
+              search: false,
+              sorting: true,
+              padding: 'dense',
+              rowStyle: {
+                cursor: 'pointer',
+              },
+            }}
+            data={filteredRows}
+            columns={columns}
+            title="Workloads"
+            onRowClick={(_, row) => {
+              if (row?.id) {
+                navigate(`/aegis/workloads/${row.id}`);
+              }
+            }}
+          />
+        </Box>
+      </Content>
+    </Page>
+  );
+};
+
+
+=== /Users/carlossanchez/code/aegis-ui/plugins/aegis/src/components/WorkloadDetailsPage.tsx ===
+import { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
+import {
+  Page,
+  Content,
+  ContentHeader,
+  Progress,
+  WarningPanel,
+  InfoCard,
+  StructuredMetadataTable,
+  StatusOK,
+  StatusWarning,
+  StatusError,
+  StatusPending,
+  CopyTextButton,
+} from '@backstage/core-components';
+import { Box, Button, Paper, Typography, makeStyles } from '@material-ui/core';
+import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import ArrowBackIcon from '@material-ui/icons/ArrowBack';
+import {
+  WorkloadDTO,
+  ConnectionSession,
+  getWorkload,
+  createConnectionSession,
+  renewConnectionSession,
+  revokeConnectionSession,
+  getFlavor,
+  mapDisplayStatus,
+  parseKubernetesUrl,
+  buildKubectlDescribeCommand,
+} from '../api/aegisClient';
+import { ConnectModal } from './ConnectModal';
+import { keycloakAuthApiRef } from '../api/keycloakAuthApiRef';
+
+const useStyles = makeStyles(theme => ({
+  costPaper: {
+    backgroundColor: 'var(--aegis-card-surface)',
+    border: '1px solid var(--aegis-card-border)',
+    boxShadow: 'var(--aegis-card-shadow)',
+    borderRadius: theme.shape.borderRadius * 2,
+    padding: theme.spacing(3),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2.5),
+  },
+  costHeader: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(0.75),
+  },
+  costMetrics: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: theme.spacing(2),
+  },
+  costMetricCard: {
+    padding: theme.spacing(2),
+    borderRadius: theme.shape.borderRadius * 1.5,
+    border: `1px dashed ${theme.palette.divider}`,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+  },
+  costMetricLabel: {
+    fontSize: theme.typography.pxToRem(12),
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    fontWeight: 600,
+    color: theme.palette.text.secondary,
+  },
+  costMetricValue: {
+    fontSize: theme.typography.pxToRem(22),
+    fontWeight: 700,
+  },
+}));
+
+const statusChip = (status: string) => {
+  const mapped = mapDisplayStatus(status);
+  switch (mapped.color) {
+    case 'ok':
+      return <StatusOK>{mapped.label}</StatusOK>;
+    case 'error':
+      return <StatusError>{mapped.label}</StatusError>;
+    case 'progress':
+      return <StatusPending>{mapped.label}</StatusPending>;
+    case 'warning':
+    default:
+      return <StatusWarning>{mapped.label}</StatusWarning>;
+  }
+};
+
+const getStoredFlag = (key: string): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(key) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const setStoredFlag = (key: string, value: boolean) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(key, value ? 'true' : 'false');
+  } catch {
+    // ignore storage failures
+  }
+};
+
+const HELPER_FLAG = 'aegis.helper.installed';
+const SYSTEM_ACK_FLAG = 'aegis.system.use.ack';
+const RULES_ACK_FLAG = 'aegis.rules.of.behavior.ack';
+
+export const WorkloadDetailsPage: FC = () => {
+  const classes = useStyles();
+  const { id } = useParams<{ id: string }>();
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const alertApi = useApi(alertApiRef);
+  const keycloakAuthApi = useApi(keycloakAuthApiRef);
+  const navigate = useNavigate();
+
+  const [workload, setWorkload] = useState<WorkloadDTO | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+
+  const [session, setSession] = useState<ConnectionSession | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [pendingSession, setPendingSession] = useState(false);
+
+  const [helperInstalled, setHelperInstalled] = useState(() =>
+    getStoredFlag(HELPER_FLAG),
+  );
+  const [systemAcked, setSystemAcked] = useState(() =>
+    getStoredFlag(SYSTEM_ACK_FLAG),
+  );
+  const [rulesAcked, setRulesAcked] = useState(() =>
+    getStoredFlag(RULES_ACK_FLAG),
+  );
+
+  const load = useCallback(async () => {
+    if (!id) {
+      setError('Missing workload id');
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await getWorkload(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        id,
+        keycloakAuthApi,
+      );
+      setWorkload(res);
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      setError(msg);
+      alertApi.post({
+        message: `Failed to load workload: ${msg}`,
+        severity: 'error',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    setSession(null);
+  }, [id]);
+
+  const requestSession = useCallback(
+    async (client: 'cli' | 'vscode') => {
+      if (!workload?.id) {
+        alertApi.post({ message: 'Workload id is missing', severity: 'error' });
+        return;
+      }
+      try {
+        setSessionLoading(true);
+        setSessionError(null);
+        const created = await createConnectionSession(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          workload.id,
+          client,
+          keycloakAuthApi,
+        );
+        setSession(created);
+      } catch (e: any) {
+        const msg = e?.message ?? String(e);
+        setSessionError(msg);
+        alertApi.post({
+          message: `Failed to create session: ${msg}`,
+          severity: 'error',
+        });
+      } finally {
+        setSessionLoading(false);
+        setPendingSession(false);
+      }
+    },
+    [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, workload?.id],
+  );
+
+  useEffect(() => {
+    if (
+      pendingSession &&
+      systemAcked &&
+      rulesAcked &&
+      helperInstalled &&
+      !session &&
+      !sessionLoading
+    ) {
+      requestSession('cli');
+    }
+  }, [
+    pendingSession,
+    systemAcked,
+    rulesAcked,
+    helperInstalled,
+    session,
+    sessionLoading,
+    requestSession,
+  ]);
+
+  const handleConnectClose = useCallback(() => {
+    setConnectOpen(false);
+    setSessionError(null);
+  }, []);
+
+  const handleConnect = useCallback(() => {
+    if (!workload?.id) {
+      alertApi.post({ message: 'Workload id is missing', severity: 'error' });
+      return;
+    }
+    setConnectOpen(true);
+    setSessionError(null);
+
+    if (session) {
+      return;
+    }
+
+    if (!systemAcked || !rulesAcked || !helperInstalled) {
+      setPendingSession(true);
+      return;
+    }
+
+    requestSession('cli');
+  }, [
+    alertApi,
+    helperInstalled,
+    requestSession,
+    rulesAcked,
+    session,
+    systemAcked,
+    workload?.id,
+  ]);
+
+  const handleRenew = useCallback(async () => {
+    if (!session?.sessionId) {
+      return;
+    }
+    try {
+      setSessionLoading(true);
+      setSessionError(null);
+      const renewed = await renewConnectionSession(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        session.sessionId,
+        keycloakAuthApi,
+      );
+      setSession(renewed);
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      setSessionError(msg);
+      alertApi.post({
+        message: `Failed to renew session: ${msg}`,
+        severity: 'error',
+      });
+    } finally {
+      setSessionLoading(false);
+    }
+  }, [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, session?.sessionId]);
+
+  const handleRevoke = useCallback(async () => {
+    if (!session?.sessionId) {
+      return;
+    }
+    try {
+      setSessionLoading(true);
+      setSessionError(null);
+      await revokeConnectionSession(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        session.sessionId,
+        keycloakAuthApi,
+      );
+      setSession(null);
+      alertApi.post({ message: 'Session revoked', severity: 'info' });
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      setSessionError(msg);
+      alertApi.post({
+        message: `Failed to revoke session: ${msg}`,
+        severity: 'error',
+      });
+    } finally {
+      setSessionLoading(false);
+    }
+  }, [alertApi, discoveryApi, fetchApi, identityApi, keycloakAuthApi, session?.sessionId]);
+
+  const handleSystemAck = useCallback(() => {
+    setSystemAcked(true);
+    setStoredFlag(SYSTEM_ACK_FLAG, true);
+  }, []);
+
+  const handleRulesAck = useCallback(() => {
+    setRulesAcked(true);
+    setStoredFlag(RULES_ACK_FLAG, true);
+  }, []);
+
+  const handleHelperConfirmed = useCallback(() => {
+    setHelperInstalled(true);
+    setStoredFlag(HELPER_FLAG, true);
+  }, []);
+
+  const loc = parseKubernetesUrl(workload?.url);
+  const kubectlCmd = buildKubectlDescribeCommand(loc);
+
+  const rawStatus = workload?.uiStatus ?? workload?.status ?? '';
+  const canConnect = Boolean(workload?.workspace?.interactive);
+  const isRunning = rawStatus === 'RUNNING' || workload?.status === 'RUNNING';
+  const connectButtonDisabled = sessionLoading || !isRunning;
+
+  const metadata = useMemo(
+    () =>
+      workload
+        ? {
+            'Workload ID': workload.id ?? '—',
+            Status: rawStatus || '—',
+            Flavor: getFlavor(workload) || '—',
+            Project: workload.projectId ?? '—',
+            Queue: workload.queue ?? '—',
+            Cluster: workload.clusterId ?? '—',
+            URL: workload.url ?? '—',
+          }
+        : {},
+    [rawStatus, workload],
+  );
+
+  return (
+    <Page themeId="tool">
+      <Content>
+        <ContentHeader title="Workload Details">
+          <Typography variant="body1" color="textSecondary">
+            {id ?? '—'}
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => navigate(`/aegis/operations/logs${id ? `?workloadId=${encodeURIComponent(id)}` : ''}`)}
+          >
+            View Related Logs
+          </Button>
+        </ContentHeader>
+        <ContentHeader title="Overview">
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate('/aegis/workloads')}
+          >
+            Back to list
+          </Button>
+        </ContentHeader>
+
+        {loading && <Progress />}
+
+        {error && (
+          <WarningPanel title="Failed to load workload" severity="error">
+            {error}
+          </WarningPanel>
+        )}
+
+        {workload && (
+          <Box display="flex" flexDirection="column" gridGap={16}>
+            <InfoCard title="Status">
+              <Box display="flex" flexDirection="column" gridGap={12}>
+                <Box display="flex" alignItems="center" gridGap={16}>
+                  {statusChip(rawStatus)}
+                  {workload.message && (
+                    <Typography variant="body2" color="textSecondary">
+                      {workload.message}
+                    </Typography>
+                  )}
+                </Box>
+                {canConnect && (
+                  <Box>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      disabled={connectButtonDisabled}
+                      onClick={handleConnect}
+                    >
+                      {sessionLoading ? 'Preparing session…' : 'Connect'}
+                    </Button>
+                    {!isRunning && (
+                      <Typography
+                        variant="caption"
+                        color="textSecondary"
+                        display="block"
+                      >
+                        Workspace must be running before connecting.
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+              </Box>
+            </InfoCard>
+
+            <InfoCard title="Metadata">
+              <StructuredMetadataTable metadata={metadata} />
+            </InfoCard>
+
+            {kubectlCmd && (
+              <InfoCard title="Debug commands">
+                <Box display="flex" alignItems="center" gridGap={8}>
+                  <Typography variant="body2">{kubectlCmd}</Typography>
+                  <CopyTextButton
+                    text={kubectlCmd}
+                    tooltip="Copy kubectl describe"
+                  />
+                </Box>
+              </InfoCard>
+            )}
+
+            {(workload.workspace || workload.training) && (
+              <InfoCard title="Specification">
+                <StructuredMetadataTable
+                  metadata={{
+                    Type: workload.workspace ? 'Workspace' : 'Training',
+                    Image:
+                      workload.workspace?.image ??
+                      workload.training?.image ??
+                      '—',
+                    Command:
+                      workload.workspace?.command?.join(' ') ??
+                      workload.training?.command?.join(' ') ??
+                      '—',
+                  }}
+                />
+              </InfoCard>
+            )}
+
+            {loc && (
+              <Typography variant="body2">
+                View Kubernetes object{' '}
+                <RouterLink
+                  to={`/kubernetes/overview?namespace=${loc.namespace}`}
+                >
+                  {loc.kind} {loc.name}
+                </RouterLink>
+              </Typography>
+            )}
+
+            <Paper elevation={0} className={classes.costPaper}>
+              <div className={classes.costHeader}>
+                <Typography variant="h6">Cost Analysis</Typography>
+                <Typography variant="body2" color="textSecondary">
+                  Synthetic estimates for this workload based on GPU tenancy and
+                  storage utilization in the current billing cycle.
+                </Typography>
+              </div>
+              <div className={classes.costMetrics}>
+                {[
+                  {
+                    label: 'Total Cost to Date',
+                    value: '$24,680',
+                    helper: 'Includes compute, storage, and network egress',
+                  },
+                  {
+                    label: 'Estimated Run Rate',
+                    value: '$186 / day',
+                    helper: 'Projected using trailing 7-day utilization',
+                  },
+                  {
+                    label: 'Budget Utilization',
+                    value: '72% of $34,000 cap',
+                    helper: 'Alerts fire at 85% threshold',
+                  },
+                  {
+                    label: 'Last Invoice Amount',
+                    value: '$6,240',
+                    helper: 'Billed on Apr 30, 2024',
+                  },
+                ].map(metric => (
+                  <Box key={metric.label} className={classes.costMetricCard}>
+                    <Typography className={classes.costMetricLabel}>
+                      {metric.label}
+                    </Typography>
+                    <Typography className={classes.costMetricValue}>
+                      {metric.value}
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      {metric.helper}
+                    </Typography>
+                  </Box>
+                ))}
+              </div>
+            </Paper>
+          </Box>
+        )}
+      </Content>
+      <ConnectModal
+        open={connectOpen}
+        onClose={handleConnectClose}
+        loading={sessionLoading}
+        error={sessionError}
+        session={session}
+        pendingSession={pendingSession}
+        helperInstalled={helperInstalled}
+        onConfirmHelper={handleHelperConfirmed}
+        systemAcked={systemAcked}
+        onAcknowledgeSystemUse={handleSystemAck}
+        rulesAcked={rulesAcked}
+        onAcknowledgeRules={handleRulesAck}
+        onRequestSession={requestSession}
+        onRenew={handleRenew}
+        onRevoke={handleRevoke}
+        workloadId={workload?.id ?? ''}
+      />
+    </Page>
+  );
+};
+
+
+=== /Users/carlossanchez/code/aegis-ui/plugins/aegis/src/components/SubmitWorkloadPage.test.tsx ===
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { rest } from 'msw';
+import { setupServer } from 'msw/node';
+import { TestApiProvider, renderInTestApp } from '@backstage/test-utils';
+import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  FetchApi,
+  AlertApi,
+  IdentityApi,
+} from '@backstage/core-plugin-api';
+import { SubmitWorkloadPage } from './SubmitWorkloadPage';
+import { keycloakAuthApiRef } from '../api/keycloakAuthApiRef';
+
+const submittedBodies: any[] = [];
+
+const server = setupServer(
+  rest.post(
+    'http://example.test/aegis/aegis.v1.AegisPlatform/SubmitWorkload',
+    async (req, res, ctx) => {
+      submittedBodies.push(await req.json());
+      return res(
+        ctx.json({
+          id: 'w-ui-123',
+          status: 'PLACED',
+          projectId: 'p-demo',
+        }),
+      );
+    },
+  ),
+  rest.post(
+    'http://example.test/aegis/aegis.v1.AegisPlatform/GetWorkload',
+    async (_req, res, ctx) =>
+      res(
+        ctx.json({
+          id: 'w-ui-123',
+          status: 'SUCCEEDED',
+          projectId: 'p-demo',
+        }),
+      ),
+  ),
+);
+
+jest.setTimeout(15000);
+
+beforeAll(() => server.listen());
+afterEach(() => {
+  server.resetHandlers();
+  submittedBodies.length = 0;
+});
+afterAll(() => server.close());
+
+describe('SubmitWorkloadPage', () => {
+  it('submits an interactive workspace and surfaces feedback', async () => {
+    const user = userEvent.setup();
+
+    const discoveryApi = {
+      async getBaseUrl(pluginId: string) {
+        if (pluginId !== 'proxy') {
+          throw new Error(`unexpected pluginId ${pluginId}`);
+        }
+        return 'http://example.test';
+      },
+    };
+
+    const alertSpy = jest.fn();
+    const alertApi: AlertApi = { post: alertSpy };
+    const fetchApi: FetchApi = {
+      fetch: (...args) => fetch(...args),
+    };
+
+    const identityApi: IdentityApi = {
+      async getBackstageIdentity() {
+        return { token: 'test-token', userEntityRef: 'user:default/tester' };
+      },
+      async getCredentials() {
+        return { token: 'test-token', userEntityRef: 'user:default/tester' };
+      },
+      async signOut() {
+        /* not needed */
+      },
+    } as IdentityApi;
+
+    await renderInTestApp(
+      <TestApiProvider
+        apis={[
+          [discoveryApiRef, discoveryApi],
+          [fetchApiRef, fetchApi],
+          [alertApiRef, alertApi],
+          [identityApiRef, identityApi],
+          [keycloakAuthApiRef, { getAccessToken: async () => 'test-token' }],
+        ]}
+      >
+        <SubmitWorkloadPage />
+      </TestApiProvider>,
+    );
+
+    const projectField = await screen.findByDisplayValue('p-demo');
+    await user.clear(projectField);
+    await user.type(projectField, 'p-ui-e2e');
+
+    const queueField = await screen.findByDisplayValue('default');
+    await user.clear(queueField);
+    await user.type(queueField, 'interactive');
+
+    const flavorField = await screen.findByDisplayValue('a10-mig-1g');
+    await user.clear(flavorField);
+    await user.type(flavorField, 'a10-mig-1g');
+
+    const imageField = await screen.findByDisplayValue('alpine:3.19');
+    await user.clear(imageField);
+    await user.type(imageField, 'alpine:3.19');
+
+    const commandField = await screen.findByDisplayValue(
+      'echo Hello from Aegis; sleep 2',
+    );
+    await user.clear(commandField);
+    await user.type(commandField, 'echo from test');
+
+    const durationField = await screen.findByDisplayValue('600');
+    await user.clear(durationField);
+    await user.type(durationField, '120');
+
+    const advancedButton = await screen.findByRole('button', {
+      name: /show advanced options/i,
+    });
+    await user.click(advancedButton);
+
+    const portsField = await screen.findByDisplayValue('22, 11111');
+    await user.clear(portsField);
+    await user.type(portsField, '22, 11111, 10022');
+
+    const envField = await screen.findByDisplayValue(/USER_NAME=aegis/);
+    await user.type(envField, '\nAEGIS_SSH_USER=dev');
+
+    const submitButton = await screen.findByRole('button', {
+      name: /launch workspace/i,
+    });
+    await user.click(submitButton);
+
+    await waitFor(() => expect(submittedBodies).toHaveLength(1));
+    const body = submittedBodies[0];
+
+    expect(body.workload.projectId).toBe('p-ui-e2e');
+    expect(body.workload.queue).toBe('interactive');
+    expect(body.workload.workspace.interactive).toBe(true);
+    expect(body.workload.workspace.command).toEqual([
+      'sh',
+      '-c',
+      'echo from test',
+    ]);
+    expect(body.workload.workspace.ports).toEqual(
+      expect.arrayContaining([22, 11111, 10022]),
+    );
+    expect(body.workload.workspace.env.AEGIS_SSH_USER).toBe('dev');
+    expect(body.workload.workspace.env.USER_NAME).toBe('aegis');
+    expect(body.workload.workspace.maxDurationSeconds).toBe(120);
+
+    await screen.findByText(/Workspace created/i);
+    await screen.findByRole('button', { name: /view details/i });
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Interactive workspace submitted: w-ui-123',
+          severity: 'success',
+        }),
+      );
+    });
+  });
+});
+
+
+=== /Users/carlossanchez/code/aegis-ui/plugins/aegis/src/index.ts ===
+export {
+  aegisPlugin,
+  AegisPage,
+  AegisWorkloadListPage,
+  AegisWorkloadDetailsPage,
+  AegisLaunchWorkspacePage,
+  AegisCreateWorkspacePage,
+  AegisCostAnalyticsFinOpsPage,
+  AegisQuotaManagementFinOpsPage,
+  AegisBillingAlertsFinOpsPage,
+  AegisOpsMetricsPage,
+  AegisResourceDetailsPage,
+  AegisLogExplorerPage,
+  AegisAlertsDashboardPage,
+  AegisClusterConfigPage,
+  AegisCostAnalyticsPage,
+  AegisPolicyManagementPage,
+  AegisUserManagementPage,
+  AegisAuditLogPage,
+} from './plugin';
+export { keycloakAuthApiRef } from './api/keycloakAuthApiRef';
+export type { AccessTokenClient } from './api/aegisClient';
+export {
+  rootRouteRef,
+  workloadsRouteRef,
+  workloadDetailsRouteRef,
+  launchWorkspaceRouteRef,
+  createWorkspaceRouteRef,
+  costDashboardRouteRef,
+  quotaManagementRouteRef,
+  billingAlertsRouteRef,
+  opsMetricsRouteRef,
+  opsResourceDetailsRouteRef,
+  opsLogExplorerRouteRef,
+  opsAlertsRouteRef,
+  opsConfigRouteRef,
+  costAnalyticsRouteRef,
+  policyManagementRouteRef,
+  userManagementRouteRef,
+  auditLogRouteRef,
+} from './routes';
+
+
+=== /Users/carlossanchez/code/aegis-ui/GEMINI.md ===
+# Aegis UI - Frontend Repository
+
+This is the frontend repository for Aegis, built on Backstage.
+
+## Related Repository
+
+The backend repository is located at: `../aegis-platform/`
+
+## Integration Task
+
+Connecting this frontend with the aegis-platform backend for:
+1. Workspace creation via 3-step wizard
+2. AWS cluster creation via Pulumi
+
+## Key Files for Integration
+
+**Frontend (this repo):**
+- Workspace wizard: Look in `plugins/aegis/src/components/` for wizard components
+- Cluster creation: Look for cluster creation pages
+- Backstage config: `app-config.*.yaml` files
+- API integration: Check for existing API client patterns
+
+**Backend (../aegis-platform/):**
+- API endpoints for workspace and cluster creation
+- Pulumi scripts for AWS deployment
+- Data models and validation
+
+## What to Read
+
+Focus on:
+- Source files in `packages/app/src/` and `plugins/aegis/src/`
+- Configuration: `app-config.*.yaml`, `package.json`, `tsconfig.json`
+- Routing and navigation files
+
+The `.geminiignore` file excludes tests, docs, and build artifacts to reduce noise.
+
+
+=== /Users/carlossanchez/code/aegis-ui/.geminiignore ===
+# Dependencies and build artifacts
+node_modules/
+dist/
+build/
+.git/
+.yarn/
+.pnp.*
+*.tsbuildinfo
+packages/*/dist/
+packages/*/build/
+plugins/*/dist/
+plugins/*/build/
+
+# Test files
+*.test.ts
+*.test.tsx
+*.test.js
+*.test.jsx
+*.spec.ts
+*.spec.tsx
+*.spec.js
+*.spec.jsx
+__tests__/
+__mocks__/
+*.stories.ts
+*.stories.tsx
+*.stories.js
+*.stories.jsx
+coverage/
+.storybook/
+
+# Documentation (but keep GEMINI.md and important config docs)
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+LICENSE
+docs/
+documentation/
+
+# CI/CD and DevOps
+.github/
+.gitlab/
+.circleci/
+.travis.yml
+.drone.yml
+Jenkinsfile
+azure-pipelines.yml
+
+# Docker and container files (but keep docker-compose for reference)
+Dockerfile
+Dockerfile.*
+.dockerignore
+
+# Scripts and tooling
+scripts/
+tools/
+.husky/
+.vscode/
+.idea/
+*.code-workspace
+
+# Examples and samples
+examples/
+example/
+samples/
+demo/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+.cache/
+.next/
+out/
+.turbo/
+
+# Lock files
+*.lock
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# Assets (images, fonts, etc)
+public/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.woff
+*.woff2
+*.ttf
+*.eot
+*.pdf
+assets/
+static/
+
+# Config files NOT needed for integration
+.editorconfig
+.prettierrc
+.prettierignore
+.eslintignore
+jest.config.*
+vitest.config.*
+playwright.config.*
+cypress.json
+cypress/
+e2e/
+
+# Misc
+.env.example
+.env.local
+.env.*.local
+
+

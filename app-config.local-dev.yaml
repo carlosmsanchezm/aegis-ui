@@ -30,11 +30,19 @@ auth:
             - resolver: emailLocalPartMatchingUserEntityName
 
 proxy:
+  reviveConsumedRequestBodies: true
   endpoints:
     '/aegis':
       target: 'https://platform-api.localtest.me'
       changeOrigin: true
-      credentials: forward
+      credentials: require
       allowedHeaders:
-        - authorization
-        - Authorization
+        - Grpc-Metadata-Authorization
+        - grpc-metadata-authorization
+        - X-Forwarded-Authorization
+        - x-forwarded-authorization
+
+aegis:
+  tls:
+    caFiles:
+      - ${HOME}/aegis-local-trust.pem
