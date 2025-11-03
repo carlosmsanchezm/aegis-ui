@@ -31,18 +31,19 @@ auth:
 
 proxy:
   reviveConsumedRequestBodies: true
-  endpoints:
-    '/aegis':
-      target: 'https://platform-api.localtest.me'
-      changeOrigin: true
-      credentials: require
-      allowedHeaders:
-        - Grpc-Metadata-Authorization
-        - grpc-metadata-authorization
-        - X-Forwarded-Authorization
-        - x-forwarded-authorization
+  endpoints: {}
 
 aegis:
+  proxy:
+    target: 'https://platform-api.localtest.me'
+    changeOrigin: true
+    credentials: require
+    allowedHeaders:
+      - Grpc-Metadata-Authorization
+      - grpc-metadata-authorization
+      - X-Forwarded-Authorization
+      - x-forwarded-authorization
+
   tls:
     caFiles:
       - ${HOME}/aegis-local-trust.pem
