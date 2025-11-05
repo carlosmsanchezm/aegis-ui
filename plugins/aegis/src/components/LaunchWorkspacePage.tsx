@@ -16,7 +16,7 @@ import {
   useApi,
   useRouteRef,
 } from '@backstage/core-plugin-api';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -52,18 +52,24 @@ import StorageIcon from '@material-ui/icons/Storage';
 import MemoryIcon from '@material-ui/icons/Memory';
 import TimelineIcon from '@material-ui/icons/Timeline';
 import {
+  ApiError,
   AuthenticationError,
   AuthorizationError,
+  ClusterSummary,
   CreateWorkspaceRequest,
+  FlavorSummary,
+  ProjectSummary,
   createWorkspace,
+  listClusters,
+  listProjects,
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
-import { projectManagementRouteRef, workloadsRouteRef } from '../routes';
+import { createClusterRouteRef, projectManagementRouteRef, workloadsRouteRef } from '../routes';
 import {
   ProjectDefinition,
   QueueDefinition,
-  projectCatalog,
+  projectCatalog as fallbackProjectCatalog,
   visibilityCopy,
 } from './projects/projectCatalog';
 
@@ -100,7 +106,122 @@ type FlavorOption = {
   resources: string;
 };
 
-// TODO: Replace static catalogs with workspace profiles served by the ÆGIS control plane API.
+type ProvisioningCatalog = {
+  projects: ProjectDefinition[];
+  flavors: FlavorOption[];
+  queueFlavorMap: Record<string, string[]>;
+};
+
+const formatFlavorResources = (flavor: FlavorSummary): string => {
+  const parts: string[] = [];
+  if (flavor.gpuClass) {
+    parts.push(flavor.gpuClass);
+  }
+  if (flavor.cpu) {
+    parts.push(`${flavor.cpu}`);
+  }
+  if (flavor.memory) {
+    parts.push(`${flavor.memory}`);
+  }
+  if (parts.length > 0) {
+    return parts.join(' • ');
+  }
+  if (flavor.resources) {
+    return flavor.resources;
+  }
+  return 'Custom compute profile';
+};
+
+const mapFlavorSummary = (flavor: FlavorSummary): FlavorOption => ({
+  id: flavor.id,
+  title: flavor.name ?? flavor.id,
+  description: flavor.description ?? 'Workspace flavor maintained by platform ops.',
+  flavor: flavor.id,
+  resources: formatFlavorResources(flavor),
+});
+
+const deriveProvisioningCatalog = (
+  projects: ProjectSummary[] | undefined,
+): ProvisioningCatalog => {
+  const queueFlavorMap: Record<string, string[]> = {};
+  const flavorRegistry = new Map<string, FlavorOption>();
+
+  const mappedProjects: ProjectDefinition[] = (projects ?? []).reduce<ProjectDefinition[]>(
+    (acc, project) => {
+      if (!project?.id) {
+        return acc;
+      }
+
+      const visibility = project.visibility ?? 'internal';
+      const mappedQueues: QueueDefinition[] = [];
+
+      (project.queues ?? []).forEach(queue => {
+        if (!queue?.id) {
+          return;
+        }
+
+        const allowedFlavors = queue.flavors ?? [];
+        const mappedFlavorIds: string[] = [];
+
+        allowedFlavors.forEach(flavor => {
+          if (!flavor?.id) {
+            return;
+          }
+          const option = mapFlavorSummary(flavor);
+          flavorRegistry.set(option.flavor, option);
+          mappedFlavorIds.push(flavor.id);
+        });
+
+        queueFlavorMap[queue.id] = mappedFlavorIds;
+
+        mappedQueues.push({
+          id: queue.id,
+          name: queue.name ?? queue.id,
+          description: queue.description ?? 'Managed queue maintained by platform ops.',
+          visibility: queue.visibility ?? visibility,
+          gpuClass:
+            allowedFlavors[0]?.gpuClass ??
+            allowedFlavors[0]?.name ??
+            queue.description ??
+            'Managed compute',
+          maxRuntimeHours: queue.maxRuntimeHours ?? 24,
+          activeWorkspaces: queue.activeWorkspaces ?? 0,
+          budget: {
+            monthlyLimit: queue.budget?.monthlyLimit ?? 0,
+            monthlyUsed: queue.budget?.monthlyUsed ?? 0,
+          },
+          defaultFlavor: queue.defaultFlavorId ?? mappedFlavorIds[0],
+          supportedFlavors: mappedFlavorIds,
+        });
+      });
+
+      acc.push({
+        id: project.id,
+        name: project.name ?? project.id,
+        visibility,
+        description: project.description ?? 'Project managed by platform administrators.',
+        lead: project.lead ?? 'Unassigned',
+        budget: {
+          monthlyLimit: project.budget?.monthlyLimit ?? 0,
+          monthlyUsed: project.budget?.monthlyUsed ?? 0,
+        },
+        defaultQueue: project.defaultQueueId ?? mappedQueues[0]?.id ?? '',
+        queues: mappedQueues,
+      });
+
+      return acc;
+    },
+    [],
+  );
+
+  return {
+    projects: mappedProjects,
+    flavors: Array.from(flavorRegistry.values()),
+    queueFlavorMap,
+  };
+};
+
+// Static fallbacks used if the provisioning APIs are unavailable locally.
 const workspaceTypeCatalog: WorkspaceTypeOption[] = [
   {
     id: 'vscode',
@@ -192,7 +313,7 @@ const templateCatalog: TemplateOption[] = [
   },
 ];
 
-const flavorCatalog: FlavorOption[] = [
+const defaultFlavorCatalog: FlavorOption[] = [
   {
     id: 'cpu-small',
     title: 'Small',
@@ -375,6 +496,27 @@ const useStyles = makeStyles((theme: Theme) => {
       flexWrap: 'wrap',
       gap: theme.spacing(1.5),
     },
+    clusterStatus: {
+      marginTop: theme.spacing(1),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1),
+    },
+    clusterStatusRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: theme.spacing(1),
+    },
+    clusterStatusReady: {
+      color: theme.palette.success.main,
+      fontWeight: 600,
+    },
+    clusterStatusMuted: {
+      color: theme.palette.text.secondary,
+    },
+    clusterWarning: {
+      marginTop: theme.spacing(1),
+    },
     selectMenuContent: {
       display: 'flex',
       flexDirection: 'column',
@@ -532,8 +674,19 @@ export const LaunchWorkspacePage: FC = () => {
   const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
   const projectManagementLink = useRouteRef(projectManagementRouteRef);
+  const createClusterLink = useRouteRef(createClusterRouteRef);
   const navigate = useNavigate();
 
+  const [projectCatalog, setProjectCatalog] = useState<ProjectDefinition[]>(
+    fallbackProjectCatalog,
+  );
+  const [flavorOptions, setFlavorOptions] = useState<FlavorOption[]>(
+    defaultFlavorCatalog,
+  );
+  const [queueFlavorMap, setQueueFlavorMap] = useState<Record<string, string[]>>({});
+  const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [provisioningLoading, setProvisioningLoading] = useState(true);
+  const [provisioningError, setProvisioningError] = useState<string | null>(null);
   const [activeStep, setActiveStep] = useState(0);
   const [workspaceTypeId, setWorkspaceTypeId] =
     useState<WorkspaceTypeId | null>(null);
@@ -542,9 +695,11 @@ export const LaunchWorkspacePage: FC = () => {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [form, setForm] = useState({
     workloadId: randomId(),
-    projectId: projectCatalog[0]?.id ?? '',
+    projectId: fallbackProjectCatalog[0]?.id ?? '',
     queue:
-      projectCatalog[0]?.defaultQueue ?? projectCatalog[0]?.queues?.[0]?.id ?? '',
+      fallbackProjectCatalog[0]?.defaultQueue ??
+      fallbackProjectCatalog[0]?.queues?.[0]?.id ??
+      '',
     flavor: '',
     image: '',
     ports: '22',
@@ -552,6 +707,63 @@ export const LaunchWorkspacePage: FC = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchProvisioningCatalog = async () => {
+      setProvisioningLoading(true);
+      setProvisioningError(null);
+      try {
+        const [projectsResponse, clustersResponse] = await Promise.all([
+          listProjects(fetchApi, discoveryApi, identityApi, authApi),
+          listClusters(fetchApi, discoveryApi, identityApi, authApi),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        const catalog = deriveProvisioningCatalog(projectsResponse?.projects);
+        setProjectCatalog(
+          catalog.projects.length > 0 ? catalog.projects : [],
+        );
+        setFlavorOptions(
+          catalog.flavors.length > 0 ? catalog.flavors : defaultFlavorCatalog,
+        );
+        setQueueFlavorMap(catalog.queueFlavorMap);
+        setClusters(clustersResponse?.clusters ?? []);
+      } catch (e: unknown) {
+        if (cancelled) {
+          return;
+        }
+        let message = 'Unable to load provisioning data.';
+        if (e instanceof AuthenticationError || e instanceof AuthorizationError) {
+          message = e.message;
+        } else if (e instanceof ApiError) {
+          message = e.message || message;
+        } else if (e instanceof Error) {
+          message = e.message || message;
+        }
+        setProvisioningError(message);
+        setProjectCatalog(fallbackProjectCatalog);
+        setFlavorOptions(defaultFlavorCatalog);
+        setQueueFlavorMap({});
+        setClusters([]);
+        alertApi.post({ message, severity: 'error' });
+      } finally {
+        if (!cancelled) {
+          setProvisioningLoading(false);
+        }
+      }
+    };
+
+    fetchProvisioningCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [alertApi, authApi, discoveryApi, fetchApi, identityApi]);
 
   const templatesForType = useMemo(() => {
     if (!workspaceTypeId) {
@@ -576,7 +788,7 @@ export const LaunchWorkspacePage: FC = () => {
 
   const selectedProject = useMemo<ProjectDefinition | null>(
     () => projectCatalog.find(project => project.id === form.projectId) ?? null,
-    [form.projectId],
+    [form.projectId, projectCatalog],
   );
 
   const queueOptions = useMemo<QueueDefinition[]>(
@@ -589,17 +801,105 @@ export const LaunchWorkspacePage: FC = () => {
     [queueOptions, form.queue],
   );
 
+  const flavorOptionMap = useMemo(
+    () => new Map(flavorOptions.map(option => [option.flavor, option])),
+    [flavorOptions],
+  );
+
+  const availableQueueFlavors = useMemo<FlavorOption[]>(() => {
+    const mapped = (queueFlavorMap[form.queue] ?? [])
+      .map(flavorId => flavorOptionMap.get(flavorId))
+      .filter((option): option is FlavorOption => Boolean(option));
+    if (mapped.length > 0) {
+      return mapped;
+    }
+    if (selectedQueue?.supportedFlavors?.length) {
+      return selectedQueue.supportedFlavors
+        .map(flavorId => flavorOptionMap.get(flavorId))
+        .filter((option): option is FlavorOption => Boolean(option));
+    }
+    return flavorOptions;
+  }, [flavorOptionMap, flavorOptions, form.queue, queueFlavorMap, selectedQueue]);
+
+  const projectClusters = useMemo(
+    () =>
+      clusters.filter(cluster =>
+        form.projectId ? cluster.projectId === form.projectId : true,
+      ),
+    [clusters, form.projectId],
+  );
+
+  const readyClusterCount = useMemo(() => {
+    return projectClusters.filter(cluster => {
+      const status = cluster.status?.toUpperCase();
+      if (!status) {
+        return false;
+      }
+      return (
+        status === 'READY' ||
+        status === 'SUCCEEDED' ||
+        status === 'ACTIVE' ||
+        status === 'HEALTHY'
+      );
+    }).length;
+  }, [projectClusters]);
+
+  const projectHasClusters = projectClusters.length > 0;
+
   useEffect(() => {
-    const project = projectCatalog.find(project => project.id === form.projectId);
-    if (!project) {
+    if (projectCatalog.length === 0) {
+      setForm(prev => {
+        if (!prev.projectId && !prev.queue && !prev.flavor) {
+          return prev;
+        }
+        return { ...prev, projectId: '', queue: '', flavor: '' };
+      });
       return;
     }
-    const allowedQueueIds = project.queues.map(queue => queue.id);
-    const fallbackQueueId = project.defaultQueue || allowedQueueIds[0] || '';
-    if (!allowedQueueIds.includes(form.queue) && fallbackQueueId !== form.queue) {
-      setForm(prev => ({ ...prev, queue: fallbackQueueId }));
-    }
-  }, [form.projectId, form.queue]);
+
+    setForm(prev => {
+      const nextProjectId = projectCatalog.some(project => project.id === prev.projectId)
+        ? prev.projectId
+        : projectCatalog[0].id;
+      const project =
+        projectCatalog.find(item => item.id === nextProjectId) ?? projectCatalog[0];
+      const allowedQueueIds = project.queues.map(queue => queue.id);
+      const fallbackQueueId = project.defaultQueue || allowedQueueIds[0] || '';
+      const nextQueueId = allowedQueueIds.includes(prev.queue)
+        ? prev.queue
+        : fallbackQueueId;
+
+      const allowedFlavorIds = queueFlavorMap[nextQueueId] ?? [];
+      const projectQueue = project.queues.find(queue => queue.id === nextQueueId);
+      const defaultFlavorId =
+        allowedFlavorIds[0] ||
+        projectQueue?.defaultFlavor ||
+        projectQueue?.supportedFlavors?.[0] ||
+        flavorOptions[0]?.flavor ||
+        '';
+
+      const nextFlavorId = allowedFlavorIds.length
+        ? allowedFlavorIds.includes(prev.flavor)
+          ? prev.flavor
+          : defaultFlavorId
+        : prev.flavor || defaultFlavorId;
+
+      if (
+        nextProjectId === prev.projectId &&
+        nextQueueId === prev.queue &&
+        (nextFlavorId || '') === (prev.flavor || '')
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        projectId: nextProjectId,
+        queue: nextQueueId,
+        flavor: nextFlavorId,
+      };
+    });
+  }, [flavorOptions, projectCatalog, queueFlavorMap]);
 
   const handleFormFieldChange =
     (field: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -683,7 +983,8 @@ export const LaunchWorkspacePage: FC = () => {
     Boolean(workspaceTypeId) &&
     Boolean(templateId) &&
     Boolean(form.projectId.trim()) &&
-    Boolean(form.workloadId.trim());
+    Boolean(form.workloadId.trim()) &&
+    projectHasClusters;
 
   const canProceedFromResources =
     Boolean(form.flavor.trim()) && Boolean(form.image.trim());
@@ -693,7 +994,8 @@ export const LaunchWorkspacePage: FC = () => {
     !form.projectId.trim() ||
     !form.flavor.trim() ||
     !form.image.trim() ||
-    !form.workloadId.trim();
+    !form.workloadId.trim() ||
+    !projectHasClusters;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -840,36 +1142,45 @@ export const LaunchWorkspacePage: FC = () => {
 
   const renderFlavorCards = () => (
     <Grid container spacing={2} className={classes.selectionGrid}>
-      {flavorCatalog.map(option => {
-        const selected = option.flavor === form.flavor;
-        const FlavorIcon = getFlavorIcon(option.id);
-        return (
-          <Grid item xs={12} sm={6} key={option.id}>
-            <Card
-              elevation={0}
-              className={`${classes.selectionCard} ${
-                selected ? classes.selectionCardSelected : ''
-              }`}
-            >
-              <CardActionArea
-                className={classes.selectionCardAction}
-                onClick={() => handleFlavorSelect(option)}
+      {availableQueueFlavors.length === 0 ? (
+        <Grid item xs={12}>
+          <Typography className={classes.selectionMeta}>
+            No flavors are mapped to this queue yet. Platform admins can add
+            flavors from the project management console.
+          </Typography>
+        </Grid>
+      ) : (
+        availableQueueFlavors.map(option => {
+          const selected = option.flavor === form.flavor;
+          const FlavorIcon = getFlavorIcon(option.id);
+          return (
+            <Grid item xs={12} sm={6} key={option.id}>
+              <Card
+                elevation={0}
+                className={`${classes.selectionCard} ${
+                  selected ? classes.selectionCardSelected : ''
+                }`}
               >
-                <CardContent className={classes.selectionCardContent}>
-                  <FlavorIcon className={classes.selectionCardIcon} />
-                  <Typography variant="h6">{option.title}</Typography>
-                  <Typography variant="subtitle2" color="textSecondary">
-                    {option.resources}
-                  </Typography>
-                  <Typography className={classes.selectionMeta}>
-                    {option.description}
-                  </Typography>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          </Grid>
-        );
-      })}
+                <CardActionArea
+                  className={classes.selectionCardAction}
+                  onClick={() => handleFlavorSelect(option)}
+                >
+                  <CardContent className={classes.selectionCardContent}>
+                    <FlavorIcon className={classes.selectionCardIcon} />
+                    <Typography variant="h6">{option.title}</Typography>
+                    <Typography variant="subtitle2" color="textSecondary">
+                      {option.resources}
+                    </Typography>
+                    <Typography className={classes.selectionMeta}>
+                      {option.description}
+                    </Typography>
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            </Grid>
+          );
+        })
+      )}
     </Grid>
   );
 
@@ -883,6 +1194,13 @@ export const LaunchWorkspacePage: FC = () => {
             compute, then launch to ÆGIS clusters in a few decisive steps.
           </Typography>
         </ContentHeader>
+        {provisioningError && (
+          <Box marginBottom={2}>
+            <WarningPanel severity="error" title="Provisioning data unavailable">
+              {provisioningError}
+            </WarningPanel>
+          </Box>
+        )}
         <form onSubmit={handleSubmit} className={classes.content}>
           <Paper elevation={0} className={classes.wizardShell}>
             <Stepper activeStep={activeStep} alternativeLabel className={classes.stepper}>
@@ -911,6 +1229,7 @@ export const LaunchWorkspacePage: FC = () => {
                         label="Project"
                         value={form.projectId}
                         onChange={handleProjectSelect}
+                        disabled={projectCatalog.length === 0}
                       >
                         {projectCatalog.map(project => (
                           <MenuItem key={project.id} value={project.id}>
@@ -928,6 +1247,16 @@ export const LaunchWorkspacePage: FC = () => {
                         visibility and budget envelope.
                       </FormHelperText>
                     </FormControl>
+                    {projectCatalog.length === 0 && !provisioningLoading && (
+                      <WarningPanel
+                        severity="warning"
+                        title="No projects available"
+                        className={classes.clusterWarning}
+                      >
+                        Ask a platform administrator to provision a project and queue
+                        before launching a workspace.
+                      </WarningPanel>
+                    )}
                     <TextField
                       label="Workspace ID"
                       value={form.workloadId}
@@ -987,6 +1316,50 @@ export const LaunchWorkspacePage: FC = () => {
                           >
                             Manage projects
                           </Button>
+                        </div>
+                        <div className={classes.clusterStatus}>
+                          {provisioningLoading ? (
+                            <div className={classes.clusterStatusRow}>
+                              <Progress />
+                              <Typography
+                                variant="body2"
+                                className={classes.clusterStatusMuted}
+                              >
+                                Checking cluster capacity…
+                              </Typography>
+                            </div>
+                          ) : projectHasClusters ? (
+                            <Typography
+                              variant="body2"
+                              className={classes.clusterStatusMuted}
+                            >
+                              {readyClusterCount} of {projectClusters.length} cluster
+                              {projectClusters.length === 1 ? '' : 's'} ready for this
+                              project.
+                            </Typography>
+                          ) : (
+                            <WarningPanel
+                              severity="warning"
+                              title="No cluster capacity"
+                              className={classes.clusterWarning}
+                            >
+                              <Typography variant="body2">
+                                No clusters are available for this project yet. Platform
+                                admins can provision one before launching workspaces.
+                              </Typography>
+                              <Box marginTop={1}>
+                                <Button
+                                  component={RouterLink}
+                                  to={createClusterLink()}
+                                  variant="outlined"
+                                  color="primary"
+                                  size="small"
+                                >
+                                  Create cluster
+                                </Button>
+                              </Box>
+                            </WarningPanel>
+                          )}
                         </div>
                       </div>
                     )}

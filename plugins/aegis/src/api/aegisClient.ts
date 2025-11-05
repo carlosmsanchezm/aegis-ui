@@ -72,6 +72,8 @@ export type CreateWorkspaceResponse = {
   workload: WorkloadDTO;
 };
 
+export type ProjectVisibility = 'restricted' | 'internal' | 'public';
+
 export type CreateClusterRequest = {
   projectId: string;
   clusterId: string;
@@ -92,6 +94,64 @@ export type CreateClusterResponse = {
 
 export type GetClusterJobStatusResponse = {
   job: Job;
+};
+
+export type ClusterSummary = {
+  id: string;
+  projectId?: string;
+  name?: string;
+  provider?: string;
+  region?: string;
+  status?: string;
+  createdAt?: string;
+  ready?: boolean;
+};
+
+export type ListClustersResponse = {
+  clusters: ClusterSummary[];
+};
+
+export type FlavorSummary = {
+  id: string;
+  name?: string;
+  description?: string;
+  resources?: string;
+  gpuClass?: string;
+  cpu?: string;
+  memory?: string;
+};
+
+export type QueueSummary = {
+  id: string;
+  name?: string;
+  description?: string;
+  visibility?: ProjectVisibility;
+  defaultFlavorId?: string;
+  activeWorkspaces?: number;
+  maxRuntimeHours?: number;
+  budget?: {
+    monthlyLimit?: number;
+    monthlyUsed?: number;
+  };
+  flavors?: FlavorSummary[];
+};
+
+export type ProjectSummary = {
+  id: string;
+  name?: string;
+  description?: string;
+  visibility?: ProjectVisibility;
+  lead?: string;
+  budget?: {
+    monthlyLimit?: number;
+    monthlyUsed?: number;
+  };
+  defaultQueueId?: string;
+  queues?: QueueSummary[];
+};
+
+export type ListProjectsResponse = {
+  projects: ProjectSummary[];
 };
 
 export type ListWorkloadsResponse = {
@@ -546,7 +606,7 @@ export const createCluster = async (
     discoveryApi,
     identityApi,
     authApi,
-    '/api/v1/clusters',
+    '/api/clusters',
     {
       method: 'POST',
       body: req,
@@ -567,7 +627,45 @@ export const getClusterJobStatus = async (
     discoveryApi,
     identityApi,
     authApi,
-    `/api/v1/clusters/jobs/${encodeURIComponent(jobId)}/status`,
+    `/api/clusters/${encodeURIComponent(jobId)}/status`,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+};
+
+export const listClusters = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<ListClustersResponse> => {
+  return restJson<undefined, ListClustersResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/clusters',
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+};
+
+export const listProjects = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<ListProjectsResponse> => {
+  return restJson<undefined, ListProjectsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/projects?includeQueues=true&includeFlavors=true',
     {
       method: 'GET',
       requireAuth: true,

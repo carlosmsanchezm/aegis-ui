@@ -1,4 +1,4 @@
-export type ProjectVisibility = 'restricted' | 'internal' | 'public';
+import { ProjectVisibility } from '../../api/aegisClient';
 
 export type QueueDefinition = {
   id: string;
@@ -12,6 +12,8 @@ export type QueueDefinition = {
     monthlyLimit: number;
     monthlyUsed: number;
   };
+  defaultFlavor?: string;
+  supportedFlavors?: string[];
 };
 
 export type ProjectDefinition = {
