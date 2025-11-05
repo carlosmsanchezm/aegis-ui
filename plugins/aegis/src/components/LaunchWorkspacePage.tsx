@@ -44,6 +44,7 @@ import {
 import { makeStyles } from '@material-ui/core/styles';
 import { alpha } from '@material-ui/core/styles/colorManipulator';
 import { StepIconProps } from '@material-ui/core/StepIcon';
+import Alert from '@material-ui/lab/Alert';
 import CheckRoundedIcon from '@material-ui/icons/CheckRounded';
 import CodeIcon from '@material-ui/icons/Code';
 import DescriptionIcon from '@material-ui/icons/Description';
@@ -59,7 +60,11 @@ import {
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
-import { projectManagementRouteRef, workloadsRouteRef } from '../routes';
+import {
+  createClusterRouteRef,
+  projectManagementRouteRef,
+  workloadsRouteRef,
+} from '../routes';
 import {
   ProjectDefinition,
   QueueDefinition,
@@ -532,6 +537,7 @@ export const LaunchWorkspacePage: FC = () => {
   const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
   const projectManagementLink = useRouteRef(projectManagementRouteRef);
+  const createClusterLink = useRouteRef(createClusterRouteRef);
   const navigate = useNavigate();
 
   const [activeStep, setActiveStep] = useState(0);
@@ -883,6 +889,25 @@ export const LaunchWorkspacePage: FC = () => {
             compute, then launch to ÆGIS clusters in a few decisive steps.
           </Typography>
         </ContentHeader>
+        <Box marginBottom={3}>
+          <Alert
+            severity="info"
+            action={
+              <Button
+                component={RouterLink}
+                to={createClusterLink()}
+                color="inherit"
+                size="small"
+                variant="outlined"
+              >
+                Provision cluster
+              </Button>
+            }
+          >
+            Clusters, projects, and flavors are provisioned by platform admins. If something is missing,
+            spin up a cluster first, then return here to launch workspaces.
+          </Alert>
+        </Box>
         <form onSubmit={handleSubmit} className={classes.content}>
           <Paper elevation={0} className={classes.wizardShell}>
             <Stepper activeStep={activeStep} alternativeLabel className={classes.stepper}>
@@ -924,8 +949,8 @@ export const LaunchWorkspacePage: FC = () => {
                         ))}
                       </Select>
                       <FormHelperText>
-                        Projects now bootstrap automatically. Swap context to inherit the right
-                        visibility and budget envelope.
+                        Projects, queues, and flavors are curated by platform admins. Choose the context they
+                        prepared for your mission workload.
                       </FormHelperText>
                     </FormControl>
                     <TextField
