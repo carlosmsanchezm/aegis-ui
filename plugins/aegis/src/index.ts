@@ -17,6 +17,7 @@ export {
   AegisPolicyManagementPage,
   AegisUserManagementPage,
   AegisAuditLogPage,
+  AegisProjectManagementPage,
 } from './plugin';
 export {
   rootRouteRef,
@@ -33,6 +34,7 @@ export {
   opsAlertsRouteRef,
   opsConfigRouteRef,
   costAnalyticsRouteRef,
+  projectManagementRouteRef,
   policyManagementRouteRef,
   userManagementRouteRef,
   auditLogRouteRef,
