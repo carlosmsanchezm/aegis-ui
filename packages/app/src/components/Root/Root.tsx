@@ -23,6 +23,7 @@ import NotificationsActiveIcon from '@material-ui/icons/NotificationsActive';
 import GavelIcon from '@material-ui/icons/Gavel';
 import PeopleOutlineIcon from '@material-ui/icons/PeopleOutline';
 import HistoryIcon from '@material-ui/icons/History';
+import LayersIcon from '@material-ui/icons/Layers';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
 import {
@@ -244,6 +245,11 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
             <SidebarDivider />
 
             <NavSection label="Admin" icon={<SettingsIcon />}>
+              <SidebarItem
+                icon={LayersIcon}
+                to="aegis/admin/projects"
+                text="Projects"
+              />
               <SidebarItem
                 icon={AssessmentIcon}
                 to="aegis/admin/analytics"

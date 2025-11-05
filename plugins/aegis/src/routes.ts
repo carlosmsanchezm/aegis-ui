@@ -88,6 +88,12 @@ export const costAnalyticsRouteRef = createSubRouteRef({
   path: '/admin/analytics',
 });
 
+export const projectManagementRouteRef = createSubRouteRef({
+  id: 'aegis-project-management',
+  parent: rootRouteRef,
+  path: '/admin/projects',
+});
+
 export const policyManagementRouteRef = createSubRouteRef({
   id: 'aegis-policy-management',
   parent: rootRouteRef,
