@@ -7,7 +7,14 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { Page, Content, ContentHeader, Progress, WarningPanel } from '@backstage/core-components';
+import {
+  Page,
+  Content,
+  ContentHeader,
+  EmptyState,
+  Progress,
+  WarningPanel,
+} from '@backstage/core-components';
 import {
   alertApiRef,
   discoveryApiRef,
@@ -59,13 +66,19 @@ import {
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
-import { projectManagementRouteRef, workloadsRouteRef } from '../routes';
+import {
+  projectManagementRouteRef,
+  workloadsRouteRef,
+  createClusterRouteRef,
+} from '../routes';
 import {
   ProjectDefinition,
+  ProjectVisibility,
   QueueDefinition,
-  projectCatalog,
   visibilityCopy,
 } from './projects/projectCatalog';
+import { useProvisioningCatalog } from '../hooks/useProvisioningCatalog';
+import { useIsAegisAdmin } from '../hooks/useIsAegisAdmin';
 
 import type { Theme } from '@material-ui/core/styles';
 
@@ -100,7 +113,8 @@ type FlavorOption = {
   resources: string;
 };
 
-// TODO: Replace static catalogs with workspace profiles served by the ÆGIS control plane API.
+// Workspace types remain static while provisioning data (projects, queues, clusters, flavors)
+// is fetched from the ÆGIS control plane.
 const workspaceTypeCatalog: WorkspaceTypeOption[] = [
   {
     id: 'vscode',
@@ -192,7 +206,7 @@ const templateCatalog: TemplateOption[] = [
   },
 ];
 
-const flavorCatalog: FlavorOption[] = [
+const defaultFlavorCatalog: FlavorOption[] = [
   {
     id: 'cpu-small',
     title: 'Small',
@@ -523,6 +537,24 @@ const portsToText = (ports?: number[]): string => {
 const getFlavorIcon = (flavorId: string) =>
   flavorId.startsWith('gpu') ? MemoryIcon : StorageIcon;
 
+const normalizeVisibility = (value?: string | null): ProjectVisibility => {
+  if (value === 'restricted' || value === 'internal' || value === 'public') {
+    return value;
+  }
+  return 'internal';
+};
+
+const formatBudget = (budget?: { monthlyLimit: number; monthlyUsed: number }) => {
+  if (!budget) {
+    return '—';
+  }
+  const { monthlyLimit, monthlyUsed } = budget;
+  if (!monthlyLimit && !monthlyUsed) {
+    return '—';
+  }
+  return `$${monthlyUsed.toLocaleString('en-US')} / $${monthlyLimit.toLocaleString('en-US')}`;
+};
+
 export const LaunchWorkspacePage: FC = () => {
   const classes = useStyles();
   const fetchApi = useApi(fetchApiRef);
@@ -532,7 +564,19 @@ export const LaunchWorkspacePage: FC = () => {
   const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
   const projectManagementLink = useRouteRef(projectManagementRouteRef);
+  const createClusterLink = useRouteRef(createClusterRouteRef);
   const navigate = useNavigate();
+
+  const projectConsolePath = projectManagementLink();
+  const clusterProvisioningPath = createClusterLink();
+
+  const {
+    value: provisioningCatalog,
+    loading: catalogLoading,
+    error: catalogError,
+    retry: reloadCatalog,
+  } = useProvisioningCatalog();
+  const { value: isAdmin } = useIsAegisAdmin();
 
   const [activeStep, setActiveStep] = useState(0);
   const [workspaceTypeId, setWorkspaceTypeId] =
@@ -542,9 +586,8 @@ export const LaunchWorkspacePage: FC = () => {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [form, setForm] = useState({
     workloadId: randomId(),
-    projectId: projectCatalog[0]?.id ?? '',
-    queue:
-      projectCatalog[0]?.defaultQueue ?? projectCatalog[0]?.queues?.[0]?.id ?? '',
+    projectId: '',
+    queue: '',
     flavor: '',
     image: '',
     ports: '22',
@@ -552,6 +595,67 @@ export const LaunchWorkspacePage: FC = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const projectOptions = useMemo<ProjectDefinition[]>(() => {
+    if (!provisioningCatalog) {
+      return [];
+    }
+
+    const queuesByProject = new Map<string, QueueDefinition[]>();
+
+    provisioningCatalog.queues.forEach(queue => {
+      const list = queuesByProject.get(queue.projectId) ?? [];
+      list.push({
+        id: queue.id,
+        name: queue.name ?? queue.id,
+        description: queue.description ?? 'No queue description provided.',
+        visibility: normalizeVisibility(queue.visibility),
+        gpuClass: queue.gpuClass ?? 'Unspecified',
+        maxRuntimeHours: queue.maxRuntimeHours ?? 0,
+        activeWorkspaces: queue.activeWorkspaces ?? 0,
+        budget: {
+          monthlyLimit: queue.budget?.monthlyLimit ?? 0,
+          monthlyUsed: queue.budget?.monthlyUsed ?? 0,
+        },
+        clusterId: queue.clusterId,
+      });
+      queuesByProject.set(queue.projectId, list);
+    });
+
+    return provisioningCatalog.projects.map(project => {
+      const queues = queuesByProject.get(project.id) ?? [];
+      const defaultQueue = project.defaultQueueId ?? queues[0]?.id ?? '';
+      return {
+        id: project.id,
+        name: project.name ?? project.id,
+        visibility: normalizeVisibility(project.visibility),
+        description: project.description ?? 'No project description provided.',
+        lead: project.lead ?? 'Unassigned',
+        budget: {
+          monthlyLimit: project.budget?.monthlyLimit ?? 0,
+          monthlyUsed: project.budget?.monthlyUsed ?? 0,
+        },
+        defaultQueue,
+        queues,
+      };
+    });
+  }, [provisioningCatalog]);
+
+  const clusterMap = useMemo(() => {
+    const map = new Map<string, { id: string; status?: string; provider?: string; region?: string; displayName?: string; createdAt?: string; projectId: string }>();
+    (provisioningCatalog?.clusters ?? []).forEach(cluster => {
+      map.set(cluster.id, {
+        id: cluster.id,
+        status: cluster.status,
+        provider: cluster.provider,
+        region: cluster.region,
+        displayName: cluster.displayName,
+        createdAt: cluster.createdAt,
+        projectId: cluster.projectId,
+      });
+    });
+    return map;
+  }, [provisioningCatalog]);
 
   const templatesForType = useMemo(() => {
     if (!workspaceTypeId) {
@@ -574,9 +678,23 @@ export const LaunchWorkspacePage: FC = () => {
     [workspaceTypeId],
   );
 
+  useEffect(() => {
+    if (projectOptions.length === 0) {
+      return;
+    }
+    setForm(prev => {
+      if (prev.projectId) {
+        return prev;
+      }
+      const first = projectOptions[0];
+      const queueId = first.defaultQueue || first.queues?.[0]?.id || '';
+      return { ...prev, projectId: first.id, queue: queueId };
+    });
+  }, [projectOptions]);
+
   const selectedProject = useMemo<ProjectDefinition | null>(
-    () => projectCatalog.find(project => project.id === form.projectId) ?? null,
-    [form.projectId],
+    () => projectOptions.find(project => project.id === form.projectId) ?? null,
+    [projectOptions, form.projectId],
   );
 
   const queueOptions = useMemo<QueueDefinition[]>(
@@ -589,17 +707,79 @@ export const LaunchWorkspacePage: FC = () => {
     [queueOptions, form.queue],
   );
 
+  const projectClusters = useMemo(
+    () =>
+      (provisioningCatalog?.clusters ?? []).filter(
+        cluster => cluster.projectId === form.projectId,
+      ),
+    [form.projectId, provisioningCatalog],
+  );
+
+  const selectedCluster = useMemo(() => {
+    if (!selectedQueue?.clusterId) {
+      return null;
+    }
+    return clusterMap.get(selectedQueue.clusterId) ?? null;
+  }, [clusterMap, selectedQueue]);
+
+  const noProjectsAvailable = !catalogLoading && projectOptions.length === 0;
+  const noQueuesForProject =
+    Boolean(selectedProject) && !catalogLoading && queueOptions.length === 0;
+  const noClustersForProject =
+    Boolean(selectedProject) && !catalogLoading && projectClusters.length === 0;
+
+  const dynamicFlavorOptions = useMemo<FlavorOption[]>(() => {
+    const flavors = provisioningCatalog?.flavors ?? [];
+    if (flavors.length === 0) {
+      return [];
+    }
+    return flavors.map(flavor => {
+      const parts: string[] = [];
+      if (flavor.gpu) {
+        parts.push(flavor.gpu);
+      }
+      if (flavor.cpu) {
+        parts.push(flavor.cpu);
+      }
+      if (flavor.memory) {
+        parts.push(flavor.memory);
+      }
+      const resources = parts.length > 0 ? parts.join(' • ') : 'Custom configuration';
+      return {
+        id: flavor.id,
+        title: flavor.name ?? flavor.id,
+        description: flavor.description ?? 'Provisioned flavor',
+        flavor: flavor.id,
+        resources,
+      };
+    });
+  }, [provisioningCatalog]);
+
+  const flavorOptions = dynamicFlavorOptions.length > 0 ? dynamicFlavorOptions : defaultFlavorCatalog;
+
   useEffect(() => {
-    const project = projectCatalog.find(project => project.id === form.projectId);
-    if (!project) {
+    if (flavorOptions.length === 0) {
       return;
     }
-    const allowedQueueIds = project.queues.map(queue => queue.id);
-    const fallbackQueueId = project.defaultQueue || allowedQueueIds[0] || '';
+    setForm(prev => {
+      if (prev.flavor && flavorOptions.some(option => option.flavor === prev.flavor)) {
+        return prev;
+      }
+      return { ...prev, flavor: flavorOptions[0].flavor };
+    });
+  }, [flavorOptions]);
+
+  useEffect(() => {
+    if (!selectedProject) {
+      return;
+    }
+    const allowedQueueIds = selectedProject.queues.map(queue => queue.id);
+    const fallbackQueueId =
+      selectedProject.defaultQueue || allowedQueueIds[0] || '';
     if (!allowedQueueIds.includes(form.queue) && fallbackQueueId !== form.queue) {
       setForm(prev => ({ ...prev, queue: fallbackQueueId }));
     }
-  }, [form.projectId, form.queue]);
+  }, [form.queue, selectedProject]);
 
   const handleFormFieldChange =
     (field: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -611,9 +791,14 @@ export const LaunchWorkspacePage: FC = () => {
     setForceAdvancedOpen(Boolean(template.autoShowAdvanced));
     setAdvancedOpen(prev => prev || Boolean(template.autoShowAdvanced));
 
+    const templateFlavor = template.defaults.flavor;
+    const hasTemplateFlavor =
+      templateFlavor &&
+      flavorOptions.some(option => option.flavor === templateFlavor);
+
     setForm(prev => ({
       ...prev,
-      flavor: template.defaults.flavor ?? prev.flavor,
+      flavor: hasTemplateFlavor ? templateFlavor : prev.flavor,
       image:
         template.defaults.image !== undefined
           ? template.defaults.image
@@ -656,7 +841,10 @@ export const LaunchWorkspacePage: FC = () => {
 
   const handleProjectSelect = (event: ChangeEvent<{ value: unknown }>) => {
     const projectId = (event.target.value as string) ?? '';
-    setForm(prev => ({ ...prev, projectId }));
+    const nextProject = projectOptions.find(project => project.id === projectId);
+    const nextQueue =
+      nextProject?.defaultQueue || nextProject?.queues?.[0]?.id || '';
+    setForm(prev => ({ ...prev, projectId, queue: nextQueue }));
   };
 
   const handleQueueSelect = (event: ChangeEvent<{ value: unknown }>) => {
@@ -683,7 +871,8 @@ export const LaunchWorkspacePage: FC = () => {
     Boolean(workspaceTypeId) &&
     Boolean(templateId) &&
     Boolean(form.projectId.trim()) &&
-    Boolean(form.workloadId.trim());
+    Boolean(form.workloadId.trim()) &&
+    queueOptions.length > 0;
 
   const canProceedFromResources =
     Boolean(form.flavor.trim()) && Boolean(form.image.trim());
@@ -693,7 +882,8 @@ export const LaunchWorkspacePage: FC = () => {
     !form.projectId.trim() ||
     !form.flavor.trim() ||
     !form.image.trim() ||
-    !form.workloadId.trim();
+    !form.workloadId.trim() ||
+    queueOptions.length === 0;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -840,9 +1030,9 @@ export const LaunchWorkspacePage: FC = () => {
 
   const renderFlavorCards = () => (
     <Grid container spacing={2} className={classes.selectionGrid}>
-      {flavorCatalog.map(option => {
+      {flavorOptions.map(option => {
         const selected = option.flavor === form.flavor;
-        const FlavorIcon = getFlavorIcon(option.id);
+        const FlavorIcon = getFlavorIcon(option.flavor);
         return (
           <Grid item xs={12} sm={6} key={option.id}>
             <Card
@@ -895,6 +1085,25 @@ export const LaunchWorkspacePage: FC = () => {
               ))}
             </Stepper>
 
+            {catalogLoading && (
+              <Box display="flex" justifyContent="center" paddingY={2}>
+                <Progress />
+              </Box>
+            )}
+
+            {!catalogLoading && catalogError && (
+              <Box marginBottom={3}>
+                <WarningPanel severity="error" title="Failed to load provisioning data">
+                  Unable to retrieve projects, queues, or clusters. Please try again.
+                  <Box marginTop={1}>
+                    <Button color="primary" variant="outlined" onClick={() => reloadCatalog()}>
+                      Retry load
+                    </Button>
+                  </Box>
+                </WarningPanel>
+              </Box>
+            )}
+
             {activeStep === 0 && (
               <Grid container spacing={3}>
                 <Grid item xs={12} md={5}>
@@ -902,7 +1111,12 @@ export const LaunchWorkspacePage: FC = () => {
                     <Typography variant="overline" color="textSecondary">
                       Project context
                     </Typography>
-                    <FormControl variant="outlined" fullWidth required>
+                    <FormControl
+                      variant="outlined"
+                      fullWidth
+                      required
+                      disabled={catalogLoading || projectOptions.length === 0}
+                    >
                       <InputLabel id="launch-workspace-project">
                         Project
                       </InputLabel>
@@ -912,7 +1126,7 @@ export const LaunchWorkspacePage: FC = () => {
                         value={form.projectId}
                         onChange={handleProjectSelect}
                       >
-                        {projectCatalog.map(project => (
+                        {projectOptions.map(project => (
                           <MenuItem key={project.id} value={project.id}>
                             <div className={classes.selectMenuContent}>
                               <Typography variant="subtitle1">{project.name}</Typography>
@@ -922,10 +1136,15 @@ export const LaunchWorkspacePage: FC = () => {
                             </div>
                           </MenuItem>
                         ))}
+                        {projectOptions.length === 0 && !catalogLoading && (
+                          <MenuItem value="" disabled>
+                            No provisioned projects found
+                          </MenuItem>
+                        )}
                       </Select>
                       <FormHelperText>
-                        Projects now bootstrap automatically. Swap context to inherit the right
-                        visibility and budget envelope.
+                        Projects are provisioned by platform admins. Select one to inherit the
+                        correct visibility and guardrails.
                       </FormHelperText>
                     </FormControl>
                     <TextField
@@ -937,6 +1156,26 @@ export const LaunchWorkspacePage: FC = () => {
                       fullWidth
                       helperText="Identifier visible to mission operators"
                     />
+                    {noProjectsAvailable && (
+                      <Box marginTop={2}>
+                        <EmptyState
+                          title="No projects available"
+                          missing="data"
+                          description="An administrator must provision a project, queue, and cluster before new workspaces can launch."
+                          action={
+                            isAdmin ? (
+                              <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={() => navigate(projectConsolePath)}
+                              >
+                                Open project console
+                              </Button>
+                            ) : undefined
+                          }
+                        />
+                      </Box>
+                    )}
                     {selectedProject && (
                       <div className={classes.projectOverview}>
                         <div className={classes.projectHeader}>
@@ -964,8 +1203,7 @@ export const LaunchWorkspacePage: FC = () => {
                           <div>
                             <div className={classes.projectMetaLabel}>Monthly burn</div>
                             <div className={classes.projectMetaValue}>
-                              ${selectedProject.budget.monthlyUsed.toLocaleString('en-US')} / $
-                              {selectedProject.budget.monthlyLimit.toLocaleString('en-US')}
+                              {formatBudget(selectedProject.budget)}
                             </div>
                           </div>
                           <div>
@@ -983,12 +1221,40 @@ export const LaunchWorkspacePage: FC = () => {
                           <Button
                             variant="outlined"
                             color="primary"
-                            onClick={() => navigate(projectManagementLink())}
+                            onClick={() => navigate(projectConsolePath)}
                           >
                             Manage projects
                           </Button>
                         </div>
                       </div>
+                    )}
+                    {selectedProject && (noQueuesForProject || noClustersForProject) && (
+                      <Box marginTop={2}>
+                        <EmptyState
+                          title={
+                            noClustersForProject
+                              ? 'No clusters provisioned'
+                              : 'No queues available'
+                          }
+                          missing="data"
+                          description={
+                            noClustersForProject
+                              ? 'Provision a cluster for this project before launching workspaces.'
+                              : 'Queues define guardrails for compute access. Ask an administrator to configure one for this project.'
+                          }
+                          action={
+                            isAdmin ? (
+                              <Button
+                                variant="contained"
+                                color="primary"
+                                onClick={() => navigate(clusterProvisioningPath)}
+                              >
+                                Create cluster
+                              </Button>
+                            ) : undefined
+                          }
+                        />
+                      </Box>
                     )}
                     <Divider className={classes.sectionDivider} />
                     <Typography variant="overline" color="textSecondary">
@@ -1072,11 +1338,11 @@ export const LaunchWorkspacePage: FC = () => {
                           : 'Stay on the default queue or opt into another guardrail managed by this project.'}
                       </FormHelperText>
                     </FormControl>
-                    {selectedQueue && (
-                      <div className={classes.queueSummaryCard}>
-                        <div className={classes.queueSummaryHeader}>
-                          <Typography variant="subtitle1" component="span">
-                            {selectedQueue.name}
+                      {selectedQueue && (
+                        <div className={classes.queueSummaryCard}>
+                          <div className={classes.queueSummaryHeader}>
+                            <Typography variant="subtitle1" component="span">
+                              {selectedQueue.name}
                           </Typography>
                           <Chip
                             label={visibilityCopy[selectedQueue.visibility].label}
@@ -1091,35 +1357,68 @@ export const LaunchWorkspacePage: FC = () => {
                         <Typography variant="body2" color="textSecondary">
                           {selectedQueue.description}
                         </Typography>
-                        <div className={classes.queueSummaryMetrics}>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>GPU class</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.gpuClass}
+                          <div className={classes.queueSummaryMetrics}>
+                            <div>
+                              <div className={classes.queueSummaryMetricLabel}>GPU class</div>
+                              <div className={classes.queueSummaryMetricValue}>
+                                {selectedQueue.gpuClass}
+                              </div>
                             </div>
+                            <div>
+                              <div className={classes.queueSummaryMetricLabel}>Max runtime</div>
+                              <div className={classes.queueSummaryMetricValue}>
+                                {selectedQueue.maxRuntimeHours} hrs
+                              </div>
+                            </div>
+                            <div>
+                              <div className={classes.queueSummaryMetricLabel}>Active workspaces</div>
+                              <div className={classes.queueSummaryMetricValue}>
+                                {selectedQueue.activeWorkspaces}
+                              </div>
+                            </div>
+                            <div>
+                              <div className={classes.queueSummaryMetricLabel}>Monthly burn</div>
+                              <div className={classes.queueSummaryMetricValue}>
+                                {formatBudget(selectedQueue.budget)}
+                              </div>
+                            </div>
+                            {selectedCluster && (
+                              <>
+                                <div>
+                                  <div className={classes.queueSummaryMetricLabel}>Cluster</div>
+                                  <div className={classes.queueSummaryMetricValue}>
+                                    {selectedCluster.displayName ?? selectedCluster.id}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className={classes.queueSummaryMetricLabel}>Region</div>
+                                  <div className={classes.queueSummaryMetricValue}>
+                                    {selectedCluster.region ?? '—'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className={classes.queueSummaryMetricLabel}>Provider</div>
+                                  <div className={classes.queueSummaryMetricValue}>
+                                    {selectedCluster.provider ?? '—'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className={classes.queueSummaryMetricLabel}>Status</div>
+                                  <div className={classes.queueSummaryMetricValue}>
+                                    {selectedCluster.status ?? 'Unknown'}
+                                  </div>
+                                </div>
+                              </>
+                            )}
                           </div>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>Max runtime</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.maxRuntimeHours} hrs
-                            </div>
-                          </div>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>Active workspaces</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.activeWorkspaces}
-                            </div>
-                          </div>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>Monthly burn</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              ${selectedQueue.budget.monthlyUsed.toLocaleString('en-US')} / $
-                              {selectedQueue.budget.monthlyLimit.toLocaleString('en-US')}
-                            </div>
+                          {!selectedCluster && (
+                            <Typography variant="body2" color="textSecondary">
+                              This queue is not yet linked to a running cluster.
+                            </Typography>
+                          )}
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
                     <FormControlLabel
                       className={classes.toggleControl}
                       control={
@@ -1213,6 +1512,16 @@ export const LaunchWorkspacePage: FC = () => {
                           (selectedProject?.defaultQueue
                             ? `${selectedProject.defaultQueue} (default)`
                             : 'Project default')}
+                      </span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Cluster</span>
+                      <span className={classes.reviewValue}>
+                        {selectedCluster
+                          ? selectedCluster.displayName ?? selectedCluster.id
+                          : '—'}
                       </span>
                     </div>
                   </Grid>

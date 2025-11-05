@@ -12,6 +12,7 @@ export type QueueDefinition = {
     monthlyLimit: number;
     monthlyUsed: number;
   };
+  clusterId?: string;
 };
 
 export type ProjectDefinition = {
@@ -28,7 +29,7 @@ export type ProjectDefinition = {
   queues: QueueDefinition[];
 };
 
-export const projectCatalog: ProjectDefinition[] = [
+export const sampleProjectCatalog: ProjectDefinition[] = [
   {
     id: 'atlas-vision',
     name: 'Atlas Vision Training',

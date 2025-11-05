@@ -1,14 +1,19 @@
-import { FC, useMemo, useState } from 'react';
+import { FC, useEffect, useMemo, useState } from 'react';
 import {
   Content,
   ContentHeader,
+  EmptyState,
   HeaderLabel,
   Page,
+  Progress,
   StatusOK,
   StatusWarning,
   Table,
   TableColumn,
+  WarningPanel,
 } from '@backstage/core-components';
+import { useRouteRef } from '@backstage/core-plugin-api';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -22,7 +27,14 @@ import {
   Typography,
   makeStyles,
 } from '@material-ui/core';
-import { projectCatalog, ProjectDefinition, QueueDefinition, visibilityCopy } from './projectCatalog';
+import {
+  ProjectDefinition,
+  ProjectVisibility,
+  QueueDefinition,
+  visibilityCopy,
+} from './projectCatalog';
+import { useProvisioningCatalog } from '../../hooks/useProvisioningCatalog';
+import { createClusterRouteRef } from '../../routes';
 
 const useStyles = makeStyles(theme => ({
   root: {
@@ -153,8 +165,23 @@ const useStyles = makeStyles(theme => ({
   },
 }));
 
-const budgetCopy = (budget: ProjectDefinition['budget']) =>
-  `$${budget.monthlyUsed.toLocaleString('en-US')} / $${budget.monthlyLimit.toLocaleString('en-US')}`;
+const normalizeVisibility = (value?: string | null): ProjectVisibility => {
+  if (value === 'restricted' || value === 'internal' || value === 'public') {
+    return value;
+  }
+  return 'internal';
+};
+
+const formatBudget = (budget?: { monthlyLimit: number; monthlyUsed: number }) => {
+  if (!budget) {
+    return '—';
+  }
+  const { monthlyLimit, monthlyUsed } = budget;
+  if (!monthlyLimit && !monthlyUsed) {
+    return '—';
+  }
+  return `$${monthlyUsed.toLocaleString('en-US')} / $${monthlyLimit.toLocaleString('en-US')}`;
+};
 
 const queueColumns: TableColumn<QueueDefinition>[] = [
   { title: 'Queue', field: 'name' },
@@ -175,8 +202,7 @@ const queueColumns: TableColumn<QueueDefinition>[] = [
   {
     title: 'Budget',
     field: 'budget',
-    render: queue =>
-      `$${queue.budget.monthlyUsed.toLocaleString('en-US')} / $${queue.budget.monthlyLimit.toLocaleString('en-US')}`,
+    render: queue => formatBudget(queue.budget),
   },
   {
     title: 'Max Runtime',
@@ -187,36 +213,122 @@ const queueColumns: TableColumn<QueueDefinition>[] = [
 
 export const ProjectManagementPage: FC = () => {
   const classes = useStyles();
-  const [selectedProjectId, setSelectedProjectId] = useState(projectCatalog[0]?.id ?? '');
+  const navigate = useNavigate();
+  const createClusterLink = useRouteRef(createClusterRouteRef);
+  const clusterProvisioningPath = createClusterLink();
+  const { value: catalog, loading, error, retry } = useProvisioningCatalog();
 
-  const selectedProject = useMemo(
-    () => projectCatalog.find(project => project.id === selectedProjectId) ?? projectCatalog[0],
-    [selectedProjectId],
-  );
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+
+  const projects = useMemo<ProjectDefinition[]>(() => {
+    if (!catalog) {
+      return [];
+    }
+
+    const queuesByProject = new Map<string, QueueDefinition[]>();
+
+    catalog.queues.forEach(queue => {
+      const list = queuesByProject.get(queue.projectId) ?? [];
+      list.push({
+        id: queue.id,
+        name: queue.name ?? queue.id,
+        description: queue.description ?? 'No queue description provided.',
+        visibility: normalizeVisibility(queue.visibility),
+        gpuClass: queue.gpuClass ?? 'Unspecified',
+        maxRuntimeHours: queue.maxRuntimeHours ?? 0,
+        activeWorkspaces: queue.activeWorkspaces ?? 0,
+        budget: {
+          monthlyLimit: queue.budget?.monthlyLimit ?? 0,
+          monthlyUsed: queue.budget?.monthlyUsed ?? 0,
+        },
+        clusterId: queue.clusterId,
+      });
+      queuesByProject.set(queue.projectId, list);
+    });
+
+    return catalog.projects.map(project => {
+      const queues = queuesByProject.get(project.id) ?? [];
+      const defaultQueue = project.defaultQueueId ?? queues[0]?.id ?? '';
+      return {
+        id: project.id,
+        name: project.name ?? project.id,
+        visibility: normalizeVisibility(project.visibility),
+        description: project.description ?? 'No project description provided.',
+        lead: project.lead ?? 'Unassigned',
+        budget: {
+          monthlyLimit: project.budget?.monthlyLimit ?? 0,
+          monthlyUsed: project.budget?.monthlyUsed ?? 0,
+        },
+        defaultQueue,
+        queues,
+      };
+    });
+  }, [catalog]);
+
+  useEffect(() => {
+    if (projects.length === 0) {
+      setSelectedProjectId('');
+      return;
+    }
+    setSelectedProjectId(prev => {
+      if (prev && projects.some(project => project.id === prev)) {
+        return prev;
+      }
+      return projects[0].id;
+    });
+  }, [projects]);
+
+  const selectedProject = useMemo(() => {
+    if (projects.length === 0) {
+      return null;
+    }
+    return projects.find(project => project.id === selectedProjectId) ?? projects[0];
+  }, [projects, selectedProjectId]);
 
   const queueData = useMemo(() => selectedProject?.queues ?? [], [selectedProject]);
+
+  const projectLead = selectedProject?.lead ?? '—';
+  const projectBudget = selectedProject ? formatBudget(selectedProject.budget) : '—';
+  const hasProjects = projects.length > 0;
+  const hasQueues = queueData.length > 0;
 
   return (
     <Page themeId="tool">
       <Content>
         <ContentHeader title="Project governance">
-          <HeaderLabel label="Budget owner" value={selectedProject?.lead ?? '—'} />
-          <HeaderLabel
-            label="Monthly burn"
-            value={selectedProject ? budgetCopy(selectedProject.budget) : '—'}
-          />
+          <HeaderLabel label="Budget owner" value={projectLead} />
+          <HeaderLabel label="Monthly burn" value={projectBudget} />
         </ContentHeader>
+        {loading && (
+          <Box display="flex" justifyContent="center" paddingY={2}>
+            <Progress />
+          </Box>
+        )}
+        {!loading && error && (
+          <Box marginBottom={2}>
+            <WarningPanel severity="error" title="Failed to load provisioning data">
+              Unable to retrieve projects or queues from ÆGIS.{' '}
+              <Button color="primary" variant="outlined" onClick={() => retry()}>
+                Retry
+              </Button>
+            </WarningPanel>
+          </Box>
+        )}
         <div className={classes.root}>
           <Paper className={classes.heroCard} elevation={0}>
             <div className={classes.heroTitle}>Balance autonomy with governance</div>
             <Typography variant="body1">
-              Auto-provisioned projects keep new teams moving, while this view gives platform
-              leaders precise control over visibility, spending, and queue guardrails. Promote
-              healthy defaults, then step in with budget or access adjustments only when needed.
+              Platform admins explicitly provision projects, queues, and clusters before teams
+              launch workspaces. Use this console to confirm guardrails, adjust visibility, and
+              tune budgets before handing access to mission owners.
             </Typography>
             <div className={classes.heroActions}>
-              <Button variant="contained" color="primary">
-                Create project
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => navigate(clusterProvisioningPath)}
+              >
+                Provision cluster
               </Button>
               <Button variant="outlined" color="primary">
                 Adjust budget
@@ -232,43 +344,62 @@ export const ProjectManagementPage: FC = () => {
                   Projects
                 </Typography>
                 <Typography className={classes.subtitle}>
-                  Auto-bootstrap ensures at least one project and queue exist. Admins can retag
-                  visibility, shift budgets, or archive unused initiatives from here.
+                  Provision at least one project, queue, and cluster before opening the workspace
+                  launchpad. Manage visibility, budgets, and guardrails from this catalog.
                 </Typography>
               </div>
-              <List className={classes.listRoot} disablePadding>
-                {projectCatalog.map(project => {
-                  const visibility = visibilityCopy[project.visibility];
-                  const isSelected = project.id === selectedProject?.id;
-                  return (
-                  <ListItem
-                    key={project.id}
-                    button
-                    selected={isSelected}
-                    onClick={() => setSelectedProjectId(project.id)}
-                    className={classes.listItem}
-                  >
-                      <ListItemText
-                        primary={
-                          <Box className={classes.projectHero}>
-                            <span>{project.name}</span>
-                            <Chip
-                              label={visibility.label}
-                              color={visibility.tone === 'default' ? 'default' : visibility.tone}
-                              size="small"
-                            />
-                          </Box>
-                        }
-                        secondary={
-                          <Typography variant="body2" color="textSecondary">
-                            {budgetCopy(project.budget)} — Lead: {project.lead}
-                          </Typography>
-                        }
-                      />
-                    </ListItem>
-                  );
-                })}
-              </List>
+              {hasProjects ? (
+                <List className={classes.listRoot} disablePadding>
+                  {projects.map(project => {
+                    const visibility = visibilityCopy[project.visibility];
+                    const isSelected = project.id === selectedProject?.id;
+                    return (
+                      <ListItem
+                        key={project.id}
+                        button
+                        selected={isSelected}
+                        onClick={() => setSelectedProjectId(project.id)}
+                        className={classes.listItem}
+                      >
+                        <ListItemText
+                          primary={
+                            <Box className={classes.projectHero}>
+                              <span>{project.name}</span>
+                              <Chip
+                                label={visibility.label}
+                                color={visibility.tone === 'default' ? 'default' : visibility.tone}
+                                size="small"
+                              />
+                            </Box>
+                          }
+                          secondary={
+                            <Typography variant="body2" color="textSecondary">
+                              {formatBudget(project.budget)} — Lead: {project.lead}
+                            </Typography>
+                          }
+                        />
+                      </ListItem>
+                    );
+                  })}
+                </List>
+              ) : (
+                !loading && (
+                  <EmptyState
+                    missing="data"
+                    title="No projects provisioned"
+                    description="Create a project, queue, and cluster before enabling workspace launches."
+                    action={
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => navigate(clusterProvisioningPath)}
+                      >
+                        Provision cluster
+                      </Button>
+                    }
+                  />
+                )
+              )}
             </div>
 
             <div className={classes.panel}>
@@ -298,7 +429,7 @@ export const ProjectManagementPage: FC = () => {
                     <Grid item xs={12} sm={6}>
                       <div className={classes.metricRow}>
                         <span className={classes.mutedLabel}>Budget</span>
-                        <span className={classes.emphasisValue}>{budgetCopy(selectedProject.budget)}</span>
+                        <span className={classes.emphasisValue}>{formatBudget(selectedProject.budget)}</span>
                       </div>
                     </Grid>
                     <Grid item xs={12} sm={6}>
@@ -313,50 +444,70 @@ export const ProjectManagementPage: FC = () => {
                     Queues
                   </Typography>
                   <div className={classes.queueGrid}>
-                    {queueData.map(queue => {
-                      const visibility = visibilityCopy[queue.visibility];
-                      const utilization = queue.budget.monthlyUsed / queue.budget.monthlyLimit;
-                      const BudgetStatus = utilization > 0.85 ? StatusWarning : StatusOK;
-                      return (
-                        <div key={queue.id} className={classes.queueCard}>
-                          <div className={classes.badgeRow}>
-                            <Typography variant="subtitle1" className={classes.panelTitle}>
-                              {queue.name}
+                    {hasQueues ? (
+                      queueData.map(queue => {
+                        const visibility = visibilityCopy[queue.visibility];
+                        const limit = queue.budget.monthlyLimit ?? 0;
+                        const utilization = limit > 0 ? queue.budget.monthlyUsed / limit : 0;
+                        const BudgetStatus = utilization > 0.85 ? StatusWarning : StatusOK;
+                        return (
+                          <div key={queue.id} className={classes.queueCard}>
+                            <div className={classes.badgeRow}>
+                              <Typography variant="subtitle1" className={classes.panelTitle}>
+                                {queue.name}
+                              </Typography>
+                              <Chip
+                                label={visibility.label}
+                                color={visibility.tone === 'default' ? 'default' : visibility.tone}
+                                size="small"
+                              />
+                            </div>
+                            <Typography variant="body2" color="textSecondary">
+                              {queue.description}
                             </Typography>
-                            <Chip
-                              label={visibility.label}
-                              color={visibility.tone === 'default' ? 'default' : visibility.tone}
-                              size="small"
-                            />
-                          </div>
-                          <Typography variant="body2" color="textSecondary">
-                            {queue.description}
-                          </Typography>
-                          <div className={classes.queueMeta}>
-                            <div>
-                              <div className={classes.mutedLabel}>GPU class</div>
-                              <div>{queue.gpuClass}</div>
-                            </div>
-                            <div>
-                              <div className={classes.mutedLabel}>Max runtime</div>
-                              <div>{queue.maxRuntimeHours} hrs</div>
-                            </div>
-                            <div>
-                              <div className={classes.mutedLabel}>Active workspaces</div>
-                              <div>{queue.activeWorkspaces}</div>
-                            </div>
-                            <div>
-                              <div className={classes.mutedLabel}>Budget</div>
+                            <div className={classes.queueMeta}>
                               <div>
-                                <BudgetStatus />{' '}
-                                ${queue.budget.monthlyUsed.toLocaleString('en-US')} / $
-                                {queue.budget.monthlyLimit.toLocaleString('en-US')}
+                                <div className={classes.mutedLabel}>GPU class</div>
+                                <div>{queue.gpuClass}</div>
+                              </div>
+                              <div>
+                                <div className={classes.mutedLabel}>Max runtime</div>
+                                <div>{queue.maxRuntimeHours} hrs</div>
+                              </div>
+                              <div>
+                                <div className={classes.mutedLabel}>Active workspaces</div>
+                                <div>{queue.activeWorkspaces}</div>
+                              </div>
+                              <div>
+                                <div className={classes.mutedLabel}>Budget</div>
+                                <div>{formatBudget(queue.budget)}</div>
                               </div>
                             </div>
+                            <div className={classes.metricRow}>
+                              <span className={classes.mutedLabel}>Utilization</span>
+                              <BudgetStatus>{`${Math.round(utilization * 100)}%`}</BudgetStatus>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    ) : (
+                      !loading && (
+                        <EmptyState
+                          missing="data"
+                          title="No queues configured"
+                          description="Provision a queue connected to a cluster so workspace launches inherit the right guardrails."
+                          action={
+                            <Button
+                              variant="contained"
+                              color="primary"
+                              onClick={() => navigate(clusterProvisioningPath)}
+                            >
+                              Provision cluster
+                            </Button>
+                          }
+                        />
+                      )
+                    )}
                   </div>
                 </>
               ) : (
@@ -371,8 +522,9 @@ export const ProjectManagementPage: FC = () => {
                 Queue roster
               </Typography>
               <Typography className={classes.subtitle}>
-                Export-ready snapshot of queue guardrails and spend. Auto-bootstrap creates a starter
-                queue for every project — adjust runtime ceilings or retire unused queues anytime.
+                Export-ready snapshot of queue guardrails and spend. Provision queues manually to
+                align with project budgets, then adjust runtime ceilings or retire unused lanes as
+                workloads evolve.
               </Typography>
             </div>
             <div className={classes.tableWrapper}>

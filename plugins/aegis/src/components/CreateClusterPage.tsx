@@ -1,5 +1,14 @@
-import React, { FC, useCallback, useEffect, useRef, useState } from 'react';
-import { Page, Content, ContentHeader, Progress, WarningPanel } from '@backstage/core-components';
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Page,
+  Content,
+  ContentHeader,
+  EmptyState,
+  Progress,
+  Table,
+  TableColumn,
+  WarningPanel,
+} from '@backstage/core-components';
 import {
   alertApiRef,
   discoveryApiRef,
@@ -12,8 +21,14 @@ import {
   Button,
   Card,
   CardContent,
-  Grid,
+  Chip,
+  FormControl,
+  FormHelperText,
+  InputLabel,
   LinearProgress,
+  MenuItem,
+  Paper,
+  Select,
   TextField,
   Typography,
 } from '@material-ui/core';
@@ -25,8 +40,22 @@ import {
   getClusterJobStatus,
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
+import { useProvisioningCatalog } from '../hooks/useProvisioningCatalog';
+import {
+  ProjectDefinition,
+  ProjectVisibility,
+  visibilityCopy,
+} from './projects/projectCatalog';
 
 const useStyles = makeStyles(theme => ({
+  layout: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(360px, 1fr) minmax(420px, 1.4fr)',
+    gap: theme.spacing(3),
+    [theme.breakpoints.down('md')]: {
+      gridTemplateColumns: '1fr',
+    },
+  },
   form: {
     display: 'flex',
     flexDirection: 'column',
@@ -36,12 +65,42 @@ const useStyles = makeStyles(theme => ({
     display: 'flex',
     alignItems: 'center',
     gap: theme.spacing(2),
+    flexWrap: 'wrap',
   },
   progressSection: {
     marginTop: theme.spacing(2),
   },
   progressLabel: {
     marginTop: theme.spacing(1),
+  },
+  selectMenu: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(0.25),
+  },
+  panel: {
+    borderRadius: theme.shape.borderRadius,
+    border: `1px solid var(--aegis-card-border)`,
+    backgroundColor: 'var(--aegis-card-surface)',
+    boxShadow: 'var(--aegis-card-shadow)',
+  },
+  panelHeader: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(0.5),
+    marginBottom: theme.spacing(2),
+  },
+  tableWrapper: {
+    borderRadius: theme.shape.borderRadius,
+    overflow: 'hidden',
+    border: `1px solid var(--aegis-card-border)`,
+  },
+  clusterMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    color: theme.palette.text.secondary,
+    fontSize: theme.typography.pxToRem(13),
   },
 }));
 
@@ -71,6 +130,36 @@ type StoredClusterJob = {
   region: string;
 };
 
+const normalizeVisibility = (value?: string | null): ProjectVisibility => {
+  if (value === 'restricted' || value === 'internal' || value === 'public') {
+    return value;
+  }
+  return 'internal';
+};
+
+type ClusterRow = {
+  id: string;
+  displayName: string;
+  projectId: string;
+  provider: string;
+  region: string;
+  status: string;
+  createdAt?: string;
+};
+
+const clusterColumns: TableColumn<ClusterRow>[] = [
+  { title: 'Cluster', field: 'displayName' },
+  { title: 'Project', field: 'projectId' },
+  { title: 'Provider', field: 'provider' },
+  { title: 'Region', field: 'region' },
+  { title: 'Status', field: 'status' },
+  {
+    title: 'Created',
+    field: 'createdAt',
+    render: row => (row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'),
+  },
+];
+
 export const CreateClusterPage: FC = () => {
   const classes = useStyles();
   const fetchApi = useApi(fetchApiRef);
@@ -78,6 +167,12 @@ export const CreateClusterPage: FC = () => {
   const identityApi = useApi(identityApiRef);
   const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
+  const {
+    value: catalog,
+    loading: catalogLoading,
+    error: catalogError,
+    retry: reloadCatalog,
+  } = useProvisioningCatalog();
 
   const [form, setForm] = useState({
     projectId: '',
@@ -88,16 +183,82 @@ export const CreateClusterPage: FC = () => {
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
-  const [error, setError] = useState<string | null>(null);
+  const [jobError, setJobError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const pollerRef = useRef<ReturnType<typeof setInterval>>();
 
   const jobActive = Boolean(jobId && !isTerminalStatus(jobStatus));
 
+  const projects = useMemo<ProjectDefinition[]>(() => {
+    if (!catalog) {
+      return [];
+    }
+    return catalog.projects.map(project => ({
+      id: project.id,
+      name: project.name ?? project.id,
+      visibility: normalizeVisibility(project.visibility),
+      description: project.description ?? 'No project description provided.',
+      lead: project.lead ?? 'Unassigned',
+      budget: {
+        monthlyLimit: project.budget?.monthlyLimit ?? 0,
+        monthlyUsed: project.budget?.monthlyUsed ?? 0,
+      },
+      defaultQueue: project.defaultQueueId ?? '',
+      queues: [],
+    }));
+  }, [catalog]);
+
+  const clusters = useMemo<ClusterRow[]>(() => {
+    if (!catalog) {
+      return [];
+    }
+    return catalog.clusters.map(cluster => ({
+      id: cluster.id,
+      displayName: cluster.displayName ?? cluster.id,
+      projectId: cluster.projectId,
+      provider: cluster.provider ?? '—',
+      region: cluster.region ?? '—',
+      status: cluster.status ?? '—',
+      createdAt: cluster.createdAt,
+    }));
+  }, [catalog]);
+
+  const clustersForProject = useMemo(
+    () => clusters.filter(cluster => cluster.projectId === form.projectId),
+    [clusters, form.projectId],
+  );
+
+  const selectedProject = useMemo(
+    () => projects.find(project => project.id === form.projectId) ?? null,
+    [projects, form.projectId],
+  );
+
+  const noProjectsAvailable = !catalogLoading && projects.length === 0;
+
   const handleFormFieldChange =
     (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => {
       setForm(prev => ({ ...prev, [field]: event.target.value }));
     };
+
+  const handleProjectSelect = (
+    event: React.ChangeEvent<{ value: unknown }>,
+  ) => {
+    const projectId = (event.target.value as string) ?? '';
+    setForm(prev => ({ ...prev, projectId }));
+  };
+
+  useEffect(() => {
+    if (projects.length === 0) {
+      setForm(prev => ({ ...prev, projectId: '' }));
+      return;
+    }
+    setForm(prev => {
+      if (prev.projectId && projects.some(project => project.id === prev.projectId)) {
+        return prev;
+      }
+      return { ...prev, projectId: projects[0].id };
+    });
+  }, [projects]);
 
   const clearPoller = useCallback(() => {
     if (pollerRef.current) {
@@ -150,13 +311,13 @@ export const CreateClusterPage: FC = () => {
           authApi,
           id,
         );
-        setError(null);
+        setJobError(null);
         setJobStatus(job.status ?? null);
         setProgress(
           typeof job.progress === 'number' ? Math.max(0, job.progress) : 0,
         );
         if (job.status === 'FAILED') {
-          setError(job.error || 'Cluster deployment failed.');
+          setJobError(job.error || 'Cluster deployment failed.');
         }
         handleTerminalJob(job.status, job.error);
         if (isTerminalStatus(job.status)) {
@@ -169,7 +330,7 @@ export const CreateClusterPage: FC = () => {
         } else if (e instanceof Error) {
           message = e.message || message;
         }
-        setError(message);
+        setJobError(message);
         clearPoller();
       }
     },
@@ -190,24 +351,52 @@ export const CreateClusterPage: FC = () => {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSubmitting(true);
-    setError(null);
+    setJobError(null);
     try {
+      const projectId = form.projectId.trim();
+      const clusterId = form.clusterId.trim();
+      const provider = form.provider.trim();
+      const region = form.region.trim();
+
+      if (!projectId) {
+        setJobError('Select a project before provisioning a cluster.');
+        setSubmitting(false);
+        return;
+      }
+      if (!clusterId) {
+        setJobError('Cluster ID is required.');
+        setSubmitting(false);
+        return;
+      }
+      if (!region) {
+        setJobError('Region is required.');
+        setSubmitting(false);
+        return;
+      }
+
+      const payload = {
+        projectId,
+        clusterId,
+        provider,
+        region,
+      };
+
       const { job } = await createCluster(
         fetchApi,
         discoveryApi,
         identityApi,
         authApi,
-        form,
+        payload,
       );
       setJobId(job.id);
       setJobStatus(job.status);
       setProgress(job.progress ?? 0);
       persistStoredJob({
         jobId: job.id,
-        projectId: form.projectId,
-        clusterId: form.clusterId,
-        provider: form.provider,
-        region: form.region,
+        projectId,
+        clusterId,
+        provider,
+        region,
       });
       alertApi.post({
         message: `Cluster creation job ${job.id} submitted.`,
@@ -221,7 +410,7 @@ export const CreateClusterPage: FC = () => {
       } else if (e instanceof Error) {
         message = e.message || message;
       }
-      setError(message);
+      setJobError(message);
     } finally {
       setSubmitting(false);
     }
@@ -264,73 +453,165 @@ export const CreateClusterPage: FC = () => {
   return (
     <Page themeId="tool">
       <Content>
-        <ContentHeader title="Create New Cluster" />
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <form onSubmit={handleSubmit} className={classes.form}>
-                  <TextField
-                    label="Project ID"
+        <ContentHeader title="Provision compute clusters" />
+        {catalogLoading && (
+          <Box display="flex" justifyContent="center" paddingY={2}>
+            <Progress />
+          </Box>
+        )}
+        {!catalogLoading && catalogError && (
+          <Box marginBottom={2}>
+            <WarningPanel severity="error" title="Failed to load projects">
+              Unable to retrieve project and cluster metadata.{' '}
+              <Button color="primary" variant="outlined" onClick={() => reloadCatalog()}>
+                Retry
+              </Button>
+            </WarningPanel>
+          </Box>
+        )}
+        <div className={classes.layout}>
+          <Card className={classes.panel} elevation={0}>
+            <CardContent>
+              <div className={classes.panelHeader}>
+                <Typography variant="h6">Submit new cluster job</Typography>
+                <Typography variant="body2" color="textSecondary">
+                  Select a project, choose an identifier, and trigger provisioning through the ÆGIS
+                  control plane.
+                </Typography>
+              </div>
+              <form onSubmit={handleSubmit} className={classes.form}>
+                <FormControl
+                  variant="outlined"
+                  fullWidth
+                  required
+                  disabled={catalogLoading || projects.length === 0}
+                >
+                  <InputLabel id="cluster-project-select">Project</InputLabel>
+                  <Select
+                    labelId="cluster-project-select"
+                    label="Project"
                     value={form.projectId}
-                    onChange={handleFormFieldChange('projectId')}
-                    variant="outlined"
-                    required
-                    fullWidth
-                  />
-                  <TextField
-                    label="Cluster ID"
-                    value={form.clusterId}
-                    onChange={handleFormFieldChange('clusterId')}
-                    variant="outlined"
-                    required
-                    fullWidth
-                  />
-                  <TextField
-                    label="Provider"
-                    value={form.provider}
-                    onChange={handleFormFieldChange('provider')}
-                    variant="outlined"
-                    required
-                    fullWidth
-                    disabled
-                    helperText="AWS only (multi-cloud coming soon)"
-                  />
-                  <TextField
-                    label="Region"
-                    value={form.region}
-                    onChange={handleFormFieldChange('region')}
-                    variant="outlined"
-                    required
-                    fullWidth
-                  />
-                  <div className={classes.actionRow}>
-                    <Button
-                      type="submit"
-                      color="primary"
-                      variant="contained"
-                      disabled={submitting || jobActive}
-                    >
-                      Create Cluster
-                    </Button>
-                    {submitting && <Progress />}
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            {jobId && (
-              <Card>
-                <CardContent>
-                  <Typography variant="h6">Job Status</Typography>
+                    onChange={handleProjectSelect}
+                  >
+                    {projects.map(project => {
+                      const visibility = visibilityCopy[project.visibility];
+                      return (
+                        <MenuItem key={project.id} value={project.id}>
+                          <div className={classes.selectMenu}>
+                            <Typography variant="subtitle1">{project.name}</Typography>
+                            <Typography variant="body2" color="textSecondary">
+                              {project.description}
+                            </Typography>
+                          </div>
+                        </MenuItem>
+                      );
+                    })}
+                    {projects.length === 0 && !catalogLoading && (
+                      <MenuItem value="" disabled>
+                        No projects available
+                      </MenuItem>
+                    )}
+                  </Select>
+                  <FormHelperText>
+                    Clusters inherit guardrails from the selected project. Provision projects first
+                    from the governance console.
+                  </FormHelperText>
+                </FormControl>
+                {selectedProject && (
+                  <Box display="flex" alignItems="center" justifyContent="space-between">
+                    <Typography variant="subtitle1">{selectedProject.name}</Typography>
+                    <Chip
+                      label={visibilityCopy[selectedProject.visibility].label}
+                      color={
+                        visibilityCopy[selectedProject.visibility].tone === 'default'
+                          ? 'default'
+                          : visibilityCopy[selectedProject.visibility].tone
+                      }
+                      size="small"
+                    />
+                  </Box>
+                )}
+                <TextField
+                  label="Cluster ID"
+                  value={form.clusterId}
+                  onChange={handleFormFieldChange('clusterId')}
+                  variant="outlined"
+                  required
+                  fullWidth
+                  helperText="Unique identifier for the Kubernetes cluster"
+                  disabled={noProjectsAvailable}
+                />
+                <TextField
+                  label="Provider"
+                  value={form.provider}
+                  onChange={handleFormFieldChange('provider')}
+                  variant="outlined"
+                  required
+                  fullWidth
+                  disabled
+                  helperText="AWS only (multi-cloud coming soon)"
+                />
+                <TextField
+                  label="Region"
+                  value={form.region}
+                  onChange={handleFormFieldChange('region')}
+                  variant="outlined"
+                  required
+                  fullWidth
+                  disabled={noProjectsAvailable}
+                />
+                <div className={classes.actionRow}>
+                  <Button
+                    type="submit"
+                    color="primary"
+                    variant="contained"
+                  disabled={
+                    submitting ||
+                    jobActive ||
+                    catalogLoading ||
+                    noProjectsAvailable ||
+                    !form.projectId ||
+                    !form.clusterId.trim() ||
+                    !form.region.trim()
+                  }
+                >
+                    Create cluster
+                  </Button>
+                  {submitting && <Progress />}
+                </div>
+                {jobError && (
+                  <WarningPanel severity="error" title="Cluster submission failed">
+                    {jobError}
+                  </WarningPanel>
+                )}
+                {noProjectsAvailable && (
+                  <Box marginTop={2}>
+                    <EmptyState
+                      missing="data"
+                      title="No projects available"
+                      description="Provision a project in the governance console before creating clusters."
+                    />
+                  </Box>
+                )}
+              </form>
+            </CardContent>
+          </Card>
+          <Card className={classes.panel} elevation={0}>
+            <CardContent>
+              <div className={classes.panelHeader}>
+                <Typography variant="h6">Cluster inventory</Typography>
+                <Typography variant="body2" color="textSecondary">
+                  Monitor provisioning progress and verify existing clusters for the selected
+                  project.
+                </Typography>
+              </div>
+              {jobId && (
+                <Paper elevation={0} className={classes.progressSection}>
+                  <Typography variant="subtitle1">Latest job</Typography>
                   <Typography>Job ID: {jobId}</Typography>
                   <Typography>Status: {jobStatus}</Typography>
                   <div className={classes.progressSection}>
-                    <LinearProgress
-                      variant="determinate"
-                      value={normalizedProgress}
-                    />
+                    <LinearProgress variant="determinate" value={normalizedProgress} />
                     <Typography
                       className={classes.progressLabel}
                       variant="body2"
@@ -339,18 +620,29 @@ export const CreateClusterPage: FC = () => {
                       Progress: {normalizedProgress}%
                     </Typography>
                   </div>
-                </CardContent>
-              </Card>
-            )}
-            {error && (
-              <Box marginTop={3}>
-                <WarningPanel severity="error" title="Cluster creation failed">
-                  {error}
-                </WarningPanel>
+                </Paper>
+              )}
+              <Box marginTop={2}>
+                <div className={classes.tableWrapper}>
+                  <Table
+                    options={{ paging: false, search: false, toolbar: false, draggable: false }}
+                    data={clustersForProject}
+                    columns={clusterColumns}
+                  />
+                </div>
+                {!catalogLoading && clustersForProject.length === 0 && !noProjectsAvailable && (
+                  <Box marginTop={2}>
+                    <EmptyState
+                      missing="data"
+                      title="No clusters for this project"
+                      description="Submit a cluster job to enable workspace launches for the selected project."
+                    />
+                  </Box>
+                )}
               </Box>
-            )}
-          </Grid>
-        </Grid>
+            </CardContent>
+          </Card>
+        </div>
       </Content>
     </Page>
   );

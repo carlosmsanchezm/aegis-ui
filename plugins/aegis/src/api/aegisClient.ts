@@ -61,6 +61,72 @@ export type SubmitWorkspaceRequest = {
   };
 };
 
+export type ProjectVisibility = 'restricted' | 'internal' | 'public';
+
+export type BudgetSummary = {
+  monthlyLimit?: number;
+  monthlyUsed?: number;
+};
+
+export type ProjectSummary = {
+  id: string;
+  name: string;
+  description?: string;
+  visibility?: ProjectVisibility;
+  lead?: string;
+  budget?: BudgetSummary;
+  defaultQueueId?: string;
+};
+
+export type QueueSummary = {
+  id: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  visibility?: ProjectVisibility;
+  gpuClass?: string;
+  maxRuntimeHours?: number;
+  activeWorkspaces?: number;
+  budget?: BudgetSummary;
+  clusterId?: string;
+};
+
+export type ClusterSummary = {
+  id: string;
+  projectId: string;
+  displayName?: string;
+  status?: string;
+  provider?: string;
+  region?: string;
+  createdAt?: string;
+};
+
+export type FlavorSummary = {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  cpu?: string;
+  memory?: string;
+  gpu?: string;
+};
+
+export type ListProjectsResponse = {
+  items?: ProjectSummary[];
+};
+
+export type ListQueuesResponse = {
+  items?: QueueSummary[];
+};
+
+export type ListClustersResponse = {
+  items?: ClusterSummary[];
+};
+
+export type ListFlavorsResponse = {
+  items?: FlavorSummary[];
+};
+
 export type CreateWorkspaceRequest = {
   projectId: string;
   workspaceId?: string;
@@ -553,6 +619,94 @@ export const createCluster = async (
       requireAuth: true,
     },
   );
+};
+
+export const listProjects = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<ProjectSummary[]> => {
+  const res = await restJson<undefined, ListProjectsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/projects',
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+  return res.items ?? [];
+};
+
+export const listQueues = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  options?: { projectId?: string },
+): Promise<QueueSummary[]> => {
+  const path = options?.projectId
+    ? `/api/v1/queues?projectId=${encodeURIComponent(options.projectId)}`
+    : '/api/v1/queues';
+  const res = await restJson<undefined, ListQueuesResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    path,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+  return res.items ?? [];
+};
+
+export const listClusters = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  options?: { projectId?: string },
+): Promise<ClusterSummary[]> => {
+  const path = options?.projectId
+    ? `/api/v1/clusters?projectId=${encodeURIComponent(options.projectId)}`
+    : '/api/v1/clusters';
+  const res = await restJson<undefined, ListClustersResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    path,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+  return res.items ?? [];
+};
+
+export const listFlavors = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<FlavorSummary[]> => {
+  const res = await restJson<undefined, ListFlavorsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/flavors',
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+  return res.items ?? [];
 };
 
 export const getClusterJobStatus = async (
