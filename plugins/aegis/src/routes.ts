@@ -94,6 +94,12 @@ export const projectManagementRouteRef = createSubRouteRef({
   path: '/admin/projects',
 });
 
+export const createProjectRouteRef = createSubRouteRef({
+  id: 'aegis-create-project',
+  parent: rootRouteRef,
+  path: '/admin/projects/create',
+});
+
 export const policyManagementRouteRef = createSubRouteRef({
   id: 'aegis-policy-management',
   parent: rootRouteRef,
