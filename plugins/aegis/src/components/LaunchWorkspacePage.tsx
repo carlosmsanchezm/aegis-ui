@@ -697,6 +697,23 @@ export const LaunchWorkspacePage: FC = () => {
     [projectOptions, form.projectId],
   );
 
+  const projectDefaultQueueName = useMemo(() => {
+    if (!selectedProject) {
+      return '';
+    }
+    const defaultQueueId = selectedProject.defaultQueue;
+    const matchingQueue = selectedProject.queues.find(
+      queue => queue.id === defaultQueueId,
+    );
+    if (matchingQueue) {
+      return matchingQueue.name;
+    }
+    if (defaultQueueId) {
+      return defaultQueueId;
+    }
+    return selectedProject.queues[0]?.name ?? '';
+  }, [selectedProject]);
+
   const queueOptions = useMemo<QueueDefinition[]>(
     () => selectedProject?.queues ?? [],
     [selectedProject],
@@ -706,6 +723,8 @@ export const LaunchWorkspacePage: FC = () => {
     () => queueOptions.find(queue => queue.id === form.queue) ?? null,
     [queueOptions, form.queue],
   );
+
+  const selectedComputePolicyName = selectedQueue?.name ?? projectDefaultQueueName;
 
   const projectClusters = useMemo(
     () =>
@@ -1161,7 +1180,7 @@ export const LaunchWorkspacePage: FC = () => {
                         <EmptyState
                           title="No projects available"
                           missing="data"
-                          description="An administrator must provision a project, queue, and cluster before new workspaces can launch."
+                          description="An administrator must provision a project, compute policy, and cluster before new workspaces can launch."
                           action={
                             isAdmin ? (
                               <Button
@@ -1207,16 +1226,16 @@ export const LaunchWorkspacePage: FC = () => {
                             </div>
                           </div>
                           <div>
-                            <div className={classes.projectMetaLabel}>Default queue</div>
+                            <div className={classes.projectMetaLabel}>Default compute policy</div>
                             <div className={classes.projectMetaValue}>
-                              {selectedProject.defaultQueue}
+                              {projectDefaultQueueName || '—'}
                             </div>
                           </div>
                         </div>
                         <div className={classes.projectActions}>
                           <Typography variant="caption" color="textSecondary">
-                            Need deeper control? Review queue guardrails or shift budgets from the
-                            project console.
+                            Need deeper control? Review compute guardrails or shift budgets from
+                            the project console.
                           </Typography>
                           <Button
                             variant="outlined"
@@ -1233,14 +1252,14 @@ export const LaunchWorkspacePage: FC = () => {
                         <EmptyState
                           title={
                             noClustersForProject
-                              ? 'No clusters provisioned'
-                              : 'No queues available'
+                          ? 'No clusters provisioned'
+                              : 'No compute policies available'
                           }
                           missing="data"
                           description={
                             noClustersForProject
                               ? 'Provision a cluster for this project before launching workspaces.'
-                              : 'Queues define guardrails for compute access. Ask an administrator to configure one for this project.'
+                              : 'Compute policies define guardrails for project workloads. Ask an administrator to configure one before launching.'
                           }
                           action={
                             isAdmin ? (
@@ -1289,7 +1308,7 @@ export const LaunchWorkspacePage: FC = () => {
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
                     Match GPU, CPU, and memory to mission objectives. ÆGIS
-                    enforces guardrails based on queue policy.
+                    enforces your project's compute guardrails automatically.
                   </Typography>
                   {renderFlavorCards()}
                 </Grid>
@@ -1307,118 +1326,19 @@ export const LaunchWorkspacePage: FC = () => {
                       fullWidth
                       helperText="OCI image with your workspace runtime"
                     />
-                    <FormControl
-                      variant="outlined"
-                      fullWidth
-                      disabled={queueOptions.length === 0}
-                    >
-                      <InputLabel id="launch-workspace-queue">
-                        Execution queue
-                      </InputLabel>
-                      <Select
-                        labelId="launch-workspace-queue"
-                        label="Execution queue"
-                        value={form.queue}
-                        onChange={handleQueueSelect}
-                      >
-                        {queueOptions.map(queue => (
-                          <MenuItem key={queue.id} value={queue.id}>
-                            <div className={classes.selectMenuContent}>
-                              <Typography variant="subtitle2">{queue.name}</Typography>
-                              <Typography variant="body2" color="textSecondary">
-                                {queue.description}
-                              </Typography>
-                            </div>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      <FormHelperText>
-                        {queueOptions.length === 0
-                          ? 'No queues are assigned to this project yet.'
-                          : 'Stay on the default queue or opt into another guardrail managed by this project.'}
-                      </FormHelperText>
-                    </FormControl>
-                      {selectedQueue && (
-                        <div className={classes.queueSummaryCard}>
-                          <div className={classes.queueSummaryHeader}>
-                            <Typography variant="subtitle1" component="span">
-                              {selectedQueue.name}
-                          </Typography>
-                          <Chip
-                            label={visibilityCopy[selectedQueue.visibility].label}
-                            color={
-                              visibilityCopy[selectedQueue.visibility].tone === 'default'
-                                ? 'default'
-                                : visibilityCopy[selectedQueue.visibility].tone
-                            }
-                            size="small"
-                          />
-                        </div>
-                        <Typography variant="body2" color="textSecondary">
-                          {selectedQueue.description}
-                        </Typography>
-                          <div className={classes.queueSummaryMetrics}>
-                            <div>
-                              <div className={classes.queueSummaryMetricLabel}>GPU class</div>
-                              <div className={classes.queueSummaryMetricValue}>
-                                {selectedQueue.gpuClass}
-                              </div>
-                            </div>
-                            <div>
-                              <div className={classes.queueSummaryMetricLabel}>Max runtime</div>
-                              <div className={classes.queueSummaryMetricValue}>
-                                {selectedQueue.maxRuntimeHours} hrs
-                              </div>
-                            </div>
-                            <div>
-                              <div className={classes.queueSummaryMetricLabel}>Active workspaces</div>
-                              <div className={classes.queueSummaryMetricValue}>
-                                {selectedQueue.activeWorkspaces}
-                              </div>
-                            </div>
-                            <div>
-                              <div className={classes.queueSummaryMetricLabel}>Monthly burn</div>
-                              <div className={classes.queueSummaryMetricValue}>
-                                {formatBudget(selectedQueue.budget)}
-                              </div>
-                            </div>
-                            {selectedCluster && (
-                              <>
-                                <div>
-                                  <div className={classes.queueSummaryMetricLabel}>Cluster</div>
-                                  <div className={classes.queueSummaryMetricValue}>
-                                    {selectedCluster.displayName ?? selectedCluster.id}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className={classes.queueSummaryMetricLabel}>Region</div>
-                                  <div className={classes.queueSummaryMetricValue}>
-                                    {selectedCluster.region ?? '—'}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className={classes.queueSummaryMetricLabel}>Provider</div>
-                                  <div className={classes.queueSummaryMetricValue}>
-                                    {selectedCluster.provider ?? '—'}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className={classes.queueSummaryMetricLabel}>Status</div>
-                                  <div className={classes.queueSummaryMetricValue}>
-                                    {selectedCluster.status ?? 'Unknown'}
-                                  </div>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                          {!selectedCluster && (
-                            <Typography variant="body2" color="textSecondary">
-                              This queue is not yet linked to a running cluster.
-                            </Typography>
-                          )}
-                          </div>
-                        </div>
+                    <Typography variant="body2" color="textSecondary">
+                      {queueOptions.length === 0 ? (
+                        'No compute policies are assigned to this project yet. An administrator must provision one before launch.'
+                      ) : (
+                        <>
+                          ÆGIS will route this workspace through{' '}
+                          {selectedComputePolicyName
+                            ? `“${selectedComputePolicyName}”`
+                            : 'the project default compute policy'}
+                          . Expand advanced parameters to review guardrails or override the routing.
+                        </>
                       )}
+                    </Typography>
                     <FormControlLabel
                       className={classes.toggleControl}
                       control={
@@ -1433,6 +1353,117 @@ export const LaunchWorkspacePage: FC = () => {
                     />
                     <Collapse in={advancedOpen || forceAdvancedOpen}>
                       <div className={classes.advancedSurface}>
+                        {queueOptions.length > 0 && (
+                          <FormControl
+                            variant="outlined"
+                            fullWidth
+                            disabled={queueOptions.length === 0}
+                          >
+                            <InputLabel id="launch-workspace-queue">
+                              Compute policy
+                            </InputLabel>
+                            <Select
+                              labelId="launch-workspace-queue"
+                              label="Compute policy"
+                              value={form.queue}
+                              onChange={handleQueueSelect}
+                            >
+                              {queueOptions.map(queue => (
+                                <MenuItem key={queue.id} value={queue.id}>
+                                  <div className={classes.selectMenuContent}>
+                                    <Typography variant="subtitle2">{queue.name}</Typography>
+                                    <Typography variant="body2" color="textSecondary">
+                                      {queue.description}
+                                    </Typography>
+                                  </div>
+                                </MenuItem>
+                              ))}
+                            </Select>
+                            <FormHelperText>
+                              Choose a different compute policy when you need to target an alternate guardrail.
+                            </FormHelperText>
+                          </FormControl>
+                        )}
+                        {selectedQueue && (
+                          <div className={classes.queueSummaryCard}>
+                            <div className={classes.queueSummaryHeader}>
+                              <Typography variant="subtitle1" component="span">
+                                {selectedQueue.name}
+                              </Typography>
+                              <Chip
+                                label={visibilityCopy[selectedQueue.visibility].label}
+                                color={
+                                  visibilityCopy[selectedQueue.visibility].tone === 'default'
+                                    ? 'default'
+                                    : visibilityCopy[selectedQueue.visibility].tone
+                                }
+                                size="small"
+                              />
+                            </div>
+                            <Typography variant="body2" color="textSecondary">
+                              {selectedQueue.description}
+                            </Typography>
+                            <div className={classes.queueSummaryMetrics}>
+                              <div>
+                                <div className={classes.queueSummaryMetricLabel}>GPU class</div>
+                                <div className={classes.queueSummaryMetricValue}>
+                                  {selectedQueue.gpuClass}
+                                </div>
+                              </div>
+                              <div>
+                                <div className={classes.queueSummaryMetricLabel}>Max runtime</div>
+                                <div className={classes.queueSummaryMetricValue}>
+                                  {selectedQueue.maxRuntimeHours} hrs
+                                </div>
+                              </div>
+                              <div>
+                                <div className={classes.queueSummaryMetricLabel}>Active workspaces</div>
+                                <div className={classes.queueSummaryMetricValue}>
+                                  {selectedQueue.activeWorkspaces}
+                                </div>
+                              </div>
+                              <div>
+                                <div className={classes.queueSummaryMetricLabel}>Monthly burn</div>
+                                <div className={classes.queueSummaryMetricValue}>
+                                  {formatBudget(selectedQueue.budget)}
+                                </div>
+                              </div>
+                              {selectedCluster && (
+                                <>
+                                  <div>
+                                    <div className={classes.queueSummaryMetricLabel}>Cluster</div>
+                                    <div className={classes.queueSummaryMetricValue}>
+                                      {selectedCluster.displayName ?? selectedCluster.id}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className={classes.queueSummaryMetricLabel}>Region</div>
+                                    <div className={classes.queueSummaryMetricValue}>
+                                      {selectedCluster.region ?? '—'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className={classes.queueSummaryMetricLabel}>Provider</div>
+                                    <div className={classes.queueSummaryMetricValue}>
+                                      {selectedCluster.provider ?? '—'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className={classes.queueSummaryMetricLabel}>Status</div>
+                                    <div className={classes.queueSummaryMetricValue}>
+                                      {selectedCluster.status ?? 'Unknown'}
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            {!selectedCluster && (
+                              <Typography variant="body2" color="textSecondary">
+                                This compute policy is not yet linked to a running cluster.
+                              </Typography>
+                            )}
+                          </div>
+                        )}
                         <TextField
                           label="Expose ports"
                           value={form.ports}
@@ -1506,11 +1537,11 @@ export const LaunchWorkspacePage: FC = () => {
                   </Grid>
                   <Grid item xs={12} md={6}>
                     <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Queue</span>
+                      <span className={classes.reviewLabel}>Compute policy</span>
                       <span className={classes.reviewValue}>
                         {selectedQueue?.name ??
-                          (selectedProject?.defaultQueue
-                            ? `${selectedProject.defaultQueue} (default)`
+                          (projectDefaultQueueName
+                            ? `${projectDefaultQueueName} (default)`
                             : 'Project default')}
                       </span>
                     </div>
