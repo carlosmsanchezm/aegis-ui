@@ -4,17 +4,17 @@ import {
   ContentHeader,
   HeaderLabel,
   Page,
-  StatusOK,
-  StatusWarning,
-  Table,
-  TableColumn,
 } from '@backstage/core-components';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
   Chip,
   Divider,
   Grid,
+  LinearProgress,
   List,
   ListItem,
   ListItemText,
@@ -22,7 +22,14 @@ import {
   Typography,
   makeStyles,
 } from '@material-ui/core';
-import { projectCatalog, ProjectDefinition, QueueDefinition, visibilityCopy } from './projectCatalog';
+import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
+import { Link as RouterLink } from 'react-router-dom';
+import {
+  ComputeProfileDefinition,
+  ProjectDefinition,
+  environmentsCopy,
+  projectCatalog,
+} from './projectCatalog';
 
 const useStyles = makeStyles(theme => ({
   root: {
@@ -30,359 +37,345 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'column',
     gap: theme.spacing(3),
   },
-  heroCard: {
-    background: 'linear-gradient(135deg, rgba(99,102,241,0.24), rgba(14,165,233,0.16))',
-    borderRadius: theme.shape.borderRadius * 2,
-    padding: theme.spacing(4),
-    border: `1px solid ${theme.palette.primary.main}33`,
-    boxShadow: 'var(--aegis-card-shadow)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: theme.spacing(2.5),
-  },
-  heroTitle: {
-    fontWeight: 700,
-    letterSpacing: '-0.01em',
-    fontSize: theme.typography.h4.fontSize,
-  },
-  heroActions: {
-    display: 'flex',
-    gap: theme.spacing(1.5),
-    flexWrap: 'wrap',
-  },
-  grid: {
+  layout: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(360px, 1fr) minmax(420px, 1.35fr)',
+    gridTemplateColumns: 'minmax(280px, 0.9fr) minmax(420px, 1.3fr)',
     gap: theme.spacing(3),
     [theme.breakpoints.down('md')]: {
       gridTemplateColumns: '1fr',
     },
   },
-  panel: {
+  listCard: {
+    borderRadius: theme.shape.borderRadius,
+    border: `1px solid var(--aegis-card-border)`,
     backgroundColor: 'var(--aegis-card-surface)',
-    borderRadius: theme.shape.borderRadius,
-    border: `1px solid var(--aegis-card-border)`,
-    padding: theme.spacing(3),
-    display: 'flex',
-    flexDirection: 'column',
-    gap: theme.spacing(2),
-  },
-  panelHeader: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: theme.spacing(0.5),
-  },
-  panelTitle: {
-    fontWeight: 600,
-    letterSpacing: '-0.01em',
-  },
-  tableWrapper: {
-    borderRadius: theme.shape.borderRadius,
-    overflow: 'hidden',
-    border: `1px solid var(--aegis-card-border)`,
-  },
-  queueCard: {
-    borderRadius: theme.shape.borderRadius,
-    border: `1px solid var(--aegis-card-border)`,
-    background:
-      theme.palette.type === 'dark'
-        ? 'rgba(148, 163, 184, 0.08)'
-        : 'rgba(79, 70, 229, 0.04)',
-    padding: theme.spacing(2.25),
-    display: 'flex',
-    flexDirection: 'column',
-    gap: theme.spacing(1.25),
-  },
-  queueGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-    gap: theme.spacing(2),
-  },
-  metricRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: theme.spacing(1.5),
-  },
-  mutedLabel: {
-    color: theme.palette.text.secondary,
-    fontSize: theme.typography.pxToRem(13),
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    fontWeight: 600,
-  },
-  emphasisValue: {
-    fontWeight: 700,
-    letterSpacing: '-0.02em',
-    fontSize: theme.typography.pxToRem(18),
-  },
-  listRoot: {
-    borderRadius: theme.shape.borderRadius,
-    border: `1px solid var(--aegis-card-border)`,
-    padding: theme.spacing(0.5),
+    padding: theme.spacing(1.5, 1),
   },
   listItem: {
     borderRadius: theme.shape.borderRadius,
-    margin: theme.spacing(0.5, 0),
+    margin: theme.spacing(0.5, 1),
     '&.Mui-selected, &.Mui-selected:hover': {
       backgroundColor:
         theme.palette.type === 'dark'
-          ? 'rgba(96, 165, 250, 0.18)'
-          : 'rgba(96, 165, 250, 0.22)',
+          ? 'rgba(59,130,246,0.16)'
+          : 'rgba(59,130,246,0.18)',
     },
   },
-  subtitle: {
-    fontSize: theme.typography.pxToRem(13),
-    color: theme.palette.text.secondary,
-  },
-  projectHero: {
+  detailCard: {
+    borderRadius: theme.shape.borderRadius,
+    border: `1px solid var(--aegis-card-border)`,
+    backgroundColor: 'var(--aegis-card-surface)',
+    padding: theme.spacing(3),
     display: 'flex',
-    alignItems: 'center',
+    flexDirection: 'column',
+    gap: theme.spacing(3),
+  },
+  heroHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: theme.spacing(2),
   },
-  queueMeta: {
+  heroHeading: {
+    fontWeight: 700,
+    letterSpacing: '-0.02em',
+  },
+  environmentChip: {
+    borderRadius: 999,
+    fontWeight: 600,
+  },
+  budgetPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1.5),
+    padding: theme.spacing(2),
+    borderRadius: theme.shape.borderRadius,
+    border: `1px solid var(--aegis-card-border)`,
+    backgroundColor:
+      theme.palette.type === 'dark'
+        ? 'rgba(15,118,110,0.16)'
+        : 'rgba(16,185,129,0.12)',
+  },
+  profileGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: theme.spacing(1),
+    gap: theme.spacing(2),
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+  },
+  profileCard: {
+    borderRadius: theme.shape.borderRadius,
+    border: `1px solid var(--aegis-card-border)`,
+    padding: theme.spacing(2.25),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1.5),
+    backgroundColor:
+      theme.palette.type === 'dark'
+        ? 'rgba(99,102,241,0.14)'
+        : 'rgba(99,102,241,0.08)',
   },
   badgeRow: {
     display: 'flex',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: theme.spacing(1),
+  },
+  computeCardIntro: {
+    display: 'flex',
+    flexDirection: 'column',
+    rowGap: theme.spacing(1.5),
+  },
+  sectionTitle: {
+    fontWeight: 600,
+    letterSpacing: '-0.01em',
+  },
+  metaList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+  },
+  muted: {
+    color: theme.palette.text.secondary,
+  },
+  accordionRoot: {
+    borderRadius: theme.shape.borderRadius,
+    border: `1px solid var(--aegis-card-border)`,
+    '&:before': {
+      display: 'none',
+    },
   },
 }));
 
-const budgetCopy = (budget: ProjectDefinition['budget']) =>
-  `$${budget.monthlyUsed.toLocaleString('en-US')} / $${budget.monthlyLimit.toLocaleString('en-US')}`;
+const formatCurrency = (value: number) =>
+  `$${value.toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
 
-const queueColumns: TableColumn<QueueDefinition>[] = [
-  { title: 'Queue', field: 'name' },
-  {
-    title: 'Visibility',
-    field: 'visibility',
-    render: queue => visibilityCopy[queue.visibility].label,
-  },
-  {
-    title: 'GPU Class',
-    field: 'gpuClass',
-  },
-  {
-    title: 'Active',
-    field: 'activeWorkspaces',
-    render: queue => `${queue.activeWorkspaces} live`,
-  },
-  {
-    title: 'Budget',
-    field: 'budget',
-    render: queue =>
-      `$${queue.budget.monthlyUsed.toLocaleString('en-US')} / $${queue.budget.monthlyLimit.toLocaleString('en-US')}`,
-  },
-  {
-    title: 'Max Runtime',
-    field: 'maxRuntimeHours',
-    render: queue => `${queue.maxRuntimeHours} hrs`,
-  },
-];
+const ComputeProfileCard = ({ profile }: { profile: ComputeProfileDefinition }) => {
+  const classes = useStyles();
+  return (
+    <Paper elevation={0} className={classes.profileCard}>
+      <Box className={classes.computeCardIntro}>
+        <Typography variant="subtitle2" className={classes.sectionTitle}>
+          {profile.label}
+        </Typography>
+        <Typography variant="body2" color="textSecondary">
+          {profile.description}
+        </Typography>
+      </Box>
+      <Typography variant="h6">{formatCurrency(profile.hourlyRate)}/hr</Typography>
+      <Typography variant="body2">{profile.resources}</Typography>
+      <Divider />
+      <Typography variant="caption" color="textSecondary">
+        Cluster
+      </Typography>
+      <Typography variant="body2">
+        {profile.cluster.name} · {profile.cluster.region} ·{' '}
+        {profile.cluster.complianceTier}
+      </Typography>
+      <div className={classes.badgeRow}>
+        {profile.badges.map(badge => (
+          <Chip key={badge} label={badge} size="small" />
+        ))}
+      </div>
+      <Typography variant="caption" color="textSecondary">
+        Namespace · Storage · Network
+      </Typography>
+      <Typography variant="body2">
+        {profile.namespace} · {profile.storageClass} · {profile.networkZone}
+      </Typography>
+    </Paper>
+  );
+};
 
 export const ProjectManagementPage: FC = () => {
   const classes = useStyles();
-  const [selectedProjectId, setSelectedProjectId] = useState(projectCatalog[0]?.id ?? '');
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    projectCatalog[0]?.id ?? '',
+  );
 
-  const selectedProject = useMemo(
-    () => projectCatalog.find(project => project.id === selectedProjectId) ?? projectCatalog[0],
+  const selectedProject = useMemo<ProjectDefinition | undefined>(
+    () => projectCatalog.find(project => project.id === selectedProjectId),
     [selectedProjectId],
   );
 
-  const queueData = useMemo(() => selectedProject?.queues ?? [], [selectedProject]);
+  const budgetPercent = useMemo(() => {
+    if (!selectedProject) {
+      return 0;
+    }
+    return Math.min(
+      100,
+      Math.round(
+        (selectedProject.budget.monthlyUsed /
+          Math.max(1, selectedProject.budget.monthlyLimit)) *
+          100,
+      ),
+    );
+  }, [selectedProject]);
 
   return (
     <Page themeId="tool">
       <Content>
-        <ContentHeader title="Project governance">
-          <HeaderLabel label="Budget owner" value={selectedProject?.lead ?? '—'} />
-          <HeaderLabel
-            label="Monthly burn"
-            value={selectedProject ? budgetCopy(selectedProject.budget) : '—'}
-          />
+        <ContentHeader title="Projects">
+          <HeaderLabel label="Scope" value="Organization" />
+          <HeaderLabel label="Last Sync" value="3m ago" />
+          <Button
+            variant="contained"
+            color="primary"
+            component={RouterLink}
+            to="/aegis/admin/projects/create"
+          >
+            Create Project
+          </Button>
         </ContentHeader>
-        <div className={classes.root}>
-          <Paper className={classes.heroCard} elevation={0}>
-            <div className={classes.heroTitle}>Balance autonomy with governance</div>
-            <Typography variant="body1">
-              Auto-provisioned projects keep new teams moving, while this view gives platform
-              leaders precise control over visibility, spending, and queue guardrails. Promote
-              healthy defaults, then step in with budget or access adjustments only when needed.
-            </Typography>
-            <div className={classes.heroActions}>
-              <Button variant="contained" color="primary">
-                Create project
-              </Button>
-              <Button variant="outlined" color="primary">
-                Adjust budget
-              </Button>
-              <Button variant="outlined">Export audit trail</Button>
-            </div>
-          </Paper>
-
-          <div className={classes.grid}>
-            <div className={classes.panel}>
-              <div className={classes.panelHeader}>
-                <Typography variant="h6" className={classes.panelTitle}>
-                  Projects
-                </Typography>
-                <Typography className={classes.subtitle}>
-                  Auto-bootstrap ensures at least one project and queue exist. Admins can retag
-                  visibility, shift budgets, or archive unused initiatives from here.
-                </Typography>
-              </div>
-              <List className={classes.listRoot} disablePadding>
-                {projectCatalog.map(project => {
-                  const visibility = visibilityCopy[project.visibility];
-                  const isSelected = project.id === selectedProject?.id;
-                  return (
+        <div className={classes.layout}>
+          <Paper elevation={0} className={classes.listCard}>
+            <List disablePadding>
+              {projectCatalog.map(project => {
+                const envMeta = environmentsCopy[project.environment];
+                return (
                   <ListItem
                     key={project.id}
                     button
-                    selected={isSelected}
+                    selected={project.id === selectedProjectId}
                     onClick={() => setSelectedProjectId(project.id)}
                     className={classes.listItem}
                   >
-                      <ListItemText
-                        primary={
-                          <Box className={classes.projectHero}>
-                            <span>{project.name}</span>
-                            <Chip
-                              label={visibility.label}
-                              color={visibility.tone === 'default' ? 'default' : visibility.tone}
-                              size="small"
-                            />
-                          </Box>
-                        }
-                        secondary={
-                          <Typography variant="body2" color="textSecondary">
-                            {budgetCopy(project.budget)} — Lead: {project.lead}
-                          </Typography>
-                        }
-                      />
-                    </ListItem>
-                  );
-                })}
-              </List>
-            </div>
+                    <ListItemText
+                      primary={project.displayName}
+                      secondary={project.description}
+                    />
+                    <Chip
+                      className={classes.environmentChip}
+                      color={envMeta.tone === 'error' ? 'secondary' : 'primary'}
+                      variant={envMeta.tone === 'primary' ? 'default' : 'outlined'}
+                      label={envMeta.label}
+                      size="small"
+                    />
+                  </ListItem>
+                );
+              })}
+            </List>
+          </Paper>
+          {selectedProject && (
+            <Paper elevation={0} className={classes.detailCard}>
+              <div className={classes.heroHeader}>
+                <div>
+                  <Typography variant="h4" className={classes.heroHeading}>
+                    {selectedProject.displayName}
+                  </Typography>
+                  <Typography variant="subtitle1" color="textSecondary">
+                    {selectedProject.description}
+                  </Typography>
+                </div>
+                <Chip
+                  className={classes.environmentChip}
+                  color={
+                    environmentsCopy[selectedProject.environment].tone === 'error'
+                      ? 'secondary'
+                      : 'primary'
+                  }
+                  label={environmentsCopy[selectedProject.environment].label}
+                />
+              </div>
 
-            <div className={classes.panel}>
-              {selectedProject ? (
-                <>
-                  <div className={classes.panelHeader}>
-                    <Box className={classes.projectHero}>
-                      <Typography variant="h6" className={classes.panelTitle}>
-                        {selectedProject.name}
-                      </Typography>
-                      <Chip
-                        label={visibilityCopy[selectedProject.visibility].label}
-                        color={
-                          visibilityCopy[selectedProject.visibility].tone === 'default'
-                            ? 'default'
-                            : visibilityCopy[selectedProject.visibility].tone
-                        }
-                        size="small"
-                      />
-                    </Box>
-                    <Typography variant="body2" color="textSecondary">
-                      {selectedProject.description}
-                    </Typography>
+              <div className={classes.budgetPanel}>
+                <Typography variant="subtitle1" className={classes.sectionTitle}>
+                  Budget & Guardrails
+                </Typography>
+                <Typography variant="body2">
+                  {formatCurrency(selectedProject.budget.monthlyUsed)} used of{' '}
+                  {formatCurrency(selectedProject.budget.monthlyLimit)} this month
+                </Typography>
+                <LinearProgress variant="determinate" value={budgetPercent} />
+              </div>
+
+              <div>
+                <Typography variant="subtitle1" className={classes.sectionTitle}>
+                  Compute Profiles
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  These profiles are granted to the project via platform-managed
+                  clusters. Costs roll up to the project budget.
+                </Typography>
+                <div className={classes.profileGrid}>
+                  {selectedProject.computeProfiles.map(profile => (
+                    <ComputeProfileCard key={profile.id} profile={profile} />
+                  ))}
+                </div>
+              </div>
+
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={6}>
+                  <Typography
+                    variant="subtitle1"
+                    className={classes.sectionTitle}
+                    gutterBottom
+                  >
+                    Data Connections
+                  </Typography>
+                  <div className={classes.metaList}>
+                    {selectedProject.dataConnections.map(connection => (
+                      <Box key={connection.id}>
+                        <Typography variant="body1">{connection.name}</Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {connection.uri}
+                        </Typography>
+                      </Box>
+                    ))}
                   </div>
-                  <Divider />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography
+                    variant="subtitle1"
+                    className={classes.sectionTitle}
+                    gutterBottom
+                  >
+                    Secret Scopes
+                  </Typography>
+                  <div className={classes.metaList}>
+                    {selectedProject.secretScopes.map(scope => (
+                      <Box key={scope.id}>
+                        <Typography variant="body1">{scope.name}</Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {scope.provider}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </div>
+                </Grid>
+              </Grid>
+
+              <Accordion elevation={0} className={classes.accordionRoot}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="subtitle1" className={classes.sectionTitle}>
+                    Advanced Metadata
+                  </Typography>
+                </AccordionSummary>
+                <AccordionDetails>
                   <Grid container spacing={2}>
-                    <Grid item xs={12} sm={6}>
-                      <div className={classes.metricRow}>
-                        <span className={classes.mutedLabel}>Budget</span>
-                        <span className={classes.emphasisValue}>{budgetCopy(selectedProject.budget)}</span>
-                      </div>
+                    <Grid item xs={12} md={6}>
+                      <Typography variant="caption" className={classes.muted}>
+                        Owners
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedProject.owners.join(', ')}
+                      </Typography>
                     </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <div className={classes.metricRow}>
-                        <span className={classes.mutedLabel}>Default queue</span>
-                        <span className={classes.emphasisValue}>{selectedProject.defaultQueue}</span>
-                      </div>
+                    <Grid item xs={12} md={6}>
+                      <Typography variant="caption" className={classes.muted}>
+                        Default Compute Profile
+                      </Typography>
+                      <Typography variant="body1">
+                        {
+                          selectedProject.computeProfiles.find(
+                            profile =>
+                              profile.id === selectedProject.defaultComputeProfileId,
+                          )?.label
+                        }
+                      </Typography>
                     </Grid>
                   </Grid>
-                  <Divider />
-                  <Typography variant="subtitle1" className={classes.panelTitle}>
-                    Queues
-                  </Typography>
-                  <div className={classes.queueGrid}>
-                    {queueData.map(queue => {
-                      const visibility = visibilityCopy[queue.visibility];
-                      const utilization = queue.budget.monthlyUsed / queue.budget.monthlyLimit;
-                      const BudgetStatus = utilization > 0.85 ? StatusWarning : StatusOK;
-                      return (
-                        <div key={queue.id} className={classes.queueCard}>
-                          <div className={classes.badgeRow}>
-                            <Typography variant="subtitle1" className={classes.panelTitle}>
-                              {queue.name}
-                            </Typography>
-                            <Chip
-                              label={visibility.label}
-                              color={visibility.tone === 'default' ? 'default' : visibility.tone}
-                              size="small"
-                            />
-                          </div>
-                          <Typography variant="body2" color="textSecondary">
-                            {queue.description}
-                          </Typography>
-                          <div className={classes.queueMeta}>
-                            <div>
-                              <div className={classes.mutedLabel}>GPU class</div>
-                              <div>{queue.gpuClass}</div>
-                            </div>
-                            <div>
-                              <div className={classes.mutedLabel}>Max runtime</div>
-                              <div>{queue.maxRuntimeHours} hrs</div>
-                            </div>
-                            <div>
-                              <div className={classes.mutedLabel}>Active workspaces</div>
-                              <div>{queue.activeWorkspaces}</div>
-                            </div>
-                            <div>
-                              <div className={classes.mutedLabel}>Budget</div>
-                              <div>
-                                <BudgetStatus />{' '}
-                                ${queue.budget.monthlyUsed.toLocaleString('en-US')} / $
-                                {queue.budget.monthlyLimit.toLocaleString('en-US')}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : (
-                <Typography color="textSecondary">Select a project to view details.</Typography>
-              )}
-            </div>
-          </div>
-
-          <div className={classes.panel}>
-            <div className={classes.panelHeader}>
-              <Typography variant="h6" className={classes.panelTitle}>
-                Queue roster
-              </Typography>
-              <Typography className={classes.subtitle}>
-                Export-ready snapshot of queue guardrails and spend. Auto-bootstrap creates a starter
-                queue for every project — adjust runtime ceilings or retire unused queues anytime.
-              </Typography>
-            </div>
-            <div className={classes.tableWrapper}>
-              <Table
-                options={{ paging: false, search: false, toolbar: false, draggable: false }}
-                data={queueData}
-                columns={queueColumns}
-              />
-            </div>
-          </div>
+                </AccordionDetails>
+              </Accordion>
+            </Paper>
+          )}
         </div>
       </Content>
     </Page>

@@ -1,13 +1,18 @@
 import {
   ChangeEvent,
-  ComponentType,
   FC,
   FormEvent,
   useEffect,
   useMemo,
   useState,
 } from 'react';
-import { Page, Content, ContentHeader, Progress, WarningPanel } from '@backstage/core-components';
+import {
+  Page,
+  Content,
+  ContentHeader,
+  Progress,
+  WarningPanel,
+} from '@backstage/core-components';
 import {
   alertApiRef,
   discoveryApiRef,
@@ -16,41 +21,35 @@ import {
   useApi,
   useRouteRef,
 } from '@backstage/core-plugin-api';
-import { useNavigate } from 'react-router-dom';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
   Card,
   CardActionArea,
   CardContent,
+  Checkbox,
   Chip,
-  Collapse,
-  Divider,
   FormControl,
   FormControlLabel,
-  FormHelperText,
   Grid,
   InputLabel,
+  LinearProgress,
+  Divider,
   MenuItem,
-  Paper,
   Select,
-  Step,
-  StepLabel,
-  Stepper,
-  Switch,
+  Slider,
   TextField,
   Typography,
+  makeStyles,
 } from '@material-ui/core';
-import { makeStyles } from '@material-ui/core/styles';
-import { alpha } from '@material-ui/core/styles/colorManipulator';
-import { StepIconProps } from '@material-ui/core/StepIcon';
-import CheckRoundedIcon from '@material-ui/icons/CheckRounded';
-import CodeIcon from '@material-ui/icons/Code';
-import DescriptionIcon from '@material-ui/icons/Description';
-import DeveloperModeIcon from '@material-ui/icons/DeveloperMode';
+import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
+import CloudQueueIcon from '@material-ui/icons/CloudQueue';
 import StorageIcon from '@material-ui/icons/Storage';
-import MemoryIcon from '@material-ui/icons/Memory';
-import TimelineIcon from '@material-ui/icons/Timeline';
+import LockIcon from '@material-ui/icons/Lock';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -58,666 +57,309 @@ import {
   createWorkspace,
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
-import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
-import { projectManagementRouteRef, workloadsRouteRef } from '../routes';
+import { workloadsRouteRef } from '../routes';
 import {
+  ComputeProfileDefinition,
   ProjectDefinition,
-  QueueDefinition,
+  environmentsCopy,
   projectCatalog,
-  visibilityCopy,
 } from './projects/projectCatalog';
 
-import type { Theme } from '@material-ui/core/styles';
+const useStyles = makeStyles(theme => ({
+  page: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(3),
+  },
+  layout: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(480px, 1.4fr) minmax(320px, 0.8fr)',
+    gap: theme.spacing(3),
+    [theme.breakpoints.down('lg')]: {
+      gridTemplateColumns: '1fr',
+    },
+  },
+  card: {
+    borderRadius: theme.shape.borderRadius,
+    border: `1px solid var(--aegis-card-border)`,
+    backgroundColor: 'var(--aegis-card-surface)',
+  },
+  cardContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2.5),
+  },
+  sectionTitle: {
+    fontWeight: 600,
+    letterSpacing: '-0.01em',
+  },
+  computeProfileGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: theme.spacing(2),
+  },
+  computeProfileCard: {
+    height: '100%',
+    border: `1px solid var(--aegis-card-border)`,
+    borderRadius: theme.shape.borderRadius,
+    backgroundColor: 'transparent',
+    transition: 'border-color 150ms ease, box-shadow 150ms ease',
+    '&.selected': {
+      borderColor: theme.palette.primary.main,
+      boxShadow: '0 0 0 2px rgba(59,130,246,0.25)',
+    },
+  },
+  computeProfileCardContent: {
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: theme.spacing(1.5),
+  },
+  chipRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(1),
+  },
+  summaryCard: {
+    padding: theme.spacing(3),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2),
+  },
+  inlineField: {
+    display: 'flex',
+    gap: theme.spacing(2),
+    flexWrap: 'wrap',
+  },
+  advancedSection: {
+    backgroundColor:
+      theme.palette.type === 'dark'
+        ? 'rgba(59,130,246,0.08)'
+        : 'rgba(191,219,254,0.35)',
+  },
+  budgetMeter: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+  },
+  envLabel: {
+    borderRadius: 999,
+    fontWeight: 600,
+  },
+  summaryHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    columnGap: theme.spacing(1.5),
+  },
+  summaryColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    rowGap: theme.spacing(1.5),
+  },
+  summaryRow: {
+    display: 'flex',
+    alignItems: 'center',
+    columnGap: theme.spacing(1.5),
+  },
+  summaryActions: {
+    display: 'flex',
+    flexDirection: 'column',
+    rowGap: theme.spacing(1.5),
+  },
+}));
 
-type WorkspaceTypeId = 'vscode' | 'jupyter' | 'cli';
-
-type WorkspaceTypeOption = {
-  id: WorkspaceTypeId;
-  title: string;
-  description: string;
-};
-
-type TemplateOption = {
+type WorkspaceImageDefinition = {
   id: string;
-  title: string;
+  label: string;
   description: string;
-  workspaceTypes: WorkspaceTypeId[];
-  defaults: {
-    flavor?: string;
-    image?: string;
-    queue?: string;
-    ports?: number[];
-    env?: Record<string, string>;
-  };
-  autoShowAdvanced?: boolean;
+  image: string;
+  badges: string[];
 };
 
-type FlavorOption = {
-  id: string;
-  title: string;
-  description: string;
-  flavor: string;
-  resources: string;
-};
-
-// TODO: Replace static catalogs with workspace profiles served by the ÆGIS control plane API.
-const workspaceTypeCatalog: WorkspaceTypeOption[] = [
-  {
-    id: 'vscode',
-    title: 'VS Code',
-    description: 'Full-featured IDE with terminal and debugging support.',
-  },
-  {
-    id: 'jupyter',
-    title: 'JupyterLab',
-    description: 'Notebook-centric environment for data exploration.',
-  },
-  {
-    id: 'cli',
-    title: 'CLI Workspace',
-    description: 'Lightweight shell session for quick administration tasks.',
-  },
-];
-
-const templateCatalog: TemplateOption[] = [
+const workspaceImages: WorkspaceImageDefinition[] = [
   {
     id: 'vscode-python',
-    title: 'Python Starter',
-    description: 'VS Code image tuned for Python, linting, and testing.',
-    workspaceTypes: ['vscode'],
-    defaults: {
-      flavor: 'cpu-medium',
-      image: 'carlosmsanchez/aegis-workspace-vscode:latest',
-      ports: [22, 11111],
-    },
+    label: 'VS Code · Python 3.11',
+    description: 'Fully-managed VS Code with CUDA extensions and CLI tools.',
+    image: 'ghcr.io/aegis/workspace-vscode-python:3.11',
+    badges: ['Prebuilt CUDA', 'Devcontainer ready'],
   },
   {
-    id: 'vscode-data',
-    title: 'Data Engineering',
-    description: 'VS Code with dbt, SQL utilities, and data connectors.',
-    workspaceTypes: ['vscode'],
-    defaults: {
-      flavor: 'cpu-large',
-      image: 'ghcr.io/aegis/workspace-vscode-data:latest',
-      ports: [22, 11111],
-    },
-  },
-  {
-    id: 'jupyter-pytorch',
-    title: 'PyTorch GPU',
-    description: 'JupyterLab with CUDA, PyTorch, and ML tooling pre-installed.',
-    workspaceTypes: ['jupyter'],
-    defaults: {
-      flavor: 'gpu-standard',
-      image: 'ghcr.io/aegis/workspace-jupyter-pytorch:latest',
-      queue: 'gpu',
-      ports: [22, 8888],
-      env: {
-        NOTEBOOK_TOKEN: 'aegis',
-      },
-    },
-  },
-  {
-    id: 'jupyter-rapids',
-    title: 'RAPIDS Accelerator',
-    description: 'GPU-accelerated RAPIDS stack for large-scale analytics.',
-    workspaceTypes: ['jupyter'],
-    defaults: {
-      flavor: 'gpu-large',
-      image: 'ghcr.io/aegis/workspace-jupyter-rapids:latest',
-      queue: 'gpu',
-      ports: [22, 8888],
-    },
+    id: 'jupyter-gpu',
+    label: 'JupyterLab · GPU',
+    description: 'JupyterLab image with PyTorch, TensorFlow, and notebook tooling.',
+    image: 'ghcr.io/aegis/workspace-jupyterlab:gpu-latest',
+    badges: ['Notebook ready', 'CUDA 12'],
   },
   {
     id: 'cli-ops',
-    title: 'Operations Shell',
-    description: 'Lean container with kubectl, helm, and cloud CLIs.',
-    workspaceTypes: ['cli'],
-    defaults: {
-      flavor: 'cpu-small',
-      image: 'ghcr.io/aegis/workspace-cli:latest',
-      ports: [22],
-    },
-  },
-  {
-    id: 'custom',
-    title: 'Custom Image',
-    description: 'Bring your own container image and connection settings.',
-    workspaceTypes: ['vscode', 'jupyter', 'cli'],
-    defaults: {
-      ports: [22],
-    },
-    autoShowAdvanced: true,
+    label: 'Secure CLI',
+    description: 'Minimal shell with kubectl, cloud CLIs, and Git.',
+    image: 'ghcr.io/aegis/workspace-cli:latest',
+    badges: ['Air-gapped approved'],
   },
 ];
 
-const flavorCatalog: FlavorOption[] = [
-  {
-    id: 'cpu-small',
-    title: 'Small',
-    description: '2 vCPU, 4 GiB RAM — great for quick CLI sessions.',
-    flavor: 'cpu-small',
-    resources: '2 vCPU • 4 GiB RAM',
-  },
-  {
-    id: 'cpu-medium',
-    title: 'Medium',
-    description: '4 vCPU, 16 GiB RAM — balanced choice for most notebooks.',
-    flavor: 'cpu-medium',
-    resources: '4 vCPU • 16 GiB RAM',
-  },
-  {
-    id: 'cpu-large',
-    title: 'Large',
-    description: '8 vCPU, 32 GiB RAM — heavier IDE workloads and data prep.',
-    flavor: 'cpu-large',
-    resources: '8 vCPU • 32 GiB RAM',
-  },
-  {
-    id: 'gpu-standard',
-    title: 'GPU Standard',
-    description: '1× NVIDIA T4, 4 vCPU, 32 GiB RAM — training and inference.',
-    flavor: 'gpu-standard',
-    resources: '1× T4 • 4 vCPU • 32 GiB RAM',
-  },
-  {
-    id: 'gpu-large',
-    title: 'GPU Large',
-    description: '1× NVIDIA A10, 8 vCPU, 64 GiB RAM — larger GPU workloads.',
-    flavor: 'gpu-large',
-    resources: '1× A10 • 8 vCPU • 64 GiB RAM',
-  },
-];
+const randomSuffix = () => Math.random().toString(36).slice(-5);
 
-const steps = ['Workspace basics', 'Resources & options', 'Review & launch'];
+const sanitizeWorkspaceName = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
-const workspaceTypeIcons: Record<WorkspaceTypeId, ComponentType<any>> = {
-  vscode: CodeIcon,
-  jupyter: DescriptionIcon,
-  cli: DeveloperModeIcon,
-};
+const formatCurrency = (value: number) =>
+  `$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
-const useStyles = makeStyles((theme: Theme) => {
-  const isDark = theme.palette.type === 'dark';
-  const borderColor = 'var(--aegis-card-border)';
-  const surface = 'var(--aegis-card-surface)';
-  const accent = theme.palette.primary.main;
-  const selectedShadow = isDark
-    ? '0 16px 48px rgba(139, 92, 246, 0.32)'
-    : '0 24px 60px rgba(109, 40, 217, 0.25)';
-
-  return {
-    content: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(4),
-    },
-    wizardShell: {
-      backgroundColor: surface,
-      borderRadius: theme.shape.borderRadius,
-      border: `1px solid ${borderColor}`,
-      boxShadow: 'var(--aegis-card-shadow)',
-      padding: theme.spacing(4),
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(3),
-    },
-    hero: {
-      color: theme.palette.text.secondary,
-      maxWidth: 560,
-      marginTop: theme.spacing(1),
-    },
-    stepper: {
-      background: 'transparent',
-      padding: theme.spacing(0, 1),
-    },
-    stepLabel: {
-      color: theme.palette.text.secondary,
-      textTransform: 'uppercase',
-      fontSize: '0.75rem',
-      letterSpacing: '0.08em',
-    },
-    selectionGrid: {
-      marginTop: theme.spacing(1),
-    },
-    selectionCard: {
-      height: '100%',
-      borderRadius: theme.shape.borderRadius,
-      border: `1px solid ${borderColor}`,
-      backgroundColor: surface,
-      transition:
-        'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease',
-    },
-    selectionCardAction: {
-      height: '100%',
-      display: 'flex',
-      alignItems: 'stretch',
-    },
-    selectionCardContent: {
-      padding: theme.spacing(3),
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(1.5),
-      alignItems: 'flex-start',
-    },
-    selectionCardSelected: {
-      borderColor: accent,
-      backgroundColor: alpha(accent, isDark ? 0.16 : 0.1),
-      boxShadow: selectedShadow,
-      transform: 'translateY(-2px)',
-    },
-    selectionCardIcon: {
-      width: 38,
-      height: 38,
-      color: accent,
-    },
-    selectionMeta: {
-      color: theme.palette.text.secondary,
-      fontSize: '0.9rem',
-    },
-    chipRow: {
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: theme.spacing(1),
-    },
-    chip: {
-      backgroundColor: alpha(accent, isDark ? 0.16 : 0.12),
-      color: accent,
-      fontWeight: 600,
-      letterSpacing: '0.03em',
-      textTransform: 'uppercase',
-    },
-    formSection: {
-      backgroundColor: isDark ? alpha('#111827', 0.7) : '#FFFFFF',
-      borderRadius: theme.shape.borderRadius,
-      border: `1px solid ${borderColor}`,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(2),
-      padding: theme.spacing(3),
-    },
-    projectOverview: {
-      borderRadius: theme.shape.borderRadius,
-      border: `1px solid ${borderColor}`,
-      backgroundColor: isDark ? alpha('#0F172A', 0.7) : 'var(--aegis-card-surface)',
-      padding: theme.spacing(2.5),
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(1.5),
-    },
-    projectHeader: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: theme.spacing(1.5),
-    },
-    projectMeta: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-      gap: theme.spacing(1.5),
-    },
-    projectMetaLabel: {
-      fontSize: theme.typography.pxToRem(12),
-      letterSpacing: '0.08em',
-      textTransform: 'uppercase',
-      color: theme.palette.text.secondary,
-      fontWeight: 600,
-    },
-    projectMetaValue: {
-      fontWeight: 600,
-      letterSpacing: '-0.01em',
-    },
-    projectActions: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      flexWrap: 'wrap',
-      gap: theme.spacing(1.5),
-    },
-    selectMenuContent: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(0.5),
-    },
-    queueSummaryCard: {
-      borderRadius: theme.shape.borderRadius,
-      border: `1px solid ${borderColor}`,
-      backgroundColor: isDark ? alpha('#111827', 0.7) : '#F6F6FB',
-      padding: theme.spacing(2.5),
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(1.5),
-    },
-    queueSummaryHeader: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: theme.spacing(1.5),
-    },
-    queueSummaryMetrics: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-      gap: theme.spacing(1.25),
-    },
-    queueSummaryMetricLabel: {
-      fontSize: theme.typography.pxToRem(12),
-      textTransform: 'uppercase',
-      letterSpacing: '0.08em',
-      color: theme.palette.text.secondary,
-      fontWeight: 600,
-    },
-    queueSummaryMetricValue: {
-      fontWeight: 600,
-    },
-    sectionDivider: {
-      backgroundColor: 'var(--aegis-muted)',
-      margin: theme.spacing(3, 0),
-    },
-    toggleControl: {
-      marginTop: theme.spacing(1),
-      display: 'flex',
-      alignItems: 'center',
-    },
-    advancedSurface: {
-      backgroundColor: isDark ? alpha('#0F172A', 0.65) : '#F8F8F6',
-      borderRadius: theme.shape.borderRadius,
-      border: `1px solid ${borderColor}`,
-      padding: theme.spacing(3),
-      marginTop: theme.spacing(2),
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(2),
-    },
-    reviewPaper: {
-      backgroundColor: surface,
-      borderRadius: theme.shape.borderRadius,
-      border: `1px solid ${borderColor}`,
-      padding: theme.spacing(3),
-    },
-    reviewRow: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(0.5),
-    },
-    reviewLabel: {
-      color: theme.palette.text.secondary,
-      fontSize: '0.8rem',
-      letterSpacing: '0.08em',
-      textTransform: 'uppercase',
-    },
-    reviewValue: {
-      fontWeight: 600,
-      wordBreak: 'break-word',
-    },
-    actionRow: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      flexWrap: 'wrap',
-      gap: theme.spacing(2),
-      marginTop: theme.spacing(4),
-    },
-    stepIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: '50%',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: alpha(theme.palette.text.secondary, 0.16),
-      color: theme.palette.text.secondary,
-      fontWeight: 600,
-      transition: 'all 150ms ease',
-    },
-    stepIconActive: {
-      background: theme.palette.primary.main,
-      color: theme.palette.type === 'dark' ? '#050505' : '#F9FAFB',
-      boxShadow: `0 0 0 6px ${alpha(theme.palette.primary.main, 0.22)}`,
-    },
-    stepIconCompleted: {
-      backgroundColor: alpha(theme.palette.primary.main, 0.18),
-      color: theme.palette.primary.main,
-    },
-  };
-});
-
-const StepIconComponent = (props: StepIconProps) => {
-  const { active, completed, icon } = props;
-  const classes = useStyles();
-
-  return (
-    <div
-      className={`${classes.stepIcon} ${active ? classes.stepIconActive : ''} ${
-        completed ? classes.stepIconCompleted : ''
-      }`}
-    >
-      {completed ? <CheckRoundedIcon fontSize="small" /> : icon}
-    </div>
-  );
-};
-
-const randomId = () => {
-  if (typeof crypto?.randomUUID === 'function') {
-    return crypto.randomUUID();
+const computeBudgetPercent = (project?: ProjectDefinition) => {
+  if (!project) {
+    return 0;
   }
-  return `workspace-${Math.random().toString(16).slice(2, 10)}`;
+  const { monthlyLimit, monthlyUsed } = project.budget;
+  return Math.min(100, Math.round((monthlyUsed / Math.max(1, monthlyLimit)) * 100));
 };
-
-const templateEnvToText = (env?: Record<string, string>): string => {
-  if (!env) {
-    return '';
-  }
-  return Object.entries(env)
-    .map(([key, value]) => `${key}=${value}`)
-    .join('\n');
-};
-
-const portsToText = (ports?: number[]): string => {
-  if (!ports || ports.length === 0) {
-    return '';
-  }
-  return ports.join(', ');
-};
-
-const getFlavorIcon = (flavorId: string) =>
-  flavorId.startsWith('gpu') ? MemoryIcon : StorageIcon;
 
 export const LaunchWorkspacePage: FC = () => {
   const classes = useStyles();
+  const alertApi = useApi(alertApiRef);
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
   const authApi = useApi(keycloakAuthApiRef);
-  const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
-  const projectManagementLink = useRouteRef(projectManagementRouteRef);
   const navigate = useNavigate();
 
-  const [activeStep, setActiveStep] = useState(0);
-  const [workspaceTypeId, setWorkspaceTypeId] =
-    useState<WorkspaceTypeId | null>(null);
-  const [templateId, setTemplateId] = useState<string | null>(null);
-  const [forceAdvancedOpen, setForceAdvancedOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [form, setForm] = useState({
-    workloadId: randomId(),
-    projectId: projectCatalog[0]?.id ?? '',
-    queue:
-      projectCatalog[0]?.defaultQueue ?? projectCatalog[0]?.queues?.[0]?.id ?? '',
-    flavor: '',
-    image: '',
-    ports: '22',
-    env: '',
-  });
+  const [projectId, setProjectId] = useState<string>(projectCatalog[0]?.id ?? '');
+  const [computeProfileId, setComputeProfileId] = useState<string>(
+    projectCatalog[0]?.defaultComputeProfileId ?? '',
+  );
+  const [imageId, setImageId] = useState<string>(workspaceImages[0]?.id ?? '');
+  const [workspaceName, setWorkspaceName] = useState<string>(
+    `${projectCatalog[0]?.id ?? 'workspace'}-lab-${randomSuffix()}`,
+  );
+  const [dataConnectionIds, setDataConnectionIds] = useState<string[]>(
+    projectCatalog[0]?.dataConnections.map(connection => connection.id) ?? [],
+  );
+  const [secretScopeIds, setSecretScopeIds] = useState<string[]>(
+    projectCatalog[0]?.secretScopes.map(scope => scope.id) ?? [],
+  );
+  const [keepUserData, setKeepUserData] = useState<boolean>(true);
+  const [attachProjectData, setAttachProjectData] = useState<boolean>(false);
+  const [ttlHours, setTtlHours] = useState<number>(24);
+  const [notes, setNotes] = useState('');
+  const [clusterOverride, setClusterOverride] = useState('');
+  const [namespaceOverride, setNamespaceOverride] = useState('');
+  const [storageClassOverride, setStorageClassOverride] = useState('');
+  const [networkZoneOverride, setNetworkZoneOverride] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const templatesForType = useMemo(() => {
-    if (!workspaceTypeId) {
-      return templateCatalog;
-    }
-    return templateCatalog.filter(template =>
-      template.workspaceTypes.includes(workspaceTypeId),
-    );
-  }, [workspaceTypeId]);
-
-  const selectedTemplate = useMemo(
-    () => templateCatalog.find(template => template.id === templateId) ?? null,
-    [templateId],
+  const selectedProject = useMemo(
+    () => projectCatalog.find(project => project.id === projectId) ?? null,
+    [projectId],
   );
 
-  const selectedWorkspaceType = useMemo(
-    () =>
-      workspaceTypeCatalog.find(option => option.id === workspaceTypeId) ??
-      null,
-    [workspaceTypeId],
+  const computeProfiles = selectedProject?.computeProfiles ?? [];
+
+  const selectedProfile: ComputeProfileDefinition | undefined = useMemo(
+    () => computeProfiles.find(profile => profile.id === computeProfileId),
+    [computeProfiles, computeProfileId],
   );
 
-  const selectedProject = useMemo<ProjectDefinition | null>(
-    () => projectCatalog.find(project => project.id === form.projectId) ?? null,
-    [form.projectId],
-  );
-
-  const queueOptions = useMemo<QueueDefinition[]>(
-    () => selectedProject?.queues ?? [],
-    [selectedProject],
-  );
-
-  const selectedQueue = useMemo<QueueDefinition | null>(
-    () => queueOptions.find(queue => queue.id === form.queue) ?? null,
-    [queueOptions, form.queue],
+  const selectedImage = useMemo(
+    () => workspaceImages.find(candidate => candidate.id === imageId) ?? workspaceImages[0],
+    [imageId],
   );
 
   useEffect(() => {
-    const project = projectCatalog.find(project => project.id === form.projectId);
-    if (!project) {
+    if (!selectedProject) {
       return;
     }
-    const allowedQueueIds = project.queues.map(queue => queue.id);
-    const fallbackQueueId = project.defaultQueue || allowedQueueIds[0] || '';
-    if (!allowedQueueIds.includes(form.queue) && fallbackQueueId !== form.queue) {
-      setForm(prev => ({ ...prev, queue: fallbackQueueId }));
-    }
-  }, [form.projectId, form.queue]);
+    setComputeProfileId(prev => {
+      if (selectedProject.computeProfiles.some(profile => profile.id === prev)) {
+        return prev;
+      }
+      return selectedProject.defaultComputeProfileId;
+    });
+    setDataConnectionIds(selectedProject.dataConnections.map(connection => connection.id));
+    setSecretScopeIds(selectedProject.secretScopes.map(scope => scope.id));
+    setWorkspaceName(prev => {
+      const sanitized = sanitizeWorkspaceName(prev);
+      if (!sanitized || !sanitized.startsWith(selectedProject.id)) {
+        return `${selectedProject.id}-lab-${randomSuffix()}`;
+      }
+      return sanitized;
+    });
+    setClusterOverride('');
+    setNamespaceOverride('');
+    setStorageClassOverride('');
+    setNetworkZoneOverride('');
+  }, [selectedProject]);
 
-  const handleFormFieldChange =
-    (field: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) => {
-      setForm(prev => ({ ...prev, [field]: event.target.value }));
-    };
-
-  const applyTemplate = (template: TemplateOption) => {
-    setTemplateId(template.id);
-    setForceAdvancedOpen(Boolean(template.autoShowAdvanced));
-    setAdvancedOpen(prev => prev || Boolean(template.autoShowAdvanced));
-
-    setForm(prev => ({
-      ...prev,
-      flavor: template.defaults.flavor ?? prev.flavor,
-      image:
-        template.defaults.image !== undefined
-          ? template.defaults.image
-          : prev.image,
-      queue:
-        template.defaults.queue !== undefined
-          ? template.defaults.queue
-          : prev.queue,
-      ports:
-        template.defaults.ports !== undefined
-          ? portsToText(template.defaults.ports)
-          : prev.ports,
-      env:
-        template.defaults.env !== undefined
-          ? templateEnvToText(template.defaults.env)
-          : prev.env,
-    }));
+  const handleProjectChange = (event: ChangeEvent<{ value: unknown }>) => {
+    setProjectId(event.target.value as string);
   };
 
-  const handleWorkspaceTypeSelect = (option: WorkspaceTypeOption) => {
-    const nextTypeId = option.id;
-    setWorkspaceTypeId(nextTypeId);
-    const matchingTemplates = templateCatalog.filter(template =>
-      template.workspaceTypes.includes(nextTypeId),
-    );
-    if (matchingTemplates.length > 0) {
-      applyTemplate(matchingTemplates[0]);
-    } else {
-      setTemplateId(null);
-    }
+  const handleProfileSelect = (profile: ComputeProfileDefinition) => {
+    setComputeProfileId(profile.id);
   };
 
-  const handleTemplateSelect = (template: TemplateOption) => {
-    applyTemplate(template);
+  const handleImageSelect = (image: WorkspaceImageDefinition) => {
+    setImageId(image.id);
   };
 
-  const handleFlavorSelect = (flavor: FlavorOption) => {
-    setForm(prev => ({ ...prev, flavor: flavor.flavor }));
+  const handleWorkspaceNameChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setWorkspaceName(sanitizeWorkspaceName(event.target.value));
   };
 
-  const handleProjectSelect = (event: ChangeEvent<{ value: unknown }>) => {
-    const projectId = (event.target.value as string) ?? '';
-    setForm(prev => ({ ...prev, projectId }));
+  const handleDataConnectionsChange = (event: ChangeEvent<{ value: unknown }>) => {
+    setDataConnectionIds(event.target.value as string[]);
   };
 
-  const handleQueueSelect = (event: ChangeEvent<{ value: unknown }>) => {
-    const queueId = (event.target.value as string) ?? '';
-    setForm(prev => ({ ...prev, queue: queueId }));
+  const handleSecretScopesChange = (event: ChangeEvent<{ value: unknown }>) => {
+    setSecretScopeIds(event.target.value as string[]);
   };
 
-  const handleAdvancedToggle = (event: ChangeEvent<HTMLInputElement>) => {
-    if (forceAdvancedOpen) {
-      return;
-    }
-    setAdvancedOpen(event.target.checked);
-  };
+  const estimatedCost = selectedProfile ? formatCurrency(selectedProfile.hourlyRate) : '$0.00';
+  const budgetPercent = computeBudgetPercent(selectedProject ?? undefined);
+  const environmentLabel = selectedProject
+    ? environmentsCopy[selectedProject.environment].label
+    : '';
 
-  const goNextStep = () => {
-    setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
-  };
-
-  const goPreviousStep = () => {
-    setActiveStep(prev => Math.max(prev - 1, 0));
-  };
-
-  const canProceedFromBasics =
-    Boolean(workspaceTypeId) &&
-    Boolean(templateId) &&
-    Boolean(form.projectId.trim()) &&
-    Boolean(form.workloadId.trim());
-
-  const canProceedFromResources =
-    Boolean(form.flavor.trim()) && Boolean(form.image.trim());
-
-  const isSubmitDisabled =
-    submitting ||
-    !form.projectId.trim() ||
-    !form.flavor.trim() ||
-    !form.image.trim() ||
-    !form.workloadId.trim();
+  const uniqueClusters = useMemo(() => {
+    const clusters = computeProfiles.map(profile => profile.cluster);
+    return Array.from(new Map(clusters.map(cluster => [cluster.id, cluster])).values());
+  }, [computeProfiles]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (isSubmitDisabled) {
+    if (!selectedProject || !selectedProfile || !workspaceName.trim()) {
+      setError('Select a project, compute profile, and workspace name.');
       return;
     }
 
-    const ports = parsePortsInput(form.ports);
-    const env = parseEnvInput(form.env);
-
-    const projectId = form.projectId.trim();
-    const workspaceId = form.workloadId.trim();
-    const queue = form.queue.trim();
-
     const payload: CreateWorkspaceRequest = {
-      projectId,
-      workspaceId,
-      ...(queue ? { queue } : {}),
+      projectId: selectedProject.id,
+      workspaceId: sanitizeWorkspaceName(workspaceName),
+      queue: selectedProfile.queueId,
       workspace: {
-        flavor: form.flavor.trim() || undefined,
-        image: form.image.trim() || undefined,
+        flavor: selectedProfile.flavor,
+        image: selectedImage.image,
         interactive: true,
-        ports: ports.length > 0 ? ports : undefined,
-        env: Object.keys(env).length > 0 ? env : undefined,
+        maxDurationSeconds: Math.max(1, ttlHours) * 3600,
+        env: {
+          ...(dataConnectionIds.length
+            ? { AEGIS_DATA_CONNECTIONS: dataConnectionIds.join(',') }
+            : {}),
+          ...(secretScopeIds.length
+            ? { AEGIS_SECRET_SCOPES: secretScopeIds.join(',') }
+            : {}),
+          ...(keepUserData ? { AEGIS_PERSIST_USER_DATA: 'true' } : {}),
+          ...(attachProjectData ? { AEGIS_ATTACH_PROJECT_DATA: 'true' } : {}),
+          ...(notes ? { AEGIS_WORKSPACE_NOTES: notes } : {}),
+        },
       },
     };
 
@@ -731,572 +373,414 @@ export const LaunchWorkspacePage: FC = () => {
         authApi,
         payload,
       );
-      const createdId = response?.workload?.id ?? workspaceId;
+      const createdId = response?.workload?.id ?? payload.workspaceId ?? workspaceName;
       alertApi.post({
-        message: `Submitted interactive workspace ${createdId}`,
+        message: `Workspace ${createdId} is launching`,
         severity: 'success',
       });
       if (workloadsLink) {
         navigate(workloadsLink());
       }
     } catch (e: unknown) {
-      let msg = 'Failed to submit workspace.';
-      let severity: 'error' | 'warning' = 'error';
+      let message = 'Failed to submit workspace.';
       if (e instanceof AuthenticationError || e instanceof AuthorizationError) {
-        msg = e.message;
-        severity = 'warning';
+        message = e.message;
       } else if (e instanceof Error) {
-        msg = e.message || msg;
+        message = e.message || message;
       }
-      setError(msg);
+      setError(message);
       alertApi.post({
-        message: msg,
-        severity,
+        message,
+        severity: 'error',
       });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const renderWorkspaceTypeCards = () => (
-    <Grid container spacing={2} className={classes.selectionGrid}>
-      {workspaceTypeCatalog.map(option => {
-        const selected = option.id === workspaceTypeId;
-        const TypeIcon = workspaceTypeIcons[option.id];
-        return (
-          <Grid item xs={12} sm={6} key={option.id}>
-            <Card
-              elevation={0}
-              className={`${classes.selectionCard} ${
-                selected ? classes.selectionCardSelected : ''
-              }`}
-            >
-              <CardActionArea
-                className={classes.selectionCardAction}
-                onClick={() => handleWorkspaceTypeSelect(option)}
-              >
-                <CardContent className={classes.selectionCardContent}>
-                  <TypeIcon className={classes.selectionCardIcon} />
-                  <Typography variant="h6">{option.title}</Typography>
-                  <Typography className={classes.selectionMeta}>
-                    {option.description}
-                  </Typography>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          </Grid>
-        );
-      })}
-    </Grid>
-  );
-
-  const renderTemplateCards = () => (
-    <Grid container spacing={2} className={classes.selectionGrid}>
-      {templatesForType.length === 0 ? (
-        <Grid item xs={12}>
-          <Typography className={classes.selectionMeta}>
-            No templates available for the selected workspace type.
-          </Typography>
-        </Grid>
-      ) : (
-        templatesForType.map(template => {
-          const selected = template.id === templateId;
-          return (
-            <Grid item xs={12} md={6} key={template.id}>
-              <Card
-                elevation={0}
-                className={`${classes.selectionCard} ${
-                  selected ? classes.selectionCardSelected : ''
-                }`}
-              >
-                <CardActionArea
-                  className={classes.selectionCardAction}
-                  onClick={() => handleTemplateSelect(template)}
-                >
-                  <CardContent className={classes.selectionCardContent}>
-                    <Typography variant="h6">{template.title}</Typography>
-                    <Typography className={classes.selectionMeta}>
-                      {template.description}
-                    </Typography>
-                    <div className={classes.chipRow}>
-                      {template.workspaceTypes.map(type => (
-                        <Chip
-                          size="small"
-                          key={`${template.id}-${type}`}
-                          label={type.toUpperCase()}
-                          className={classes.chip}
-                        />
-                      ))}
-                    </div>
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            </Grid>
-          );
-        })
-      )}
-    </Grid>
-  );
-
-  const renderFlavorCards = () => (
-    <Grid container spacing={2} className={classes.selectionGrid}>
-      {flavorCatalog.map(option => {
-        const selected = option.flavor === form.flavor;
-        const FlavorIcon = getFlavorIcon(option.id);
-        return (
-          <Grid item xs={12} sm={6} key={option.id}>
-            <Card
-              elevation={0}
-              className={`${classes.selectionCard} ${
-                selected ? classes.selectionCardSelected : ''
-              }`}
-            >
-              <CardActionArea
-                className={classes.selectionCardAction}
-                onClick={() => handleFlavorSelect(option)}
-              >
-                <CardContent className={classes.selectionCardContent}>
-                  <FlavorIcon className={classes.selectionCardIcon} />
-                  <Typography variant="h6">{option.title}</Typography>
-                  <Typography variant="subtitle2" color="textSecondary">
-                    {option.resources}
-                  </Typography>
-                  <Typography className={classes.selectionMeta}>
-                    {option.description}
-                  </Typography>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          </Grid>
-        );
-      })}
-    </Grid>
-  );
-
   return (
     <Page themeId="tool">
       <Content>
-        <ContentHeader title="Launch Interactive Workspace">
-          <Typography variant="body1" className={classes.hero}>
-            Compose DoD/IC-grade workspaces with the same minimal flow your
-            operators expect from modern tooling. Choose a template, tune
-            compute, then launch to ÆGIS clusters in a few decisive steps.
-          </Typography>
+        <ContentHeader title="Launch Workspace">
+          <Button component={RouterLink} to="/aegis/admin/projects">
+            Manage Projects
+          </Button>
         </ContentHeader>
-        <form onSubmit={handleSubmit} className={classes.content}>
-          <Paper elevation={0} className={classes.wizardShell}>
-            <Stepper activeStep={activeStep} alternativeLabel className={classes.stepper}>
-              {steps.map(step => (
-                <Step key={step}>
-                  <StepLabel StepIconComponent={StepIconComponent} classes={{ label: classes.stepLabel }}>
-                    {step}
-                  </StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-
-            {activeStep === 0 && (
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={5}>
-                  <div className={classes.formSection}>
-                    <Typography variant="overline" color="textSecondary">
-                      Project context
-                    </Typography>
-                    <FormControl variant="outlined" fullWidth required>
-                      <InputLabel id="launch-workspace-project">
-                        Project
-                      </InputLabel>
-                      <Select
-                        labelId="launch-workspace-project"
-                        label="Project"
-                        value={form.projectId}
-                        onChange={handleProjectSelect}
-                      >
-                        {projectCatalog.map(project => (
-                          <MenuItem key={project.id} value={project.id}>
-                            <div className={classes.selectMenuContent}>
-                              <Typography variant="subtitle1">{project.name}</Typography>
-                              <Typography variant="body2" color="textSecondary">
-                                {project.description}
-                              </Typography>
-                            </div>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      <FormHelperText>
-                        Projects now bootstrap automatically. Swap context to inherit the right
-                        visibility and budget envelope.
-                      </FormHelperText>
-                    </FormControl>
-                    <TextField
-                      label="Workspace ID"
-                      value={form.workloadId}
-                      onChange={handleFormFieldChange('workloadId')}
-                      variant="outlined"
-                      required
-                      fullWidth
-                      helperText="Identifier visible to mission operators"
-                    />
-                    {selectedProject && (
-                      <div className={classes.projectOverview}>
-                        <div className={classes.projectHeader}>
-                          <Typography variant="subtitle1" component="span">
-                            {selectedProject.name}
-                          </Typography>
-                          <Chip
-                            label={visibilityCopy[selectedProject.visibility].label}
-                            color={
-                              visibilityCopy[selectedProject.visibility].tone === 'default'
-                                ? 'default'
-                                : visibilityCopy[selectedProject.visibility].tone
-                            }
-                            size="small"
-                          />
-                        </div>
-                        <Typography variant="body2" color="textSecondary">
-                          {selectedProject.description}
-                        </Typography>
-                        <div className={classes.projectMeta}>
-                          <div>
-                            <div className={classes.projectMetaLabel}>Project lead</div>
-                            <div className={classes.projectMetaValue}>{selectedProject.lead}</div>
-                          </div>
-                          <div>
-                            <div className={classes.projectMetaLabel}>Monthly burn</div>
-                            <div className={classes.projectMetaValue}>
-                              ${selectedProject.budget.monthlyUsed.toLocaleString('en-US')} / $
-                              {selectedProject.budget.monthlyLimit.toLocaleString('en-US')}
-                            </div>
-                          </div>
-                          <div>
-                            <div className={classes.projectMetaLabel}>Default queue</div>
-                            <div className={classes.projectMetaValue}>
-                              {selectedProject.defaultQueue}
-                            </div>
-                          </div>
-                        </div>
-                        <div className={classes.projectActions}>
-                          <Typography variant="caption" color="textSecondary">
-                            Need deeper control? Review queue guardrails or shift budgets from the
-                            project console.
-                          </Typography>
-                          <Button
-                            variant="outlined"
-                            color="primary"
-                            onClick={() => navigate(projectManagementLink())}
-                          >
-                            Manage projects
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    <Divider className={classes.sectionDivider} />
-                    <Typography variant="overline" color="textSecondary">
-                      Workspace type
+        <form onSubmit={handleSubmit} className={classes.page}>
+          <div className={classes.layout}>
+            <div className={classes.page}>
+              <Card elevation={0} className={classes.card}>
+                <CardContent className={classes.cardContent}>
+                  <div>
+                    <Typography variant="h6" className={classes.sectionTitle}>
+                      Project & compute
                     </Typography>
                     <Typography variant="body2" color="textSecondary">
-                      Select the interactive surface to pre-wire tooling and UX
-                      expectations.
+                      Choose the project, then pick a compute profile. Costs and
+                      guardrails inherit from the project.
                     </Typography>
                   </div>
-                </Grid>
-                <Grid item xs={12} md={7}>
-                  {renderWorkspaceTypeCards()}
-                  <Divider className={classes.sectionDivider} />
-                  <Typography variant="overline" color="textSecondary">
-                    Template presets
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Start from a mission-ready template or bring your own
-                    container profile.
-                  </Typography>
-                  {renderTemplateCards()}
-                </Grid>
-              </Grid>
-            )}
-
-            {activeStep === 1 && (
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={7}>
-                  <Typography variant="overline" color="textSecondary">
-                    Compute flavors
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Match GPU, CPU, and memory to mission objectives. ÆGIS
-                    enforces guardrails based on queue policy.
-                  </Typography>
-                  {renderFlavorCards()}
-                </Grid>
-                <Grid item xs={12} md={5}>
-                  <div className={classes.formSection}>
-                    <Typography variant="overline" color="textSecondary">
-                      Runtime configuration
-                    </Typography>
-                    <TextField
-                      label="Container image"
-                      value={form.image}
-                      onChange={handleFormFieldChange('image')}
-                      variant="outlined"
-                      required
-                      fullWidth
-                      helperText="OCI image with your workspace runtime"
-                    />
-                    <FormControl
-                      variant="outlined"
-                      fullWidth
-                      disabled={queueOptions.length === 0}
+                  <FormControl variant="outlined" fullWidth>
+                    <InputLabel id="project-select-label">Project</InputLabel>
+                    <Select
+                      labelId="project-select-label"
+                      value={projectId}
+                      onChange={handleProjectChange}
+                      label="Project"
                     >
-                      <InputLabel id="launch-workspace-queue">
-                        Execution queue
-                      </InputLabel>
-                      <Select
-                        labelId="launch-workspace-queue"
-                        label="Execution queue"
-                        value={form.queue}
-                        onChange={handleQueueSelect}
-                      >
-                        {queueOptions.map(queue => (
-                          <MenuItem key={queue.id} value={queue.id}>
-                            <div className={classes.selectMenuContent}>
-                              <Typography variant="subtitle2">{queue.name}</Typography>
+                      {projectCatalog.map(project => (
+                        <MenuItem key={project.id} value={project.id}>
+                          <Box display="flex" flexDirection="column">
+                            <Typography variant="body1">{project.displayName}</Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              {project.description}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <div className={classes.computeProfileGrid}>
+                    {computeProfiles.map(profile => {
+                      const selected = profile.id === computeProfileId;
+                      return (
+                        <Card
+                          key={profile.id}
+                          elevation={0}
+                          className={`${classes.computeProfileCard} ${
+                            selected ? 'selected' : ''
+                          }`}
+                        >
+                          <CardActionArea onClick={() => handleProfileSelect(profile)}>
+                            <CardContent className={classes.computeProfileCardContent}>
+                              <Typography variant="subtitle1">{profile.label}</Typography>
                               <Typography variant="body2" color="textSecondary">
-                                {queue.description}
+                                {profile.description}
                               </Typography>
-                            </div>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      <FormHelperText>
-                        {queueOptions.length === 0
-                          ? 'No queues are assigned to this project yet.'
-                          : 'Stay on the default queue or opt into another guardrail managed by this project.'}
-                      </FormHelperText>
-                    </FormControl>
-                    {selectedQueue && (
-                      <div className={classes.queueSummaryCard}>
-                        <div className={classes.queueSummaryHeader}>
-                          <Typography variant="subtitle1" component="span">
-                            {selectedQueue.name}
-                          </Typography>
-                          <Chip
-                            label={visibilityCopy[selectedQueue.visibility].label}
-                            color={
-                              visibilityCopy[selectedQueue.visibility].tone === 'default'
-                                ? 'default'
-                                : visibilityCopy[selectedQueue.visibility].tone
-                            }
-                            size="small"
-                          />
-                        </div>
-                        <Typography variant="body2" color="textSecondary">
-                          {selectedQueue.description}
-                        </Typography>
-                        <div className={classes.queueSummaryMetrics}>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>GPU class</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.gpuClass}
-                            </div>
-                          </div>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>Max runtime</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.maxRuntimeHours} hrs
-                            </div>
-                          </div>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>Active workspaces</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.activeWorkspaces}
-                            </div>
-                          </div>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>Monthly burn</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              ${selectedQueue.budget.monthlyUsed.toLocaleString('en-US')} / $
-                              {selectedQueue.budget.monthlyLimit.toLocaleString('en-US')}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    <FormControlLabel
-                      className={classes.toggleControl}
-                      control={
-                        <Switch
-                          color="primary"
-                          checked={advancedOpen || forceAdvancedOpen}
-                          onChange={handleAdvancedToggle}
-                          disabled={forceAdvancedOpen}
-                        />
-                      }
-                      label="Show advanced parameters"
-                    />
-                    <Collapse in={advancedOpen || forceAdvancedOpen}>
-                      <div className={classes.advancedSurface}>
-                        <TextField
-                          label="Expose ports"
-                          value={form.ports}
-                          onChange={handleFormFieldChange('ports')}
-                          variant="outlined"
-                          fullWidth
-                          helperText="Comma-separated port list (e.g. 22, 11111)"
-                        />
-                        <TextField
-                          label="Environment variables"
-                          value={form.env}
-                          onChange={handleFormFieldChange('env')}
-                          variant="outlined"
-                          fullWidth
-                          multiline
-                          rows={4}
-                          helperText="KEY=VALUE pairs, one per line"
-                        />
-                      </div>
-                    </Collapse>
+                              <Typography variant="body2">
+                                {formatCurrency(profile.hourlyRate)}/hr
+                              </Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                {profile.cluster.name} · {profile.cluster.region}
+                              </Typography>
+                              <div className={classes.chipRow}>
+                                {profile.badges.map(badge => (
+                                  <Chip key={badge} label={badge} size="small" />
+                                ))}
+                              </div>
+                            </CardContent>
+                          </CardActionArea>
+                        </Card>
+                      );
+                    })}
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card elevation={0} className={classes.card}>
+                <CardContent className={classes.cardContent}>
+                  <div>
+                    <Typography variant="h6" className={classes.sectionTitle}>
+                      Workspace basics
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      Name follows <code>org-proj-env-purpose-rand</code>. Images are
+                      curated for security and compliance.
+                    </Typography>
+                  </div>
+                  <TextField
+                    label="Workspace name"
+                    value={workspaceName}
+                    onChange={handleWorkspaceNameChange}
+                    helperText="Slugified name becomes your Kubernetes namespace."
+                    fullWidth
+                    required
+                  />
+                  <TextField
+                    label="Environment"
+                    value={environmentLabel}
+                    variant="outlined"
+                    fullWidth
+                    disabled
+                  />
+                  <div className={classes.computeProfileGrid}>
+                    {workspaceImages.map(image => {
+                      const selected = image.id === imageId;
+                      return (
+                        <Card
+                          key={image.id}
+                          elevation={0}
+                          className={`${classes.computeProfileCard} ${
+                            selected ? 'selected' : ''
+                          }`}
+                        >
+                          <CardActionArea onClick={() => handleImageSelect(image)}>
+                            <CardContent className={classes.computeProfileCardContent}>
+                              <Typography variant="subtitle1">{image.label}</Typography>
+                              <Typography variant="body2" color="textSecondary">
+                                {image.description}
+                              </Typography>
+                              <div className={classes.chipRow}>
+                                {image.badges.map(badge => (
+                                  <Chip key={badge} label={badge} size="small" />
+                                ))}
+                              </div>
+                            </CardContent>
+                          </CardActionArea>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                  <Box>
+                    <Typography gutterBottom>Time to live</Typography>
+                    <Slider
+                      value={ttlHours}
+                      min={1}
+                      max={72}
+                      step={1}
+                      onChange={(_, value) => setTtlHours(value as number)}
+                      valueLabelDisplay="auto"
+                      valueLabelFormat={value => `${value}h`}
+                    />
+                  </Box>
+                </CardContent>
+              </Card>
+
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={6}>
+                  <Card elevation={0} className={classes.card}>
+                    <CardContent className={classes.cardContent}>
+                      <Typography variant="h6" className={classes.sectionTitle}>
+                        Data connections
+                      </Typography>
+                      <FormControl variant="outlined" fullWidth>
+                        <InputLabel id="data-connections-label">Connections</InputLabel>
+                        <Select
+                          labelId="data-connections-label"
+                          multiple
+                          value={dataConnectionIds}
+                          onChange={handleDataConnectionsChange}
+                          label="Connections"
+                          renderValue={selected =>
+                            (selected as string[])
+                              .map(id =>
+                                selectedProject?.dataConnections.find(
+                                  connection => connection.id === id,
+                                )?.name,
+                              )
+                              .filter(Boolean)
+                              .join(', ')
+                          }
+                        >
+                          {selectedProject?.dataConnections.map(connection => (
+                            <MenuItem key={connection.id} value={connection.id}>
+                              <Box display="flex" flexDirection="column">
+                                <Typography variant="body1">{connection.name}</Typography>
+                                <Typography variant="caption" color="textSecondary">
+                                  {connection.uri}
+                                </Typography>
+                              </Box>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </CardContent>
+                  </Card>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Card elevation={0} className={classes.card}>
+                    <CardContent className={classes.cardContent}>
+                      <Typography variant="h6" className={classes.sectionTitle}>
+                        Secrets
+                      </Typography>
+                      <FormControl variant="outlined" fullWidth>
+                        <InputLabel id="secret-scopes-label">Secret scopes</InputLabel>
+                        <Select
+                          labelId="secret-scopes-label"
+                          multiple
+                          value={secretScopeIds}
+                          onChange={handleSecretScopesChange}
+                          label="Secret scopes"
+                          renderValue={selected =>
+                            (selected as string[])
+                              .map(id =>
+                                selectedProject?.secretScopes.find(scope => scope.id === id)?.name,
+                              )
+                              .filter(Boolean)
+                              .join(', ')
+                          }
+                        >
+                          {selectedProject?.secretScopes.map(scope => (
+                            <MenuItem key={scope.id} value={scope.id}>
+                              <Box display="flex" flexDirection="column">
+                                <Typography variant="body1">{scope.name}</Typography>
+                                <Typography variant="caption" color="textSecondary">
+                                  {scope.provider}
+                                </Typography>
+                              </Box>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </CardContent>
+                  </Card>
                 </Grid>
               </Grid>
-            )}
 
-            {activeStep === 2 && (
-              <Paper elevation={0} className={classes.reviewPaper}>
-                <Typography variant="overline" color="textSecondary">
+              <Card elevation={0} className={classes.card}>
+                <CardContent className={classes.cardContent}>
+                  <Typography variant="h6" className={classes.sectionTitle}>
+                    Persistence & metadata
+                  </Typography>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        color="primary"
+                        checked={keepUserData}
+                        onChange={(_, checked) => setKeepUserData(checked)}
+                      />
+                    }
+                    label="Keep my user data PVC"
+                  />
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        color="primary"
+                        checked={attachProjectData}
+                        onChange={(_, checked) => setAttachProjectData(checked)}
+                      />
+                    }
+                    label="Attach project data volume"
+                  />
+                  <TextField
+                    label="Notes for platform team"
+                    value={notes}
+                    onChange={event => setNotes(event.target.value)}
+                    multiline
+                    minRows={2}
+                    variant="outlined"
+                    fullWidth
+                  />
+                  <Accordion elevation={0} className={classes.advancedSection}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1" className={classes.sectionTitle}>
+                        Advanced placement
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} md={6}>
+                          <FormControl variant="outlined" fullWidth>
+                            <InputLabel id="cluster-override-label">Cluster</InputLabel>
+                            <Select
+                              labelId="cluster-override-label"
+                              value={clusterOverride || selectedProfile?.cluster.id || ''}
+                              onChange={event => setClusterOverride(event.target.value as string)}
+                              label="Cluster"
+                            >
+                              {uniqueClusters.map(cluster => (
+                                <MenuItem key={cluster.id} value={cluster.id}>
+                                  {cluster.name} · {cluster.region}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            label="Namespace"
+                            value={namespaceOverride || selectedProfile?.namespace || ''}
+                            onChange={event => setNamespaceOverride(event.target.value)}
+                            variant="outlined"
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            label="Storage class"
+                            value={storageClassOverride || selectedProfile?.storageClass || ''}
+                            onChange={event => setStorageClassOverride(event.target.value)}
+                            variant="outlined"
+                            fullWidth
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            label="Network zone"
+                            value={networkZoneOverride || selectedProfile?.networkZone || ''}
+                            onChange={event => setNetworkZoneOverride(event.target.value)}
+                            variant="outlined"
+                            fullWidth
+                          />
+                        </Grid>
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card elevation={0} className={`${classes.card} ${classes.summaryCard}`}>
+              <Box className={classes.summaryHeader}>
+                <CloudQueueIcon color="primary" />
+                <Typography variant="subtitle1" className={classes.sectionTitle}>
                   Launch summary
                 </Typography>
-                <Grid container spacing={3} className={classes.selectionGrid}>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Project</span>
-                      <span className={classes.reviewValue}>
-                        {selectedProject?.name ?? (form.projectId || '—')}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Workspace ID</span>
-                      <span className={classes.reviewValue}>
-                        {form.workloadId || '—'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Workspace type</span>
-                      <span className={classes.reviewValue}>
-                        {selectedWorkspaceType?.title ?? '—'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Template</span>
-                      <span className={classes.reviewValue}>
-                        {selectedTemplate?.title ?? '—'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Flavor</span>
-                      <span className={classes.reviewValue}>
-                        {form.flavor || '—'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Queue</span>
-                      <span className={classes.reviewValue}>
-                        {selectedQueue?.name ??
-                          (selectedProject?.defaultQueue
-                            ? `${selectedProject.defaultQueue} (default)`
-                            : 'Project default')}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Container image</span>
-                      <span className={classes.reviewValue}>{form.image || '—'}</span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Ports</span>
-                      <span className={classes.reviewValue}>
-                        {form.ports || 'Default (22, 11111)'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Environment variables</span>
-                      <span className={classes.reviewValue}>
-                        {form.env || 'Inherited defaults'}
-                      </span>
-                    </div>
-                  </Grid>
-                </Grid>
-              </Paper>
-            )}
-
-            <div className={classes.actionRow}>
-              <Box display="flex" style={{ gap: 16 }}>
-                <Button
-                  type="button"
-                  variant="outlined"
-                  disabled={activeStep === 0 || submitting}
-                  onClick={goPreviousStep}
-                >
-                  Back
-                </Button>
-                {activeStep < steps.length - 1 && (
-                  <Button
-                    type="button"
-                    color="primary"
-                    variant="contained"
-                    disabled={
-                      submitting ||
-                      (activeStep === 0 && !canProceedFromBasics) ||
-                      (activeStep === 1 && !canProceedFromResources)
-                    }
-                    onClick={goNextStep}
-                  >
-                    Next
-                  </Button>
-                )}
               </Box>
-              {activeStep === steps.length - 1 && (
-                <Box
-                  display="flex"
-                  alignItems="center"
-                  style={{ gap: 16 }}
-                >
-                  <Button
-                    type="submit"
-                    color="primary"
-                    variant="contained"
-                    disabled={isSubmitDisabled}
-                    startIcon={<TimelineIcon />}
-                  >
-                    Launch workspace
-                  </Button>
-                  {submitting && <Progress />}
+              <Box className={classes.budgetMeter}>
+                <Typography variant="body2" color="textSecondary">
+                  Estimated cost
+                </Typography>
+                <Typography variant="h4">{estimatedCost} / hr</Typography>
+                <Typography variant="caption" color="textSecondary">
+                  Billed to {selectedProject?.displayName ?? 'Project'}
+                </Typography>
+              </Box>
+              <Divider />
+              <Box className={classes.budgetMeter}>
+                <Typography variant="body2" color="textSecondary">
+                  Project budget
+                </Typography>
+                <Typography variant="body1">
+                  {formatCurrency(selectedProject?.budget.monthlyUsed ?? 0)} used of{' '}
+                  {formatCurrency(selectedProject?.budget.monthlyLimit ?? 0)}
+                </Typography>
+                <LinearProgress variant="determinate" value={budgetPercent} />
+              </Box>
+              <Divider />
+              <Box className={classes.summaryColumn}>
+                <Box className={classes.summaryRow}>
+                  <StorageIcon fontSize="small" />
+                  <Typography variant="body2">
+                    {keepUserData ? 'User data persisted' : 'Ephemeral user data'}
+                  </Typography>
                 </Box>
+                <Box className={classes.summaryRow}>
+                  <LockIcon fontSize="small" />
+                  <Typography variant="body2">
+                    Secrets: {secretScopeIds.length} scope(s)
+                  </Typography>
+                </Box>
+              </Box>
+              {error && (
+                <WarningPanel severity="error" title="Workspace launch blocked">
+                  {error}
+                </WarningPanel>
               )}
-            </div>
-          </Paper>
+              <Box className={classes.summaryActions}>
+                <Button
+                  type="submit"
+                  color="primary"
+                  variant="contained"
+                  disabled={submitting || !selectedProject || !selectedProfile}
+                >
+                  Launch workspace
+                </Button>
+                {submitting && <Progress />}
+              </Box>
+            </Card>
+          </div>
         </form>
-
-        {error && (
-          <Box marginTop={3}>
-            <WarningPanel severity="error" title="Workspace submission failed">
-              {error}
-            </WarningPanel>
-          </Box>
-        )}
       </Content>
     </Page>
   );
