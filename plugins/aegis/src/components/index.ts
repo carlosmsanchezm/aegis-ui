@@ -3,6 +3,7 @@ export { WorkloadListPage } from './WorkloadListPage';
 export { WorkloadDetailsPage } from './WorkloadDetailsPage';
 export { AegisCostDashboardPage } from './AegisCostDashboardPage';
 export { AegisQuotaManagementPage } from './AegisQuotaManagementPage';
+export { ProjectAdministrationPage } from './ProjectAdministrationPage';
 export { AegisBillingAlertsPage } from './AegisBillingAlertsPage';
 export { AegisOpsMetricsPage } from './AegisOpsMetricsPage';
 export { AegisResourceDetailsPage } from './AegisResourceDetailsPage';

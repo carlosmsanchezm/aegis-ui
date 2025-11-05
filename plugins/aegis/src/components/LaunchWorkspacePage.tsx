@@ -27,6 +27,7 @@ import {
   Divider,
   FormControlLabel,
   Grid,
+  MenuItem,
   Paper,
   Step,
   StepLabel,
@@ -45,6 +46,7 @@ import DeveloperModeIcon from '@material-ui/icons/DeveloperMode';
 import StorageIcon from '@material-ui/icons/Storage';
 import MemoryIcon from '@material-ui/icons/Memory';
 import TimelineIcon from '@material-ui/icons/Timeline';
+import SettingsIcon from '@material-ui/icons/Settings';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -53,7 +55,7 @@ import {
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
-import { workloadsRouteRef } from '../routes';
+import { workloadsRouteRef, projectAdministrationRouteRef } from '../routes';
 
 import type { Theme } from '@material-ui/core/styles/createMuiTheme';
 
@@ -86,6 +88,16 @@ type FlavorOption = {
   description: string;
   flavor: string;
   resources: string;
+};
+
+type ProjectOption = {
+  id: string;
+  displayName: string;
+  defaultQueue: string;
+  budgetOwner: string;
+  monthlyBudget: number;
+  spendToDate: number;
+  activeWorkspaces: number;
 };
 
 // TODO: Replace static catalogs with workspace profiles served by the ÆGIS control plane API.
@@ -218,6 +230,36 @@ const flavorCatalog: FlavorOption[] = [
   },
 ];
 
+const projectCatalog: ProjectOption[] = [
+  {
+    id: 'p-default',
+    displayName: 'Mission Default',
+    defaultQueue: 'cpu-general',
+    budgetOwner: 'FinOps Automation',
+    monthlyBudget: 25000,
+    spendToDate: 11840,
+    activeWorkspaces: 18,
+  },
+  {
+    id: 'p-aurora',
+    displayName: 'Aurora ISR',
+    defaultQueue: 'gpu-priority',
+    budgetOwner: 'Col. Ramirez',
+    monthlyBudget: 60000,
+    spendToDate: 42820,
+    activeWorkspaces: 32,
+  },
+  {
+    id: 'p-vanguard',
+    displayName: 'Vanguard Analytics',
+    defaultQueue: 'cpu-analytics',
+    budgetOwner: 'GS-15 Lee',
+    monthlyBudget: 45000,
+    spendToDate: 31220,
+    activeWorkspaces: 21,
+  },
+];
+
 const steps = ['Workspace basics', 'Resources & options', 'Review & launch'];
 
 const workspaceTypeIcons: Record<WorkspaceTypeId, ComponentType<any>> = {
@@ -316,6 +358,25 @@ const useStyles = makeStyles((theme: Theme) => {
       letterSpacing: '0.03em',
       textTransform: 'uppercase',
     },
+    projectHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: theme.spacing(1.5),
+    },
+    manageProjectsButton: {
+      textTransform: 'none',
+      fontWeight: 600,
+    },
+    projectSummary: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1),
+      marginTop: theme.spacing(1),
+    },
+    projectChip: {
+      borderRadius: theme.shape.borderRadius,
+    },
     formSection: {
       backgroundColor: isDark ? alpha('#111827', 0.7) : '#FFFFFF',
       borderRadius: theme.shape.borderRadius,
@@ -333,6 +394,20 @@ const useStyles = makeStyles((theme: Theme) => {
       marginTop: theme.spacing(1),
       display: 'flex',
       alignItems: 'center',
+    },
+    queueSummary: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1),
+      padding: theme.spacing(2.5),
+      borderRadius: theme.shape.borderRadius,
+      border: `1px dashed ${alpha(accent, isDark ? 0.45 : 0.4)}`,
+      backgroundColor: alpha(accent, isDark ? 0.12 : 0.08),
+    },
+    queueChip: {
+      alignSelf: 'flex-start',
+      fontWeight: 600,
+      letterSpacing: '0.02em',
     },
     advancedSurface: {
       backgroundColor: isDark ? alpha('#0F172A', 0.65) : '#F8F8F6',
@@ -446,6 +521,7 @@ export const LaunchWorkspacePage: FC = () => {
   const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
+  const projectAdminRoute = useRouteRef(projectAdministrationRouteRef);
   const navigate = useNavigate();
 
   const [activeStep, setActiveStep] = useState(0);
@@ -456,7 +532,7 @@ export const LaunchWorkspacePage: FC = () => {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [form, setForm] = useState({
     workloadId: randomId(),
-    projectId: '',
+    projectId: projectCatalog[0]?.id ?? '',
     queue: '',
     flavor: '',
     image: '',
@@ -554,6 +630,18 @@ export const LaunchWorkspacePage: FC = () => {
   const goPreviousStep = () => {
     setActiveStep(prev => Math.max(prev - 1, 0));
   };
+
+  const selectedProject = useMemo(
+    () => projectCatalog.find(project => project.id === form.projectId) ?? null,
+    [form.projectId],
+  );
+
+  const effectiveQueue = useMemo(() => {
+    if (form.queue.trim()) {
+      return form.queue.trim();
+    }
+    return selectedProject?.defaultQueue ?? 'auto-assigned';
+  }, [form.queue, selectedProject]);
 
   const canProceedFromBasics =
     Boolean(workspaceTypeId) &&
@@ -775,18 +863,71 @@ export const LaunchWorkspacePage: FC = () => {
               <Grid container spacing={3}>
                 <Grid item xs={12} md={5}>
                   <div className={classes.formSection}>
-                    <Typography variant="overline" color="textSecondary">
-                      Project context
-                    </Typography>
+                    <Box className={classes.projectHeader}>
+                      <Typography variant="overline" color="textSecondary">
+                        Project context
+                      </Typography>
+                      <Button
+                        size="small"
+                        color="primary"
+                        startIcon={<SettingsIcon />}
+                        onClick={() =>
+                          projectAdminRoute && navigate(projectAdminRoute())
+                        }
+                        disabled={!projectAdminRoute}
+                        className={classes.manageProjectsButton}
+                      >
+                        Manage projects
+                      </Button>
+                    </Box>
                     <TextField
-                      label="Project ID"
+                      label="Project"
                       value={form.projectId}
                       onChange={handleFormFieldChange('projectId')}
                       variant="outlined"
                       required
                       fullWidth
-                      helperText="Owner project for access controls and billing"
-                    />
+                      select
+                      helperText={
+                        selectedProject
+                          ? `Auto-assigned default provided by ${selectedProject.budgetOwner}`
+                          : 'Auto-created by platform'
+                      }
+                    >
+                      {projectCatalog.map(project => (
+                        <MenuItem key={project.id} value={project.id}>
+                          <Box display="flex" flexDirection="column">
+                            <Typography variant="body1">{project.displayName}</Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              {project.id} • Queue: {project.defaultQueue}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    {selectedProject && (
+                      <Box className={classes.projectSummary}>
+                        <Chip
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          label={`Default queue: ${selectedProject.defaultQueue}`}
+                          className={classes.projectChip}
+                        />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`Budget: $${selectedProject.monthlyBudget.toLocaleString()}`}
+                          className={classes.projectChip}
+                        />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`Active workspaces: ${selectedProject.activeWorkspaces}`}
+                          className={classes.projectChip}
+                        />
+                      </Box>
+                    )}
                     <TextField
                       label="Workspace ID"
                       value={form.workloadId}
@@ -847,14 +988,21 @@ export const LaunchWorkspacePage: FC = () => {
                       fullWidth
                       helperText="OCI image with your workspace runtime"
                     />
-                    <TextField
-                      label="Queue (optional)"
-                      value={form.queue}
-                      onChange={handleFormFieldChange('queue')}
-                      variant="outlined"
-                      fullWidth
-                      helperText="Override default queue for launch scheduling"
-                    />
+                    <Box className={classes.queueSummary}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Launch queue
+                      </Typography>
+                      <Chip
+                        label={effectiveQueue}
+                        color="primary"
+                        variant="default"
+                        className={classes.queueChip}
+                      />
+                      <Typography variant="body2" color="textSecondary">
+                        Workspaces default to the selected project queue. Override scheduling only when
+                        coordinating with platform admins.
+                      </Typography>
+                    </Box>
                     <FormControlLabel
                       className={classes.toggleControl}
                       control={
@@ -869,6 +1017,16 @@ export const LaunchWorkspacePage: FC = () => {
                     />
                     <Collapse in={advancedOpen || forceAdvancedOpen}>
                       <div className={classes.advancedSurface}>
+                        <TextField
+                          label="Queue override"
+                          value={form.queue}
+                          onChange={handleFormFieldChange('queue')}
+                          variant="outlined"
+                          fullWidth
+                          helperText={`Optional. Defaults to ${
+                            selectedProject?.defaultQueue ?? 'auto-assigned'
+                          }`}
+                        />
                         <TextField
                           label="Expose ports"
                           value={form.ports}
@@ -944,7 +1102,7 @@ export const LaunchWorkspacePage: FC = () => {
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Queue</span>
                       <span className={classes.reviewValue}>
-                        {form.queue || 'Default'}
+                        {effectiveQueue || 'auto-assigned'}
                       </span>
                     </div>
                   </Grid>

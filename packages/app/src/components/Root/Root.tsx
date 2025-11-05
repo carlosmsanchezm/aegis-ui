@@ -20,6 +20,7 @@ import GroupIcon from '@material-ui/icons/Group';
 import MonetizationOnIcon from '@material-ui/icons/MonetizationOn';
 import EqualizerIcon from '@material-ui/icons/Equalizer';
 import NotificationsActiveIcon from '@material-ui/icons/NotificationsActive';
+import BusinessCenterIcon from '@material-ui/icons/BusinessCenter';
 import GavelIcon from '@material-ui/icons/Gavel';
 import PeopleOutlineIcon from '@material-ui/icons/PeopleOutline';
 import HistoryIcon from '@material-ui/icons/History';
@@ -228,6 +229,11 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
                 icon={AssessmentIcon}
                 to="aegis/finops/cost-dashboard"
                 text="Cost Dashboard"
+              />
+              <SidebarItem
+                icon={BusinessCenterIcon}
+                to="aegis/finops/projects"
+                text="Projects"
               />
               <SidebarItem
                 icon={EqualizerIcon}

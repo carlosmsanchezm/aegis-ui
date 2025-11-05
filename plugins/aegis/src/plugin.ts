@@ -11,6 +11,7 @@ import {
   createWorkspaceRouteRef,
   costDashboardRouteRef,
   quotaManagementRouteRef,
+  projectAdministrationRouteRef,
   billingAlertsRouteRef,
   opsMetricsRouteRef,
   opsResourceDetailsRouteRef,
@@ -112,6 +113,17 @@ export const AegisQuotaManagementFinOpsPage = aegisPlugin.provide(
         m => m.AegisQuotaManagementPage,
       ),
     mountPoint: quotaManagementRouteRef,
+  }),
+);
+
+export const AegisProjectAdministrationPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisProjectAdministrationPage',
+    component: () =>
+      import('./components/ProjectAdministrationPage').then(
+        m => m.ProjectAdministrationPage,
+      ),
+    mountPoint: projectAdministrationRouteRef,
   }),
 );
 

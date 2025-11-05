@@ -52,6 +52,7 @@ import {
   AegisCreateWorkspacePage,
   AegisCostAnalyticsFinOpsPage,
   AegisQuotaManagementFinOpsPage,
+  AegisProjectAdministrationPage,
   AegisBillingAlertsFinOpsPage,
   AegisOpsMetricsPage,
   AegisResourceDetailsPage,
@@ -164,6 +165,10 @@ const routes = (
     <Route
       path="/aegis/finops/cost-dashboard"
       element={<AegisCostAnalyticsFinOpsPage />}
+    />
+    <Route
+      path="/aegis/finops/projects"
+      element={<AegisProjectAdministrationPage />}
     />
     <Route
       path="/aegis/finops/quotas"

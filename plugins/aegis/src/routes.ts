@@ -46,6 +46,12 @@ export const quotaManagementRouteRef = createSubRouteRef({
   path: '/finops/quotas',
 });
 
+export const projectAdministrationRouteRef = createSubRouteRef({
+  id: 'aegis-project-administration',
+  parent: rootRouteRef,
+  path: '/finops/projects',
+});
+
 export const billingAlertsRouteRef = createSubRouteRef({
   id: 'aegis-billing-alerts',
   parent: rootRouteRef,
