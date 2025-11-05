@@ -22,10 +22,10 @@ export const launchWorkspaceRouteRef = createSubRouteRef({
   path: '/workspaces/launch',
 });
 
-export const createClusterRouteRef = createRouteRef({
+export const createClusterRouteRef = createSubRouteRef({
   id: 'aegis.create-cluster',
   parent: rootRouteRef,
-  path: '/create-cluster',
+  path: '/clusters/create',
 });
 
 export const createWorkspaceRouteRef = createSubRouteRef({

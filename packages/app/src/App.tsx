@@ -29,7 +29,6 @@ import {
   AegisDashboardPage,
   AegisPosturePage,
   AegisTelemetryPage,
-  CreateClusterPage,
 } from './components/aegis';
 import { aegisDarkTheme, aegisLightTheme } from './theme';
 
@@ -50,6 +49,7 @@ import {
   AegisWorkloadListPage,
   AegisWorkloadDetailsPage,
   AegisCreateWorkspacePage,
+  AegisCreateClusterPage,
   AegisCostAnalyticsFinOpsPage,
   AegisQuotaManagementFinOpsPage,
   AegisBillingAlertsFinOpsPage,
@@ -160,7 +160,7 @@ const routes = (
     />
     <Route
       path="/aegis/clusters/create"
-      element={<CreateClusterPage />}
+      element={<AegisCreateClusterPage />}
     />
     <Route
       path="/aegis/finops/cost-dashboard"

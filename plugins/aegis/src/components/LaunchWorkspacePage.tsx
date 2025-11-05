@@ -79,8 +79,86 @@ import {
   projectManagementRouteRef,
   workloadsRouteRef,
 } from '../routes';
+import { projectCatalog } from './projects/projectCatalog';
 
 import type { Theme } from '@material-ui/core/styles';
+
+// Mock data for UI design purposes
+const USE_MOCK_DATA = true;
+
+// Add 2 clusters for the first project
+const mockClusters: ClusterSummary[] = [
+  {
+    id: 'cluster-atlas-vision-01',
+    projectId: 'atlas-vision',
+    displayName: 'Atlas Vision Cluster 01',
+    provider: 'AWS',
+    region: 'us-gov-west-1',
+    status: 'READY',
+    createdAt: '2024-10-15T08:30:00Z',
+  },
+  {
+    id: 'cluster-atlas-vision-02',
+    projectId: 'atlas-vision',
+    displayName: 'Atlas Vision Cluster 02',
+    provider: 'AWS',
+    region: 'us-gov-east-1',
+    status: 'READY',
+    createdAt: '2024-10-20T14:15:00Z',
+  },
+];
+
+// Add some flavors
+const mockFlavors: FlavorSummary[] = [
+  {
+    id: 'cpu-small',
+    name: 'Small',
+    description: '2 vCPU, 4 GiB RAM — great for quick CLI sessions.',
+    resources: '2 vCPU • 4 GiB RAM',
+    cpu: '2 vCPU',
+    memory: '4 GiB',
+  },
+  {
+    id: 'cpu-medium',
+    name: 'Medium',
+    description: '4 vCPU, 16 GiB RAM — balanced choice for most notebooks.',
+    resources: '4 vCPU • 16 GiB RAM',
+    cpu: '4 vCPU',
+    memory: '16 GiB',
+  },
+  {
+    id: 'gpu-standard',
+    name: 'GPU Standard',
+    description: '1× NVIDIA T4, 4 vCPU, 32 GiB RAM — training and inference.',
+    resources: '1× T4 • 4 vCPU • 32 GiB RAM',
+    gpuClass: '1× NVIDIA T4',
+    cpu: '4 vCPU',
+    memory: '32 GiB',
+  },
+];
+
+// Add queues to the first project only, link them to clusters
+const mockProjects: ProjectSummary[] = projectCatalog.map((project, idx) => ({
+  id: project.id,
+  name: project.name,
+  description: project.description,
+  visibility: project.visibility,
+  lead: project.lead,
+  budget: project.budget,
+  defaultQueueId: project.defaultQueue,
+  queues: idx === 0 ? project.queues.map((queue, queueIdx) => ({
+    id: queue.id,
+    projectId: project.id,
+    name: queue.name,
+    description: queue.description,
+    visibility: queue.visibility,
+    gpuClass: queue.gpuClass,
+    clusterId: mockClusters[queueIdx]?.id, // Link each queue to a cluster
+    maxRuntimeHours: queue.maxRuntimeHours,
+    activeWorkspaces: queue.activeWorkspaces,
+    budget: queue.budget,
+  })) : [],
+}));
 
 type WorkspaceTypeId = 'vscode' | 'jupyter' | 'cli';
 
@@ -560,14 +638,23 @@ export const LaunchWorkspacePage: FC = () => {
     try {
       setLoadError(null);
       setLoading(true);
-      const [projectItems, clusterItems, flavorItems] = await Promise.all([
-        listProjects(fetchApi, discoveryApi, identityApi, authApi),
-        listClusters(fetchApi, discoveryApi, identityApi, authApi),
-        listFlavors(fetchApi, discoveryApi, identityApi, authApi),
-      ]);
-      setProjects(projectItems);
-      setClusters(clusterItems);
-      setFlavors(flavorItems);
+
+      if (USE_MOCK_DATA) {
+        // Simulate loading delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setProjects(mockProjects);
+        setClusters(mockClusters);
+        setFlavors(mockFlavors);
+      } else {
+        const [projectItems, clusterItems, flavorItems] = await Promise.all([
+          listProjects(fetchApi, discoveryApi, identityApi, authApi),
+          listClusters(fetchApi, discoveryApi, identityApi, authApi),
+          listFlavors(fetchApi, discoveryApi, identityApi, authApi),
+        ]);
+        setProjects(projectItems);
+        setClusters(clusterItems);
+        setFlavors(flavorItems);
+      }
     } catch (e: unknown) {
       let message = 'Failed to load workspace provisioning data.';
       if (e instanceof AuthenticationError || e instanceof AuthorizationError) {
@@ -1475,7 +1562,7 @@ export const LaunchWorkspacePage: FC = () => {
                           {
                             availableFlavorOptions.find(
                               option => option.flavor === form.flavor,
-                            )?.title ?? form.flavor || '—'
+                            )?.title ?? (form.flavor || '—')
                           }
                         </span>
                       </div>
