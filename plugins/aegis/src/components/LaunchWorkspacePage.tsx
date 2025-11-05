@@ -260,6 +260,16 @@ const projectCatalog: ProjectOption[] = [
   },
 ];
 
+const bootstrapProjectOption: ProjectOption = {
+  id: 'auto-bootstrap-project',
+  displayName: 'Default Project (auto-provisioned)',
+  defaultQueue: 'Auto-provisioned queue',
+  budgetOwner: 'ÆGIS platform automation',
+  monthlyBudget: 0,
+  spendToDate: 0,
+  activeWorkspaces: 0,
+};
+
 const steps = ['Workspace basics', 'Resources & options', 'Review & launch'];
 
 const workspaceTypeIcons: Record<WorkspaceTypeId, ComponentType<any>> = {
@@ -524,6 +534,11 @@ export const LaunchWorkspacePage: FC = () => {
   const projectAdminRoute = useRouteRef(projectAdministrationRouteRef);
   const navigate = useNavigate();
 
+  const hasAnyProjects = projectCatalog.length > 0;
+  const initialProjectId = hasAnyProjects
+    ? projectCatalog[0]?.id ?? ''
+    : bootstrapProjectOption.id;
+
   const [activeStep, setActiveStep] = useState(0);
   const [workspaceTypeId, setWorkspaceTypeId] =
     useState<WorkspaceTypeId | null>(null);
@@ -532,7 +547,7 @@ export const LaunchWorkspacePage: FC = () => {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [form, setForm] = useState({
     workloadId: randomId(),
-    projectId: projectCatalog[0]?.id ?? '',
+    projectId: initialProjectId,
     queue: '',
     flavor: '',
     image: '',
@@ -541,6 +556,11 @@ export const LaunchWorkspacePage: FC = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const projectOptions = useMemo(
+    () => (hasAnyProjects ? projectCatalog : [bootstrapProjectOption]),
+    [hasAnyProjects],
+  );
 
   const templatesForType = useMemo(() => {
     if (!workspaceTypeId) {
@@ -631,17 +651,23 @@ export const LaunchWorkspacePage: FC = () => {
     setActiveStep(prev => Math.max(prev - 1, 0));
   };
 
-  const selectedProject = useMemo(
-    () => projectCatalog.find(project => project.id === form.projectId) ?? null,
-    [form.projectId],
-  );
+  const selectedProject = useMemo(() => {
+    return (
+      projectOptions.find(project => project.id === form.projectId) ?? null
+    );
+  }, [form.projectId, projectOptions]);
+
+  const isBootstrapSelection = selectedProject?.id === bootstrapProjectOption.id;
 
   const effectiveQueue = useMemo(() => {
     if (form.queue.trim()) {
       return form.queue.trim();
     }
+    if (isBootstrapSelection) {
+      return 'Auto-provisioned on submit';
+    }
     return selectedProject?.defaultQueue ?? 'auto-assigned';
-  }, [form.queue, selectedProject]);
+  }, [form.queue, selectedProject, isBootstrapSelection]);
 
   const canProceedFromBasics =
     Boolean(workspaceTypeId) &&
@@ -888,13 +914,14 @@ export const LaunchWorkspacePage: FC = () => {
                       required
                       fullWidth
                       select
+                      disabled={!hasAnyProjects}
                       helperText={
-                        selectedProject
-                          ? `Auto-assigned default provided by ${selectedProject.budgetOwner}`
-                          : 'Auto-created by platform'
+                        isBootstrapSelection
+                          ? 'ÆGIS will auto-provision a default project and queue when you launch your first workspace.'
+                          : `Auto-assigned default provided by ${selectedProject?.budgetOwner}`
                       }
                     >
-                      {projectCatalog.map(project => (
+                      {projectOptions.map(project => (
                         <MenuItem key={project.id} value={project.id}>
                           <Box display="flex" flexDirection="column">
                             <Typography variant="body1">{project.displayName}</Typography>
@@ -905,25 +932,50 @@ export const LaunchWorkspacePage: FC = () => {
                         </MenuItem>
                       ))}
                     </TextField>
+                    {!hasAnyProjects && (
+                      <Box mt={2}>
+                        <WarningPanel
+                          severity="info"
+                          title="We'll create your default project on launch"
+                        >
+                          ÆGIS automatically bootstraps a starter project and
+                          queue so this first workspace succeeds. Visit Project
+                          Administration afterwards to rename it or apply
+                          guardrails.
+                        </WarningPanel>
+                      </Box>
+                    )}
                     {selectedProject && (
                       <Box className={classes.projectSummary}>
                         <Chip
                           size="small"
                           color="primary"
                           variant="outlined"
-                          label={`Default queue: ${selectedProject.defaultQueue}`}
+                          label={
+                            isBootstrapSelection
+                              ? 'Default queue will be auto-provisioned'
+                              : `Default queue: ${selectedProject.defaultQueue}`
+                          }
                           className={classes.projectChip}
                         />
                         <Chip
                           size="small"
                           variant="outlined"
-                          label={`Budget: $${selectedProject.monthlyBudget.toLocaleString()}`}
+                          label={
+                            isBootstrapSelection
+                              ? 'Budget owner assigned after provisioning'
+                              : `Budget: $${selectedProject.monthlyBudget.toLocaleString()}`
+                          }
                           className={classes.projectChip}
                         />
                         <Chip
                           size="small"
                           variant="outlined"
-                          label={`Active workspaces: ${selectedProject.activeWorkspaces}`}
+                          label={
+                            isBootstrapSelection
+                              ? 'Active workspaces: 0 (this launch seeds the project)'
+                              : `Active workspaces: ${selectedProject.activeWorkspaces}`
+                          }
                           className={classes.projectChip}
                         />
                       </Box>
@@ -999,8 +1051,9 @@ export const LaunchWorkspacePage: FC = () => {
                         className={classes.queueChip}
                       />
                       <Typography variant="body2" color="textSecondary">
-                        Workspaces default to the selected project queue. Override scheduling only when
-                        coordinating with platform admins.
+                        {isBootstrapSelection
+                          ? 'Your first launch seeds a project and queue automatically. Adjustments can be made later from Project Administration.'
+                          : 'Workspaces default to the selected project queue. Override scheduling only when coordinating with platform admins.'}
                       </Typography>
                     </Box>
                     <FormControlLabel
@@ -1023,9 +1076,13 @@ export const LaunchWorkspacePage: FC = () => {
                           onChange={handleFormFieldChange('queue')}
                           variant="outlined"
                           fullWidth
-                          helperText={`Optional. Defaults to ${
-                            selectedProject?.defaultQueue ?? 'auto-assigned'
-                          }`}
+                          helperText={
+                            isBootstrapSelection
+                              ? 'Optional. A default queue will be created with the project; override only if directed by platform admins.'
+                              : `Optional. Defaults to ${
+                                  selectedProject?.defaultQueue ?? 'auto-assigned'
+                                }`
+                          }
                         />
                         <TextField
                           label="Expose ports"
@@ -1062,7 +1119,11 @@ export const LaunchWorkspacePage: FC = () => {
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Project</span>
                       <span className={classes.reviewValue}>
-                        {form.projectId || '—'}
+                        {selectedProject
+                          ? isBootstrapSelection
+                            ? 'Default Project (auto-provisioned)'
+                            : `${selectedProject.displayName} (${selectedProject.id})`
+                          : 'Auto-provisioned default project'}
                       </span>
                     </div>
                   </Grid>
