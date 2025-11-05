@@ -38,6 +38,7 @@ import {
   getWorkload,
   submitWorkspace,
 } from '../api/aegisClient';
+import { keycloakAuthApiRef } from '../api/refs';
 import {
   formatDefaultEnv,
   parseEnvInput,
@@ -64,6 +65,7 @@ export const SubmitWorkloadPage: FC = () => {
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
 
   const [form, setForm] = useState<FormState>({
@@ -195,6 +197,7 @@ export const SubmitWorkloadPage: FC = () => {
         fetchApi,
         discoveryApi,
         identityApi,
+        authApi,
         payload,
       );
       setResult(created);
@@ -224,6 +227,7 @@ export const SubmitWorkloadPage: FC = () => {
           fetchApi,
           discoveryApi,
           identityApi,
+          authApi,
           result.id!,
         );
         if (cancelled) {
@@ -252,7 +256,7 @@ export const SubmitWorkloadPage: FC = () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [result?.id, result?.status, fetchApi, discoveryApi, identityApi]);
+  }, [result?.id, result?.status, fetchApi, discoveryApi, identityApi, authApi]);
 
   return (
     <Page themeId="tool">

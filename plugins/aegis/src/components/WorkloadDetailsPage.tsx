@@ -35,6 +35,7 @@ import {
   parseKubernetesUrl,
   buildKubectlDescribeCommand,
 } from '../api/aegisClient';
+import { keycloakAuthApiRef } from '../api/refs';
 import { ConnectModal } from './ConnectModal';
 
 const useStyles = makeStyles(theme => ({
@@ -126,6 +127,7 @@ export const WorkloadDetailsPage: FC = () => {
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
   const navigate = useNavigate();
 
@@ -157,7 +159,13 @@ export const WorkloadDetailsPage: FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await getWorkload(fetchApi, discoveryApi, identityApi, id);
+      const res = await getWorkload(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        authApi,
+        id,
+      );
       setWorkload(res);
     } catch (e: any) {
       const msg = e?.message ?? String(e);
@@ -169,7 +177,7 @@ export const WorkloadDetailsPage: FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [alertApi, discoveryApi, fetchApi, identityApi, id]);
+  }, [alertApi, discoveryApi, fetchApi, identityApi, authApi, id]);
 
   useEffect(() => {
     load();
@@ -192,6 +200,7 @@ export const WorkloadDetailsPage: FC = () => {
           fetchApi,
           discoveryApi,
           identityApi,
+          authApi,
           workload.id,
           client,
         );
@@ -208,7 +217,7 @@ export const WorkloadDetailsPage: FC = () => {
         setPendingSession(false);
       }
     },
-    [alertApi, discoveryApi, fetchApi, identityApi, workload?.id],
+    [alertApi, discoveryApi, fetchApi, identityApi, authApi, workload?.id],
   );
 
   useEffect(() => {
@@ -276,6 +285,7 @@ export const WorkloadDetailsPage: FC = () => {
         fetchApi,
         discoveryApi,
         identityApi,
+        authApi,
         session.sessionId,
       );
       setSession(renewed);
@@ -289,7 +299,7 @@ export const WorkloadDetailsPage: FC = () => {
     } finally {
       setSessionLoading(false);
     }
-  }, [alertApi, discoveryApi, fetchApi, identityApi, session?.sessionId]);
+  }, [alertApi, discoveryApi, fetchApi, identityApi, authApi, session?.sessionId]);
 
   const handleRevoke = useCallback(async () => {
     if (!session?.sessionId) {
@@ -302,6 +312,7 @@ export const WorkloadDetailsPage: FC = () => {
         fetchApi,
         discoveryApi,
         identityApi,
+        authApi,
         session.sessionId,
       );
       setSession(null);
@@ -316,7 +327,7 @@ export const WorkloadDetailsPage: FC = () => {
     } finally {
       setSessionLoading(false);
     }
-  }, [alertApi, discoveryApi, fetchApi, identityApi, session?.sessionId]);
+  }, [alertApi, discoveryApi, fetchApi, identityApi, authApi, session?.sessionId]);
 
   const handleSystemAck = useCallback(() => {
     setSystemAcked(true);
