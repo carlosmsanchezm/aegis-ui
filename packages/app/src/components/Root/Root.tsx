@@ -23,6 +23,7 @@ import NotificationsActiveIcon from '@material-ui/icons/NotificationsActive';
 import GavelIcon from '@material-ui/icons/Gavel';
 import PeopleOutlineIcon from '@material-ui/icons/PeopleOutline';
 import HistoryIcon from '@material-ui/icons/History';
+import WorkOutlineIcon from '@material-ui/icons/WorkOutline';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
 import {
@@ -248,6 +249,11 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
                 icon={AssessmentIcon}
                 to="aegis/admin/analytics"
                 text="Usage & Cost"
+              />
+              <SidebarItem
+                icon={WorkOutlineIcon}
+                to="aegis/admin/projects"
+                text="Projects"
               />
               <SidebarItem
                 icon={GavelIcon}

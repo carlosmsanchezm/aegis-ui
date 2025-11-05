@@ -15,10 +15,11 @@ import {
   useApi,
   useRouteRef,
 } from '@backstage/core-plugin-api';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
+  ButtonBase,
   Card,
   CardActionArea,
   CardContent,
@@ -27,6 +28,7 @@ import {
   Divider,
   FormControlLabel,
   Grid,
+  MenuItem,
   Paper,
   Step,
   StepLabel,
@@ -54,6 +56,13 @@ import {
 import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
 import { workloadsRouteRef } from '../routes';
+import {
+  findProjectById,
+  projectProfiles,
+  projectVisibilityDescriptions,
+  projectVisibilityLabels,
+  resolveDefaultQueueId,
+} from './projectCatalog';
 
 import type { Theme } from '@material-ui/core/styles/createMuiTheme';
 
@@ -325,6 +334,51 @@ const useStyles = makeStyles((theme: Theme) => {
       gap: theme.spacing(2),
       padding: theme.spacing(3),
     },
+    projectSurface: {
+      backgroundColor: isDark ? alpha('#111827', 0.7) : '#FFFFFF',
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      padding: theme.spacing(3),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(2),
+    },
+    projectHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1),
+    },
+    visibilityChip: {
+      backgroundColor: alpha(accent, isDark ? 0.2 : 0.12),
+      color: accent,
+      fontWeight: 600,
+      letterSpacing: '0.05em',
+      textTransform: 'uppercase',
+    },
+    budgetGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+      gap: theme.spacing(2),
+    },
+    budgetStat: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(0.5),
+    },
+    budgetLabel: {
+      fontSize: '0.75rem',
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      color: theme.palette.text.secondary,
+    },
+    budgetValue: {
+      fontWeight: 600,
+    },
+    manageButton: {
+      alignSelf: 'flex-start',
+    },
     sectionDivider: {
       backgroundColor: 'var(--aegis-muted)',
       margin: theme.spacing(3, 0),
@@ -333,6 +387,65 @@ const useStyles = makeStyles((theme: Theme) => {
       marginTop: theme.spacing(1),
       display: 'flex',
       alignItems: 'center',
+    },
+    queueList: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+      marginTop: theme.spacing(1),
+    },
+    queueCard: {
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      padding: theme.spacing(2),
+      display: 'flex',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: theme.spacing(2),
+      transition: 'border-color 160ms ease, background-color 160ms ease',
+      cursor: 'pointer',
+    },
+    queueCardActive: {
+      borderColor: accent,
+      backgroundColor: alpha(accent, isDark ? 0.16 : 0.12),
+    },
+    queueCardTitle: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(0.5),
+    },
+    queueMeta: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-end',
+      gap: theme.spacing(0.75),
+    },
+    queueBadge: {
+      fontWeight: 600,
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+    },
+    queueChipRow: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1),
+      marginTop: theme.spacing(1),
+    },
+    queueChip: {
+      fontWeight: 600,
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+      color: theme.palette.text.secondary,
+      borderColor: alpha(theme.palette.text.secondary, 0.3),
+    },
+    queueChipSelected: {
+      color: accent,
+      borderColor: alpha(accent, 0.8),
+      backgroundColor: alpha(accent, isDark ? 0.18 : 0.1),
+    },
+    queueHelper: {
+      color: theme.palette.text.secondary,
+      marginTop: theme.spacing(1),
     },
     advancedSurface: {
       backgroundColor: isDark ? alpha('#0F172A', 0.65) : '#F8F8F6',
@@ -454,17 +567,65 @@ export const LaunchWorkspacePage: FC = () => {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [forceAdvancedOpen, setForceAdvancedOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [form, setForm] = useState({
-    workloadId: randomId(),
-    projectId: '',
-    queue: '',
-    flavor: '',
-    image: '',
-    ports: '22',
-    env: '',
+  const [form, setForm] = useState(() => {
+    const defaultProject = projectProfiles[0];
+    const defaultQueue = resolveDefaultQueueId(defaultProject);
+
+    return {
+      workloadId: randomId(),
+      projectId: defaultProject?.id ?? '',
+      queue: defaultQueue,
+      flavor: '',
+      image: '',
+      ports: '22',
+      env: '',
+    };
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedProject = useMemo(
+    () => findProjectById(form.projectId) ?? projectProfiles[0] ?? null,
+    [form.projectId],
+  );
+
+  const projectDefaultQueue = useMemo(
+    () => resolveDefaultQueueId(selectedProject ?? undefined),
+    [selectedProject],
+  );
+
+  const availableQueues = selectedProject?.queues ?? [];
+
+  const projectDefaultQueueName = useMemo(() => {
+    if (!selectedProject) {
+      return '';
+    }
+
+    const fallback = selectedProject.queues.find(
+      queue => queue.id === projectDefaultQueue,
+    );
+    return fallback ? fallback.name : '';
+  }, [projectDefaultQueue, selectedProject]);
+
+  const queueDisplayName = useMemo(() => {
+    const trimmed = form.queue.trim();
+    if (!trimmed) {
+      if (!selectedProject) {
+        return 'Project default';
+      }
+
+      const fallback = selectedProject.queues.find(
+        queue => queue.id === projectDefaultQueue,
+      );
+
+      return fallback
+        ? `${fallback.name} (${fallback.id})`
+        : 'Project default';
+    }
+
+    const match = availableQueues.find(queue => queue.id === trimmed);
+    return match ? `${match.name} (${match.id})` : trimmed;
+  }, [availableQueues, form.queue, projectDefaultQueue, selectedProject]);
 
   const templatesForType = useMemo(() => {
     if (!workspaceTypeId) {
@@ -492,6 +653,23 @@ export const LaunchWorkspacePage: FC = () => {
       setForm(prev => ({ ...prev, [field]: event.target.value }));
     };
 
+  const handleProjectSelect = (event: ChangeEvent<{ value: unknown }>) => {
+    const nextProjectId = event.target.value as string;
+
+    setForm(prev => {
+      const nextProject = findProjectById(nextProjectId);
+      const nextDefaultQueue = resolveDefaultQueueId(nextProject);
+      const canKeepQueue =
+        nextProject?.queues.some(queue => queue.id === prev.queue) ?? false;
+
+      return {
+        ...prev,
+        projectId: nextProjectId,
+        queue: canKeepQueue ? prev.queue : nextDefaultQueue,
+      };
+    });
+  };
+
   const applyTemplate = (template: TemplateOption) => {
     setTemplateId(template.id);
     setForceAdvancedOpen(Boolean(template.autoShowAdvanced));
@@ -507,7 +685,7 @@ export const LaunchWorkspacePage: FC = () => {
       queue:
         template.defaults.queue !== undefined
           ? template.defaults.queue
-          : prev.queue,
+          : prev.queue || projectDefaultQueue,
       ports:
         template.defaults.ports !== undefined
           ? portsToText(template.defaults.ports)
@@ -538,6 +716,14 @@ export const LaunchWorkspacePage: FC = () => {
 
   const handleFlavorSelect = (flavor: FlavorOption) => {
     setForm(prev => ({ ...prev, flavor: flavor.flavor }));
+  };
+
+  const handleQueueQuickSelect = (queueId: string) => {
+    setForm(prev => ({ ...prev, queue: queueId }));
+  };
+
+  const handleQueueReset = () => {
+    setForm(prev => ({ ...prev, queue: projectDefaultQueue }));
   };
 
   const handleAdvancedToggle = (event: ChangeEvent<HTMLInputElement>) => {
@@ -779,14 +965,140 @@ export const LaunchWorkspacePage: FC = () => {
                       Project context
                     </Typography>
                     <TextField
-                      label="Project ID"
+                      select
+                      label="Project"
                       value={form.projectId}
-                      onChange={handleFormFieldChange('projectId')}
+                      onChange={handleProjectSelect}
                       variant="outlined"
                       required
                       fullWidth
-                      helperText="Owner project for access controls and billing"
-                    />
+                      helperText={
+                        selectedProject
+                          ? projectVisibilityDescriptions[selectedProject.visibility]
+                          : 'Projects govern access and billing budgets'
+                      }
+                    >
+                      {projectProfiles.map(project => (
+                        <MenuItem key={project.id} value={project.id}>
+                          <Box display="flex" flexDirection="column" width="100%">
+                            <Box display="flex" alignItems="center" justifyContent="space-between">
+                              <Typography variant="body1" component="span">
+                                {project.name}
+                              </Typography>
+                              <Chip
+                                size="small"
+                                label={projectVisibilityLabels[project.visibility]}
+                                className={classes.visibilityChip}
+                              />
+                            </Box>
+                            <Typography variant="caption" color="textSecondary">
+                              {project.description}
+                            </Typography>
+                          </Box>
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    {selectedProject && (
+                      <div className={classes.projectSurface}>
+                        <div className={classes.projectHeader}>
+                          <div>
+                            <Typography variant="h6">{selectedProject.name}</Typography>
+                            <Typography variant="body2" color="textSecondary">
+                              Sponsored by {selectedProject.sponsor}
+                            </Typography>
+                          </div>
+                          <Chip
+                            size="small"
+                            label={`${projectVisibilityLabels[selectedProject.visibility]} Project`}
+                            className={classes.visibilityChip}
+                          />
+                        </div>
+                        <Typography variant="body2" color="textSecondary">
+                          {selectedProject.description}
+                        </Typography>
+                        <div className={classes.budgetGrid}>
+                          <div className={classes.budgetStat}>
+                            <span className={classes.budgetLabel}>Budget used</span>
+                            <span className={classes.budgetValue}>{selectedProject.budget.used}</span>
+                          </div>
+                          <div className={classes.budgetStat}>
+                            <span className={classes.budgetLabel}>Budget committed</span>
+                            <span className={classes.budgetValue}>{selectedProject.budget.committed}</span>
+                          </div>
+                          <div className={classes.budgetStat}>
+                            <span className={classes.budgetLabel}>Renews</span>
+                            <span className={classes.budgetValue}>{selectedProject.budget.renews}</span>
+                          </div>
+                        </div>
+                        <Typography variant="caption" color="textSecondary">
+                          Queues prepared for this project are listed below. Defaults are
+                          auto-provisioned so most launches can skip manual overrides.
+                        </Typography>
+                        <div className={classes.queueList}>
+                          {availableQueues.map(queue => {
+                            const isActive = form.queue === queue.id;
+                            const chipLabel =
+                              queue.kind === 'gpu'
+                                ? 'GPU'
+                                : queue.kind === 'mixed'
+                                ? 'Hybrid'
+                                : 'CPU';
+
+                            return (
+                              <ButtonBase
+                                key={queue.id}
+                                onClick={() => handleQueueQuickSelect(queue.id)}
+                                focusRipple
+                                className={`${classes.queueCard} ${
+                                  isActive ? classes.queueCardActive : ''
+                                }`.trim()}
+                              >
+                                <div className={classes.queueCardTitle}>
+                                  <Typography variant="subtitle1">{queue.name}</Typography>
+                                  <Typography variant="body2" color="textSecondary">
+                                    {queue.description}
+                                  </Typography>
+                                  <div className={classes.queueChipRow}>
+                                    <Chip
+                                      size="small"
+                                      variant="outlined"
+                                      label={chipLabel}
+                                      className={`${classes.queueChip} ${
+                                        isActive ? classes.queueChipSelected : ''
+                                      }`.trim()}
+                                    />
+                                    <Chip
+                                      size="small"
+                                      variant="outlined"
+                                      label={`${queue.backlogMinutes} min backlog`}
+                                      className={classes.queueChip}
+                                    />
+                                  </div>
+                                </div>
+                                <div className={classes.queueMeta}>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {queue.capacity}
+                                  </Typography>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {queue.policy}
+                                  </Typography>
+                                </div>
+                              </ButtonBase>
+                            );
+                          })}
+                        </div>
+                        <Button
+                          component={RouterLink}
+                          to="/aegis/admin/projects"
+                          variant="outlined"
+                          color="primary"
+                          size="small"
+                          className={classes.manageButton}
+                        >
+                          Manage projects & queues
+                        </Button>
+                      </div>
+                    )}
                     <TextField
                       label="Workspace ID"
                       value={form.workloadId}
@@ -848,13 +1160,61 @@ export const LaunchWorkspacePage: FC = () => {
                       helperText="OCI image with your workspace runtime"
                     />
                     <TextField
-                      label="Queue (optional)"
+                      label="Queue"
                       value={form.queue}
                       onChange={handleFormFieldChange('queue')}
                       variant="outlined"
                       fullWidth
-                      helperText="Override default queue for launch scheduling"
+                      helperText={
+                        selectedProject
+                          ? projectDefaultQueue
+                            ? `Default queue: ${projectDefaultQueueName} (${projectDefaultQueue}). Override only when missions require a specific lane.`
+                            : 'Override the queue if a different mission lane is required.'
+                          : 'Override default queue for launch scheduling'
+                      }
                     />
+                    {availableQueues.length > 0 && (
+                      <>
+                        <Typography variant="caption" className={classes.queueHelper}>
+                          Quick select from queues already approved for{' '}
+                          {selectedProject?.name ?? 'this project'}.
+                        </Typography>
+                        <div className={classes.queueChipRow}>
+                          {availableQueues.map(queue => (
+                            <Chip
+                              key={queue.id}
+                              size="small"
+                              variant="outlined"
+                              clickable
+                              onClick={() => handleQueueQuickSelect(queue.id)}
+                              label={`${queue.name}`}
+                              className={`${classes.queueChip} ${
+                                form.queue === queue.id ? classes.queueChipSelected : ''
+                              }`.trim()}
+                            />
+                          ))}
+                          {projectDefaultQueue && (
+                            <Chip
+                              key="project-default-queue"
+                              size="small"
+                              variant="outlined"
+                              clickable
+                              onClick={handleQueueReset}
+                              label={`Use project default${
+                                projectDefaultQueueName
+                                  ? ` (${projectDefaultQueueName})`
+                                  : ''
+                              }`}
+                              className={`${classes.queueChip} ${
+                                !form.queue.trim() || form.queue === projectDefaultQueue
+                                  ? classes.queueChipSelected
+                                  : ''
+                              }`.trim()}
+                            />
+                          )}
+                        </div>
+                      </>
+                    )}
                     <FormControlLabel
                       className={classes.toggleControl}
                       control={
@@ -904,7 +1264,9 @@ export const LaunchWorkspacePage: FC = () => {
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Project</span>
                       <span className={classes.reviewValue}>
-                        {form.projectId || '—'}
+                        {selectedProject
+                          ? `${selectedProject.name} (${selectedProject.id})`
+                          : form.projectId || '—'}
                       </span>
                     </div>
                   </Grid>
@@ -943,9 +1305,7 @@ export const LaunchWorkspacePage: FC = () => {
                   <Grid item xs={12} md={6}>
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Queue</span>
-                      <span className={classes.reviewValue}>
-                        {form.queue || 'Default'}
-                      </span>
+                      <span className={classes.reviewValue}>{queueDisplayName}</span>
                     </div>
                   </Grid>
                   <Grid item xs={12} md={6}>

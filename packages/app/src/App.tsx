@@ -59,6 +59,7 @@ import {
   AegisAlertsDashboardPage,
   AegisClusterConfigPage,
   AegisCostAnalyticsPage,
+  AegisProjectManagementPage,
   AegisPolicyManagementPage,
   AegisUserManagementPage,
   AegisAuditLogPage,
@@ -173,6 +174,7 @@ const routes = (
       path="/aegis/finops/alerts"
       element={<AegisBillingAlertsFinOpsPage />}
     />
+    <Route path="/aegis/admin/projects" element={<AegisProjectManagementPage />} />
     <Route path="/aegis/admin/analytics" element={<AegisCostAnalyticsPage />} />
     <Route path="/aegis/admin/policies" element={<AegisPolicyManagementPage />} />
     <Route path="/aegis/admin/users" element={<AegisUserManagementPage />} />

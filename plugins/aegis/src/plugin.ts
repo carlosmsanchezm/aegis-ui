@@ -18,6 +18,7 @@ import {
   opsAlertsRouteRef,
   opsConfigRouteRef,
   costAnalyticsRouteRef,
+  projectManagementRouteRef,
   policyManagementRouteRef,
   userManagementRouteRef,
   auditLogRouteRef,
@@ -189,6 +190,17 @@ export const AegisCostAnalyticsPage = aegisPlugin.provide(
         m => m.AegisCostAnalyticsPage,
       ),
     mountPoint: costAnalyticsRouteRef,
+  }),
+);
+
+export const AegisProjectManagementPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisProjectManagementPage',
+    component: () =>
+      import('./components/AegisProjectManagementPage').then(
+        m => m.AegisProjectManagementPage,
+      ),
+    mountPoint: projectManagementRouteRef,
   }),
 );
 
