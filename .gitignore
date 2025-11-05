@@ -42,9 +42,14 @@ site
 
 # Local configuration files
 *.local.yaml
+*.local-dev.yaml
 
 # Sensitive credentials
 *-credentials.yaml
+
+# Local certificates and trust files
+*.pem
+*.crt
 
 # vscode database functionality support files
 *.session.sql
