@@ -30,6 +30,7 @@ import {
   AegisPosturePage,
   AegisTelemetryPage,
   CreateClusterPage,
+  CreateProjectPage,
 } from './components/aegis';
 import { aegisDarkTheme, aegisLightTheme } from './theme';
 
@@ -175,6 +176,7 @@ const routes = (
       element={<AegisBillingAlertsFinOpsPage />}
     />
     <Route path="/aegis/admin/analytics" element={<AegisCostAnalyticsPage />} />
+    <Route path="/aegis/admin/projects/create" element={<CreateProjectPage />} />
     <Route path="/aegis/admin/projects" element={<AegisProjectManagementPage />} />
     <Route path="/aegis/admin/policies" element={<AegisPolicyManagementPage />} />
     <Route path="/aegis/admin/users" element={<AegisUserManagementPage />} />
