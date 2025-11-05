@@ -94,6 +94,92 @@ export type GetClusterJobStatusResponse = {
   job: Job;
 };
 
+export type QueueVisibility = 'restricted' | 'internal' | 'public';
+
+export type QueueSummary = {
+  id: string;
+  name?: string;
+  description?: string;
+  visibility?: QueueVisibility;
+  clusterId?: string;
+  supportedFlavors?: string[];
+  defaultFlavorId?: string;
+};
+
+export type ProjectSummary = {
+  id: string;
+  name?: string;
+  description?: string;
+  defaultQueueId?: string;
+  queues?: QueueSummary[];
+};
+
+export type ClusterSummary = {
+  id: string;
+  projectId?: string;
+  displayName?: string;
+  provider?: string;
+  region?: string;
+  status?: string;
+  createdAt?: string;
+};
+
+export type FlavorSummary = {
+  id: string;
+  displayName?: string;
+  description?: string;
+  resources?: string;
+  category?: string;
+};
+
+export type ListProjectsResponse = {
+  items: ProjectSummary[];
+};
+
+export type ListClustersResponse = {
+  items: ClusterSummary[];
+};
+
+export type ListFlavorsResponse = {
+  items: FlavorSummary[];
+};
+
+export type CreateProjectRequest = {
+  projectId: string;
+  name: string;
+  description?: string;
+};
+
+export type CreateProjectResponse = {
+  project: ProjectSummary;
+};
+
+export type CreateFlavorRequest = {
+  flavorId: string;
+  displayName: string;
+  description?: string;
+  resources?: string;
+  category?: string;
+};
+
+export type CreateFlavorResponse = {
+  flavor: FlavorSummary;
+};
+
+export type CreateQueueRequest = {
+  queueId: string;
+  name?: string;
+  description?: string;
+  clusterId?: string;
+  defaultFlavorId?: string;
+  visibility?: QueueVisibility;
+  supportedFlavors?: string[];
+};
+
+export type CreateQueueResponse = {
+  queue: QueueSummary;
+};
+
 export type ListWorkloadsResponse = {
   items: WorkloadDTO[];
 };
@@ -533,6 +619,130 @@ export const createWorkspace = async (
     },
   );
 };
+
+export const listProjects = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<ProjectSummary[]> => {
+  const res = await restJson<undefined, ListProjectsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/projects',
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+
+  return res.items ?? [];
+};
+
+export const createProject = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  req: CreateProjectRequest,
+): Promise<CreateProjectResponse> =>
+  restJson<CreateProjectRequest, CreateProjectResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/projects',
+    {
+      method: 'POST',
+      body: req,
+      requireAuth: true,
+    },
+  );
+
+export const listClusters = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<ClusterSummary[]> => {
+  const res = await restJson<undefined, ListClustersResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/clusters',
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+
+  return res.items ?? [];
+};
+
+export const createQueue = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  projectId: string,
+  req: CreateQueueRequest,
+): Promise<CreateQueueResponse> =>
+  restJson<CreateQueueRequest, CreateQueueResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/queues`,
+    {
+      method: 'POST',
+      body: req,
+      requireAuth: true,
+    },
+  );
+
+export const listFlavors = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<FlavorSummary[]> => {
+  const res = await restJson<undefined, ListFlavorsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/flavors',
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+
+  return res.items ?? [];
+};
+
+export const createFlavor = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  req: CreateFlavorRequest,
+): Promise<CreateFlavorResponse> =>
+  restJson<CreateFlavorRequest, CreateFlavorResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/flavors',
+    {
+      method: 'POST',
+      body: req,
+      requireAuth: true,
+    },
+  );
 
 export const createCluster = async (
   fetchApi: FetchApi,

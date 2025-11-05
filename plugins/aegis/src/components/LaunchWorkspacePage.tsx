@@ -3,11 +3,18 @@ import {
   ComponentType,
   FC,
   FormEvent,
+  useCallback,
   useEffect,
   useMemo,
   useState,
 } from 'react';
-import { Page, Content, ContentHeader, Progress, WarningPanel } from '@backstage/core-components';
+import {
+  Page,
+  Content,
+  ContentHeader,
+  Progress,
+  WarningPanel,
+} from '@backstage/core-components';
 import {
   alertApiRef,
   discoveryApiRef,
@@ -16,7 +23,7 @@ import {
   useApi,
   useRouteRef,
 } from '@backstage/core-plugin-api';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -31,6 +38,7 @@ import {
   FormHelperText,
   Grid,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -55,17 +63,22 @@ import {
   AuthenticationError,
   AuthorizationError,
   CreateWorkspaceRequest,
+  ProjectSummary,
+  ClusterSummary,
+  FlavorSummary,
+  QueueVisibility,
   createWorkspace,
+  listProjects,
+  listClusters,
+  listFlavors,
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
-import { projectManagementRouteRef, workloadsRouteRef } from '../routes';
 import {
-  ProjectDefinition,
-  QueueDefinition,
-  projectCatalog,
-  visibilityCopy,
-} from './projects/projectCatalog';
+  createClusterRouteRef,
+  projectManagementRouteRef,
+  workloadsRouteRef,
+} from '../routes';
 
 import type { Theme } from '@material-ui/core/styles';
 
@@ -92,15 +105,44 @@ type TemplateOption = {
   autoShowAdvanced?: boolean;
 };
 
+type ProjectOption = {
+  id: string;
+  name: string;
+  description?: string;
+  defaultQueueId?: string;
+  queues: QueueOption[];
+};
+
+type QueueOption = {
+  id: string;
+  name: string;
+  description?: string;
+  visibility?: QueueVisibility;
+  clusterId?: string;
+  clusterName?: string;
+  clusterStatus?: string;
+  supportedFlavors?: string[];
+  defaultFlavorId?: string;
+};
+
 type FlavorOption = {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   flavor: string;
-  resources: string;
+  resources?: string;
+  category?: string;
 };
 
-// TODO: Replace static catalogs with workspace profiles served by the ÆGIS control plane API.
+const queueVisibilityCopy: Record<
+  QueueVisibility,
+  { label: string; tone: 'default' | 'primary' | 'secondary' }
+> = {
+  restricted: { label: 'Restricted', tone: 'secondary' },
+  internal: { label: 'Internal', tone: 'primary' },
+  public: { label: 'Public', tone: 'default' },
+};
+
 const workspaceTypeCatalog: WorkspaceTypeOption[] = [
   {
     id: 'vscode',
@@ -192,44 +234,6 @@ const templateCatalog: TemplateOption[] = [
   },
 ];
 
-const flavorCatalog: FlavorOption[] = [
-  {
-    id: 'cpu-small',
-    title: 'Small',
-    description: '2 vCPU, 4 GiB RAM — great for quick CLI sessions.',
-    flavor: 'cpu-small',
-    resources: '2 vCPU • 4 GiB RAM',
-  },
-  {
-    id: 'cpu-medium',
-    title: 'Medium',
-    description: '4 vCPU, 16 GiB RAM — balanced choice for most notebooks.',
-    flavor: 'cpu-medium',
-    resources: '4 vCPU • 16 GiB RAM',
-  },
-  {
-    id: 'cpu-large',
-    title: 'Large',
-    description: '8 vCPU, 32 GiB RAM — heavier IDE workloads and data prep.',
-    flavor: 'cpu-large',
-    resources: '8 vCPU • 32 GiB RAM',
-  },
-  {
-    id: 'gpu-standard',
-    title: 'GPU Standard',
-    description: '1× NVIDIA T4, 4 vCPU, 32 GiB RAM — training and inference.',
-    flavor: 'gpu-standard',
-    resources: '1× T4 • 4 vCPU • 32 GiB RAM',
-  },
-  {
-    id: 'gpu-large',
-    title: 'GPU Large',
-    description: '1× NVIDIA A10, 8 vCPU, 64 GiB RAM — larger GPU workloads.',
-    flavor: 'gpu-large',
-    resources: '1× A10 • 8 vCPU • 64 GiB RAM',
-  },
-];
-
 const steps = ['Workspace basics', 'Resources & options', 'Review & launch'];
 
 const workspaceTypeIcons: Record<WorkspaceTypeId, ComponentType<any>> = {
@@ -244,8 +248,8 @@ const useStyles = makeStyles((theme: Theme) => {
   const surface = 'var(--aegis-card-surface)';
   const accent = theme.palette.primary.main;
   const selectedShadow = isDark
-    ? '0 16px 48px rgba(139, 92, 246, 0.32)'
-    : '0 24px 60px rgba(109, 40, 217, 0.25)';
+    ? '0 16px 48px rgba(99, 102, 241, 0.28)'
+    : '0 24px 60px rgba(79, 70, 229, 0.18)';
 
   return {
     content: {
@@ -265,7 +269,7 @@ const useStyles = makeStyles((theme: Theme) => {
     },
     hero: {
       color: theme.palette.text.secondary,
-      maxWidth: 560,
+      maxWidth: 620,
       marginTop: theme.spacing(1),
     },
     stepper: {
@@ -303,7 +307,7 @@ const useStyles = makeStyles((theme: Theme) => {
     },
     selectionCardSelected: {
       borderColor: accent,
-      backgroundColor: alpha(accent, isDark ? 0.16 : 0.1),
+      backgroundColor: alpha(accent, isDark ? 0.18 : 0.12),
       boxShadow: selectedShadow,
       transform: 'translateY(-2px)',
     },
@@ -329,7 +333,7 @@ const useStyles = makeStyles((theme: Theme) => {
       textTransform: 'uppercase',
     },
     formSection: {
-      backgroundColor: isDark ? alpha('#111827', 0.7) : '#FFFFFF',
+      backgroundColor: surface,
       borderRadius: theme.shape.borderRadius,
       border: `1px solid ${borderColor}`,
       display: 'flex',
@@ -337,53 +341,10 @@ const useStyles = makeStyles((theme: Theme) => {
       gap: theme.spacing(2),
       padding: theme.spacing(3),
     },
-    projectOverview: {
-      borderRadius: theme.shape.borderRadius,
-      border: `1px solid ${borderColor}`,
-      backgroundColor: isDark ? alpha('#0F172A', 0.7) : 'var(--aegis-card-surface)',
-      padding: theme.spacing(2.5),
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(1.5),
-    },
-    projectHeader: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: theme.spacing(1.5),
-    },
-    projectMeta: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-      gap: theme.spacing(1.5),
-    },
-    projectMetaLabel: {
-      fontSize: theme.typography.pxToRem(12),
-      letterSpacing: '0.08em',
-      textTransform: 'uppercase',
-      color: theme.palette.text.secondary,
-      fontWeight: 600,
-    },
-    projectMetaValue: {
-      fontWeight: 600,
-      letterSpacing: '-0.01em',
-    },
-    projectActions: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      flexWrap: 'wrap',
-      gap: theme.spacing(1.5),
-    },
-    selectMenuContent: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: theme.spacing(0.5),
-    },
     queueSummaryCard: {
       borderRadius: theme.shape.borderRadius,
       border: `1px solid ${borderColor}`,
-      backgroundColor: isDark ? alpha('#111827', 0.7) : '#F6F6FB',
+      backgroundColor: isDark ? alpha('#0F172A', 0.65) : '#F7F8FE',
       padding: theme.spacing(2.5),
       display: 'flex',
       flexDirection: 'column',
@@ -395,24 +356,20 @@ const useStyles = makeStyles((theme: Theme) => {
       justifyContent: 'space-between',
       gap: theme.spacing(1.5),
     },
-    queueSummaryMetrics: {
+    queueSummaryMeta: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
       gap: theme.spacing(1.25),
     },
-    queueSummaryMetricLabel: {
+    queueSummaryMetaLabel: {
+      color: theme.palette.text.secondary,
       fontSize: theme.typography.pxToRem(12),
       textTransform: 'uppercase',
       letterSpacing: '0.08em',
-      color: theme.palette.text.secondary,
       fontWeight: 600,
     },
-    queueSummaryMetricValue: {
+    queueSummaryMetaValue: {
       fontWeight: 600,
-    },
-    sectionDivider: {
-      backgroundColor: 'var(--aegis-muted)',
-      margin: theme.spacing(3, 0),
     },
     toggleControl: {
       marginTop: theme.spacing(1),
@@ -457,6 +414,20 @@ const useStyles = makeStyles((theme: Theme) => {
       flexWrap: 'wrap',
       gap: theme.spacing(2),
       marginTop: theme.spacing(4),
+    },
+    emptyState: {
+      backgroundColor: alpha(theme.palette.info.main, isDark ? 0.12 : 0.08),
+      borderRadius: theme.shape.borderRadius,
+      border: `1px dashed ${alpha(theme.palette.info.main, 0.6)}`,
+      padding: theme.spacing(3),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+    },
+    emptyStateActions: {
+      display: 'flex',
+      gap: theme.spacing(1.5),
+      flexWrap: 'wrap',
     },
     stepIcon: {
       width: 34,
@@ -520,8 +491,30 @@ const portsToText = (ports?: number[]): string => {
   return ports.join(', ');
 };
 
-const getFlavorIcon = (flavorId: string) =>
-  flavorId.startsWith('gpu') ? MemoryIcon : StorageIcon;
+const getFlavorIcon = (flavor: FlavorOption) =>
+  (flavor.category?.toLowerCase().startsWith('gpu') ? MemoryIcon : StorageIcon);
+
+const normalizeVisibility = (visibility?: QueueVisibility): QueueVisibility => {
+  if (visibility === 'restricted' || visibility === 'public') {
+    return visibility;
+  }
+  return 'internal';
+};
+
+const supportedFlavorsForQueue = (
+  queue: QueueOption | null,
+  options: FlavorOption[],
+): FlavorOption[] => {
+  if (!queue) {
+    return options;
+  }
+  const supported = queue.supportedFlavors?.filter(Boolean) ?? [];
+  if (supported.length === 0) {
+    return options;
+  }
+  const supportedSet = new Set(supported);
+  return options.filter(option => supportedSet.has(option.flavor));
+};
 
 export const LaunchWorkspacePage: FC = () => {
   const classes = useStyles();
@@ -531,7 +524,12 @@ export const LaunchWorkspacePage: FC = () => {
   const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
-  const projectManagementLink = useRouteRef(projectManagementRouteRef);
+  const projectManagementLink = useRouteRef(projectManagementRouteRef, {
+    optional: true,
+  });
+  const createClusterLink = useRouteRef(createClusterRouteRef, {
+    optional: true,
+  });
   const navigate = useNavigate();
 
   const [activeStep, setActiveStep] = useState(0);
@@ -540,11 +538,16 @@ export const LaunchWorkspacePage: FC = () => {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [forceAdvancedOpen, setForceAdvancedOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [flavors, setFlavors] = useState<FlavorSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [form, setForm] = useState({
     workloadId: randomId(),
-    projectId: projectCatalog[0]?.id ?? '',
-    queue:
-      projectCatalog[0]?.defaultQueue ?? projectCatalog[0]?.queues?.[0]?.id ?? '',
+    projectId: '',
+    queue: '',
     flavor: '',
     image: '',
     ports: '22',
@@ -552,6 +555,126 @@ export const LaunchWorkspacePage: FC = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const fetchProvisioning = useCallback(async () => {
+    try {
+      setLoadError(null);
+      setLoading(true);
+      const [projectItems, clusterItems, flavorItems] = await Promise.all([
+        listProjects(fetchApi, discoveryApi, identityApi, authApi),
+        listClusters(fetchApi, discoveryApi, identityApi, authApi),
+        listFlavors(fetchApi, discoveryApi, identityApi, authApi),
+      ]);
+      setProjects(projectItems);
+      setClusters(clusterItems);
+      setFlavors(flavorItems);
+    } catch (e: unknown) {
+      let message = 'Failed to load workspace provisioning data.';
+      if (e instanceof AuthenticationError || e instanceof AuthorizationError) {
+        message = e.message;
+      } else if (e instanceof Error) {
+        message = e.message || message;
+      }
+      setLoadError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  useEffect(() => {
+    fetchProvisioning();
+  }, [fetchProvisioning]);
+
+  useEffect(() => {
+    let mounted = true;
+    identityApi
+      .getBackstageIdentity()
+      .then(identity => {
+        if (!mounted) {
+          return;
+        }
+        const ownership = identity?.ownershipEntityRefs ?? [];
+        const normalized = ownership.map(ref => ref.toLowerCase());
+        const adminGroups = [
+          'group:default/aegis-admins',
+          'group:default/platform-admins',
+          'group:default/admins',
+        ];
+        setIsAdmin(normalized.some(ref => adminGroups.includes(ref)));
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [identityApi]);
+
+  const projectOptions = useMemo<ProjectOption[]>(() => {
+    const clusterMap = new Map(clusters.map(cluster => [cluster.id, cluster]));
+    return (projects ?? []).map(project => ({
+      id: project.id,
+      name: project.name || project.id,
+      description: project.description,
+      defaultQueueId: project.defaultQueueId,
+      queues:
+        (project.queues ?? []).map(queue => {
+          const cluster = queue.clusterId
+            ? clusterMap.get(queue.clusterId)
+            : undefined;
+          return {
+            id: queue.id,
+            name: queue.name || queue.id,
+            description: queue.description,
+            visibility: normalizeVisibility(queue.visibility),
+            clusterId: queue.clusterId,
+            clusterName:
+              cluster?.displayName || cluster?.id || queue.clusterId || undefined,
+            clusterStatus: cluster?.status,
+            supportedFlavors: queue.supportedFlavors,
+            defaultFlavorId: queue.defaultFlavorId,
+          };
+        }) ?? [],
+    }));
+  }, [projects, clusters]);
+
+  const flavorOptions = useMemo<FlavorOption[]>(
+    () =>
+      (flavors ?? []).map(flavor => ({
+        id: flavor.id,
+        title: flavor.displayName || flavor.id,
+        description: flavor.description,
+        flavor: flavor.id,
+        resources: flavor.resources,
+        category: flavor.category,
+      })),
+    [flavors],
+  );
+
+  const selectedProject = useMemo<ProjectOption | null>(
+    () => projectOptions.find(project => project.id === form.projectId) ?? null,
+    [projectOptions, form.projectId],
+  );
+
+  const queueOptions = useMemo<QueueOption[]>(
+    () => selectedProject?.queues ?? [],
+    [selectedProject],
+  );
+
+  const selectedQueue = useMemo<QueueOption | null>(
+    () => queueOptions.find(queue => queue.id === form.queue) ?? null,
+    [queueOptions, form.queue],
+  );
+
+  const clusterMap = useMemo(
+    () => new Map(clusters.map(cluster => [cluster.id, cluster])),
+    [clusters],
+  );
+
+  const selectedCluster = useMemo<ClusterSummary | null>(() => {
+    if (!selectedQueue?.clusterId) {
+      return null;
+    }
+    return clusterMap.get(selectedQueue.clusterId) ?? null;
+  }, [clusterMap, selectedQueue]);
 
   const templatesForType = useMemo(() => {
     if (!workspaceTypeId) {
@@ -574,32 +697,63 @@ export const LaunchWorkspacePage: FC = () => {
     [workspaceTypeId],
   );
 
-  const selectedProject = useMemo<ProjectDefinition | null>(
-    () => projectCatalog.find(project => project.id === form.projectId) ?? null,
-    [form.projectId],
-  );
-
-  const queueOptions = useMemo<QueueDefinition[]>(
-    () => selectedProject?.queues ?? [],
-    [selectedProject],
-  );
-
-  const selectedQueue = useMemo<QueueDefinition | null>(
-    () => queueOptions.find(queue => queue.id === form.queue) ?? null,
-    [queueOptions, form.queue],
+  const availableFlavorOptions = useMemo(
+    () => supportedFlavorsForQueue(selectedQueue, flavorOptions),
+    [selectedQueue, flavorOptions],
   );
 
   useEffect(() => {
-    const project = projectCatalog.find(project => project.id === form.projectId);
-    if (!project) {
+    if (projectOptions.length === 0) {
       return;
     }
-    const allowedQueueIds = project.queues.map(queue => queue.id);
-    const fallbackQueueId = project.defaultQueue || allowedQueueIds[0] || '';
-    if (!allowedQueueIds.includes(form.queue) && fallbackQueueId !== form.queue) {
-      setForm(prev => ({ ...prev, queue: fallbackQueueId }));
-    }
-  }, [form.projectId, form.queue]);
+
+    setForm(prev => {
+      const project =
+        projectOptions.find(option => option.id === prev.projectId) ||
+        projectOptions[0];
+      const queueCandidates = project.queues ?? [];
+      const fallbackQueueId =
+        (project.defaultQueueId &&
+        queueCandidates.some(queue => queue.id === project.defaultQueueId)
+          ? project.defaultQueueId
+          : queueCandidates[0]?.id) ?? '';
+      const queue =
+        queueCandidates.find(item => item.id === prev.queue) ||
+        queueCandidates.find(item => item.id === fallbackQueueId);
+      const flavorsForQueue = supportedFlavorsForQueue(
+        queue ?? null,
+        flavorOptions,
+      );
+      const fallbackFlavor =
+        (queue?.defaultFlavorId &&
+          flavorsForQueue.some(option => option.flavor === queue.defaultFlavorId)
+          ? queue.defaultFlavorId
+          : flavorsForQueue[0]?.flavor) ?? '';
+
+      const nextProjectId = project.id;
+      const nextQueueId = queue?.id ?? fallbackQueueId ?? '';
+      const nextFlavorId = flavorsForQueue.some(
+        option => option.flavor === prev.flavor,
+      )
+        ? prev.flavor
+        : fallbackFlavor;
+
+      if (
+        nextProjectId === prev.projectId &&
+        nextQueueId === prev.queue &&
+        nextFlavorId === prev.flavor
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        projectId: nextProjectId,
+        queue: nextQueueId,
+        flavor: nextFlavorId,
+      };
+    });
+  }, [projectOptions, flavorOptions]);
 
   const handleFormFieldChange =
     (field: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -613,7 +767,10 @@ export const LaunchWorkspacePage: FC = () => {
 
     setForm(prev => ({
       ...prev,
-      flavor: template.defaults.flavor ?? prev.flavor,
+      flavor:
+        template.defaults.flavor !== undefined
+          ? template.defaults.flavor
+          : prev.flavor,
       image:
         template.defaults.image !== undefined
           ? template.defaults.image
@@ -683,14 +840,18 @@ export const LaunchWorkspacePage: FC = () => {
     Boolean(workspaceTypeId) &&
     Boolean(templateId) &&
     Boolean(form.projectId.trim()) &&
+    Boolean(form.queue.trim()) &&
     Boolean(form.workloadId.trim());
 
   const canProceedFromResources =
-    Boolean(form.flavor.trim()) && Boolean(form.image.trim());
+    Boolean(form.flavor.trim()) &&
+    Boolean(form.image.trim()) &&
+    availableFlavorOptions.length > 0;
 
   const isSubmitDisabled =
     submitting ||
     !form.projectId.trim() ||
+    !form.queue.trim() ||
     !form.flavor.trim() ||
     !form.image.trim() ||
     !form.workloadId.trim();
@@ -840,37 +1001,104 @@ export const LaunchWorkspacePage: FC = () => {
 
   const renderFlavorCards = () => (
     <Grid container spacing={2} className={classes.selectionGrid}>
-      {flavorCatalog.map(option => {
-        const selected = option.flavor === form.flavor;
-        const FlavorIcon = getFlavorIcon(option.id);
-        return (
-          <Grid item xs={12} sm={6} key={option.id}>
-            <Card
-              elevation={0}
-              className={`${classes.selectionCard} ${
-                selected ? classes.selectionCardSelected : ''
-              }`}
-            >
-              <CardActionArea
-                className={classes.selectionCardAction}
-                onClick={() => handleFlavorSelect(option)}
+      {availableFlavorOptions.length === 0 ? (
+        <Grid item xs={12}>
+          <Box className={classes.emptyState}>
+            <Typography variant="subtitle1">
+              No flavors are available for the selected queue.
+            </Typography>
+            <Typography variant="body2" color="textSecondary">
+              Ask a platform administrator to provision flavors for this queue
+              before launching a workspace.
+            </Typography>
+            {isAdmin && createClusterLink && (
+              <div className={classes.emptyStateActions}>
+                <Button
+                  color="primary"
+                  variant="contained"
+                  component={RouterLink}
+                  to={createClusterLink()}
+                >
+                  Provision flavors
+                </Button>
+              </div>
+            )}
+          </Box>
+        </Grid>
+      ) : (
+        availableFlavorOptions.map(option => {
+          const selected = option.flavor === form.flavor;
+          const FlavorIcon = getFlavorIcon(option);
+          return (
+            <Grid item xs={12} sm={6} key={option.id}>
+              <Card
+                elevation={0}
+                className={`${classes.selectionCard} ${
+                  selected ? classes.selectionCardSelected : ''
+                }`}
               >
-                <CardContent className={classes.selectionCardContent}>
-                  <FlavorIcon className={classes.selectionCardIcon} />
-                  <Typography variant="h6">{option.title}</Typography>
-                  <Typography variant="subtitle2" color="textSecondary">
-                    {option.resources}
-                  </Typography>
-                  <Typography className={classes.selectionMeta}>
-                    {option.description}
-                  </Typography>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          </Grid>
-        );
-      })}
+                <CardActionArea
+                  className={classes.selectionCardAction}
+                  onClick={() => handleFlavorSelect(option)}
+                >
+                  <CardContent className={classes.selectionCardContent}>
+                    <FlavorIcon className={classes.selectionCardIcon} />
+                    <Typography variant="h6">{option.title}</Typography>
+                    {option.resources && (
+                      <Typography variant="subtitle2" color="textSecondary">
+                        {option.resources}
+                      </Typography>
+                    )}
+                    {option.description && (
+                      <Typography className={classes.selectionMeta}>
+                        {option.description}
+                      </Typography>
+                    )}
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            </Grid>
+          );
+        })
+      )}
     </Grid>
+  );
+
+  const selectedQueueMissingCluster = Boolean(
+    selectedQueue && (!selectedQueue.clusterId || !selectedCluster),
+  );
+
+  const renderQueueEmptyState = () => (
+    <Box className={classes.emptyState}>
+      <Typography variant="subtitle1">
+        No launchable queues are available for this project.
+      </Typography>
+      <Typography variant="body2" color="textSecondary">
+        Ask a platform administrator to provision a queue backed by a cluster
+        before launching workspaces.
+      </Typography>
+      {isAdmin && createClusterLink && (
+        <div className={classes.emptyStateActions}>
+          <Button
+            color="primary"
+            variant="contained"
+            component={RouterLink}
+            to={createClusterLink()}
+          >
+            Provision cluster or queue
+          </Button>
+          {projectManagementLink && (
+            <Button
+              color="primary"
+              component={RouterLink}
+              to={projectManagementLink()}
+            >
+              Manage projects
+            </Button>
+          )}
+        </div>
+      )}
+    </Box>
   );
 
   return (
@@ -878,200 +1106,167 @@ export const LaunchWorkspacePage: FC = () => {
       <Content>
         <ContentHeader title="Launch Interactive Workspace">
           <Typography variant="body1" className={classes.hero}>
-            Compose DoD/IC-grade workspaces with the same minimal flow your
-            operators expect from modern tooling. Choose a template, tune
-            compute, then launch to ÆGIS clusters in a few decisive steps.
+            Choose a template, align it with an ÆGIS project and queue, then
+            launch to pre-provisioned clusters. Platform administrators curate
+            these options so day-to-day builders can focus on shipping models.
           </Typography>
         </ContentHeader>
-        <form onSubmit={handleSubmit} className={classes.content}>
-          <Paper elevation={0} className={classes.wizardShell}>
-            <Stepper activeStep={activeStep} alternativeLabel className={classes.stepper}>
-              {steps.map(step => (
-                <Step key={step}>
-                  <StepLabel StepIconComponent={StepIconComponent} classes={{ label: classes.stepLabel }}>
-                    {step}
-                  </StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-
-            {activeStep === 0 && (
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={5}>
-                  <div className={classes.formSection}>
-                    <Typography variant="overline" color="textSecondary">
-                      Project context
-                    </Typography>
-                    <FormControl variant="outlined" fullWidth required>
-                      <InputLabel id="launch-workspace-project">
-                        Project
-                      </InputLabel>
-                      <Select
-                        labelId="launch-workspace-project"
-                        label="Project"
-                        value={form.projectId}
-                        onChange={handleProjectSelect}
-                      >
-                        {projectCatalog.map(project => (
-                          <MenuItem key={project.id} value={project.id}>
-                            <div className={classes.selectMenuContent}>
-                              <Typography variant="subtitle1">{project.name}</Typography>
-                              <Typography variant="body2" color="textSecondary">
-                                {project.description}
-                              </Typography>
-                            </div>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      <FormHelperText>
-                        Projects now bootstrap automatically. Swap context to inherit the right
-                        visibility and budget envelope.
-                      </FormHelperText>
-                    </FormControl>
-                    <TextField
-                      label="Workspace ID"
-                      value={form.workloadId}
-                      onChange={handleFormFieldChange('workloadId')}
-                      variant="outlined"
-                      required
-                      fullWidth
-                      helperText="Identifier visible to mission operators"
-                    />
-                    {selectedProject && (
-                      <div className={classes.projectOverview}>
-                        <div className={classes.projectHeader}>
-                          <Typography variant="subtitle1" component="span">
-                            {selectedProject.name}
-                          </Typography>
-                          <Chip
-                            label={visibilityCopy[selectedProject.visibility].label}
-                            color={
-                              visibilityCopy[selectedProject.visibility].tone === 'default'
-                                ? 'default'
-                                : visibilityCopy[selectedProject.visibility].tone
-                            }
-                            size="small"
-                          />
-                        </div>
-                        <Typography variant="body2" color="textSecondary">
-                          {selectedProject.description}
-                        </Typography>
-                        <div className={classes.projectMeta}>
-                          <div>
-                            <div className={classes.projectMetaLabel}>Project lead</div>
-                            <div className={classes.projectMetaValue}>{selectedProject.lead}</div>
-                          </div>
-                          <div>
-                            <div className={classes.projectMetaLabel}>Monthly burn</div>
-                            <div className={classes.projectMetaValue}>
-                              ${selectedProject.budget.monthlyUsed.toLocaleString('en-US')} / $
-                              {selectedProject.budget.monthlyLimit.toLocaleString('en-US')}
-                            </div>
-                          </div>
-                          <div>
-                            <div className={classes.projectMetaLabel}>Default queue</div>
-                            <div className={classes.projectMetaValue}>
-                              {selectedProject.defaultQueue}
-                            </div>
-                          </div>
-                        </div>
-                        <div className={classes.projectActions}>
-                          <Typography variant="caption" color="textSecondary">
-                            Need deeper control? Review queue guardrails or shift budgets from the
-                            project console.
-                          </Typography>
-                          <Button
-                            variant="outlined"
-                            color="primary"
-                            onClick={() => navigate(projectManagementLink())}
-                          >
-                            Manage projects
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    <Divider className={classes.sectionDivider} />
-                    <Typography variant="overline" color="textSecondary">
-                      Workspace type
-                    </Typography>
-                    <Typography variant="body2" color="textSecondary">
-                      Select the interactive surface to pre-wire tooling and UX
-                      expectations.
-                    </Typography>
-                  </div>
-                </Grid>
-                <Grid item xs={12} md={7}>
-                  {renderWorkspaceTypeCards()}
-                  <Divider className={classes.sectionDivider} />
-                  <Typography variant="overline" color="textSecondary">
-                    Template presets
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Start from a mission-ready template or bring your own
-                    container profile.
-                  </Typography>
-                  {renderTemplateCards()}
-                </Grid>
-              </Grid>
+        {loading && (
+          <Box mb={2}>
+            <LinearProgress />
+          </Box>
+        )}
+        {loadError && (
+          <Box mb={2}>
+            <WarningPanel severity="error" title="Provisioning data unavailable">
+              {loadError}
+            </WarningPanel>
+          </Box>
+        )}
+        {projects.length === 0 && !loading ? (
+          <Box className={classes.emptyState}>
+            <Typography variant="subtitle1">
+              No projects are available yet.
+            </Typography>
+            <Typography variant="body2" color="textSecondary">
+              Projects, queues, and flavors must be provisioned before workspaces
+              can launch.
+            </Typography>
+            {isAdmin && createClusterLink && (
+              <div className={classes.emptyStateActions}>
+                <Button
+                  color="primary"
+                  variant="contained"
+                  component={RouterLink}
+                  to={createClusterLink()}
+                >
+                  Provision resources
+                </Button>
+              </div>
             )}
-
-            {activeStep === 1 && (
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={7}>
-                  <Typography variant="overline" color="textSecondary">
-                    Compute flavors
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Match GPU, CPU, and memory to mission objectives. ÆGIS
-                    enforces guardrails based on queue policy.
-                  </Typography>
-                  {renderFlavorCards()}
-                </Grid>
-                <Grid item xs={12} md={5}>
-                  <div className={classes.formSection}>
-                    <Typography variant="overline" color="textSecondary">
-                      Runtime configuration
-                    </Typography>
-                    <TextField
-                      label="Container image"
-                      value={form.image}
-                      onChange={handleFormFieldChange('image')}
-                      variant="outlined"
-                      required
-                      fullWidth
-                      helperText="OCI image with your workspace runtime"
-                    />
-                    <FormControl
-                      variant="outlined"
-                      fullWidth
-                      disabled={queueOptions.length === 0}
+          </Box>
+        ) : (
+          <form onSubmit={handleSubmit} className={classes.content}>
+            <Paper elevation={0} className={classes.wizardShell}>
+              <Stepper
+                activeStep={activeStep}
+                alternativeLabel
+                className={classes.stepper}
+              >
+                {steps.map(step => (
+                  <Step key={step}>
+                    <StepLabel
+                      StepIconComponent={StepIconComponent}
+                      classes={{ label: classes.stepLabel }}
                     >
-                      <InputLabel id="launch-workspace-queue">
-                        Execution queue
-                      </InputLabel>
-                      <Select
-                        labelId="launch-workspace-queue"
-                        label="Execution queue"
-                        value={form.queue}
-                        onChange={handleQueueSelect}
+                      {step}
+                    </StepLabel>
+                  </Step>
+                ))}
+              </Stepper>
+
+              {activeStep === 0 && (
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={5}>
+                    <div className={classes.formSection}>
+                      <Typography variant="overline" color="textSecondary">
+                        Project context
+                      </Typography>
+                      <FormControl
+                        variant="outlined"
+                        fullWidth
+                        required
+                        disabled={projectOptions.length === 0}
                       >
-                        {queueOptions.map(queue => (
-                          <MenuItem key={queue.id} value={queue.id}>
-                            <div className={classes.selectMenuContent}>
-                              <Typography variant="subtitle2">{queue.name}</Typography>
-                              <Typography variant="body2" color="textSecondary">
-                                {queue.description}
-                              </Typography>
-                            </div>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      <FormHelperText>
-                        {queueOptions.length === 0
-                          ? 'No queues are assigned to this project yet.'
-                          : 'Stay on the default queue or opt into another guardrail managed by this project.'}
-                      </FormHelperText>
-                    </FormControl>
+                        <InputLabel id="launch-workspace-project">
+                          Project
+                        </InputLabel>
+                        <Select
+                          labelId="launch-workspace-project"
+                          label="Project"
+                          value={form.projectId}
+                          onChange={handleProjectSelect}
+                        >
+                          {projectOptions.map(project => (
+                            <MenuItem key={project.id} value={project.id}>
+                              <div>
+                                <Typography variant="subtitle1">
+                                  {project.name}
+                                </Typography>
+                                {project.description && (
+                                  <Typography
+                                    variant="body2"
+                                    color="textSecondary"
+                                  >
+                                    {project.description}
+                                  </Typography>
+                                )}
+                              </div>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                        {projectOptions.length === 0 && (
+                          <FormHelperText>
+                            No projects provisioned yet.
+                          </FormHelperText>
+                        )}
+                      </FormControl>
+                      <FormControl
+                        variant="outlined"
+                        fullWidth
+                        required
+                        disabled={queueOptions.length === 0}
+                      >
+                        <InputLabel id="launch-workspace-queue">Queue</InputLabel>
+                        <Select
+                          labelId="launch-workspace-queue"
+                          label="Queue"
+                          value={form.queue}
+                          onChange={handleQueueSelect}
+                        >
+                          {queueOptions.map(queue => (
+                            <MenuItem key={queue.id} value={queue.id}>
+                              <div>
+                                <Typography variant="subtitle1">
+                                  {queue.name}
+                                </Typography>
+                                {queue.description && (
+                                  <Typography
+                                    variant="body2"
+                                    color="textSecondary"
+                                  >
+                                    {queue.description}
+                                  </Typography>
+                                )}
+                                {queue.clusterName && (
+                                  <Typography
+                                    variant="caption"
+                                    color="textSecondary"
+                                  >
+                                    Cluster: {queue.clusterName}
+                                  </Typography>
+                                )}
+                              </div>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                        {queueOptions.length === 0 && (
+                          <FormHelperText>
+                            No queues available in this project.
+                          </FormHelperText>
+                        )}
+                      </FormControl>
+                      <TextField
+                        label="Workspace ID"
+                        value={form.workloadId}
+                        onChange={handleFormFieldChange('workloadId')}
+                        variant="outlined"
+                        required
+                        fullWidth
+                        helperText="Used to name the workload in the cluster"
+                      />
+                    </div>
+                    {queueOptions.length === 0 && renderQueueEmptyState()}
                     {selectedQueue && (
                       <div className={classes.queueSummaryCard}>
                         <div className={classes.queueSummaryHeader}>
@@ -1079,223 +1274,287 @@ export const LaunchWorkspacePage: FC = () => {
                             {selectedQueue.name}
                           </Typography>
                           <Chip
-                            label={visibilityCopy[selectedQueue.visibility].label}
+                            label={
+                              queueVisibilityCopy[
+                                normalizeVisibility(selectedQueue.visibility)
+                              ].label
+                            }
                             color={
-                              visibilityCopy[selectedQueue.visibility].tone === 'default'
-                                ? 'default'
-                                : visibilityCopy[selectedQueue.visibility].tone
+                              queueVisibilityCopy[
+                                normalizeVisibility(selectedQueue.visibility)
+                              ].tone
                             }
                             size="small"
                           />
                         </div>
-                        <Typography variant="body2" color="textSecondary">
-                          {selectedQueue.description}
-                        </Typography>
-                        <div className={classes.queueSummaryMetrics}>
+                        {selectedQueue.description && (
+                          <Typography variant="body2" color="textSecondary">
+                            {selectedQueue.description}
+                          </Typography>
+                        )}
+                        <div className={classes.queueSummaryMeta}>
                           <div>
-                            <div className={classes.queueSummaryMetricLabel}>GPU class</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.gpuClass}
+                            <div className={classes.queueSummaryMetaLabel}>
+                              Cluster
+                            </div>
+                            <div className={classes.queueSummaryMetaValue}>
+                              {selectedCluster?.displayName ||
+                                selectedQueue.clusterName ||
+                                '—'}
                             </div>
                           </div>
                           <div>
-                            <div className={classes.queueSummaryMetricLabel}>Max runtime</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.maxRuntimeHours} hrs
+                            <div className={classes.queueSummaryMetaLabel}>
+                              Provider / Region
+                            </div>
+                            <div className={classes.queueSummaryMetaValue}>
+                              {selectedCluster
+                                ? `${selectedCluster.provider ?? '—'} / ${
+                                    selectedCluster.region ?? '—'
+                                  }`
+                                : '—'}
                             </div>
                           </div>
                           <div>
-                            <div className={classes.queueSummaryMetricLabel}>Active workspaces</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              {selectedQueue.activeWorkspaces}
+                            <div className={classes.queueSummaryMetaLabel}>
+                              Cluster status
                             </div>
-                          </div>
-                          <div>
-                            <div className={classes.queueSummaryMetricLabel}>Monthly burn</div>
-                            <div className={classes.queueSummaryMetricValue}>
-                              ${selectedQueue.budget.monthlyUsed.toLocaleString('en-US')} / $
-                              {selectedQueue.budget.monthlyLimit.toLocaleString('en-US')}
+                            <div className={classes.queueSummaryMetaValue}>
+                              {selectedCluster?.status ?? '—'}
                             </div>
                           </div>
                         </div>
+                        {selectedQueueMissingCluster && (
+                          <Typography variant="caption" color="textSecondary">
+                            No clusters detected for this queue. Contact an
+                            administrator before launching.
+                          </Typography>
+                        )}
                       </div>
                     )}
-                    <FormControlLabel
-                      className={classes.toggleControl}
-                      control={
-                        <Switch
-                          color="primary"
-                          checked={advancedOpen || forceAdvancedOpen}
-                          onChange={handleAdvancedToggle}
-                          disabled={forceAdvancedOpen}
-                        />
-                      }
-                      label="Show advanced parameters"
-                    />
-                    <Collapse in={advancedOpen || forceAdvancedOpen}>
-                      <div className={classes.advancedSurface}>
-                        <TextField
-                          label="Expose ports"
-                          value={form.ports}
-                          onChange={handleFormFieldChange('ports')}
-                          variant="outlined"
-                          fullWidth
-                          helperText="Comma-separated port list (e.g. 22, 11111)"
-                        />
-                        <TextField
-                          label="Environment variables"
-                          value={form.env}
-                          onChange={handleFormFieldChange('env')}
-                          variant="outlined"
-                          fullWidth
-                          multiline
-                          rows={4}
-                          helperText="KEY=VALUE pairs, one per line"
-                        />
-                      </div>
-                    </Collapse>
-                  </div>
-                </Grid>
-              </Grid>
-            )}
-
-            {activeStep === 2 && (
-              <Paper elevation={0} className={classes.reviewPaper}>
-                <Typography variant="overline" color="textSecondary">
-                  Launch summary
-                </Typography>
-                <Grid container spacing={3} className={classes.selectionGrid}>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Project</span>
-                      <span className={classes.reviewValue}>
-                        {selectedProject?.name ?? (form.projectId || '—')}
-                      </span>
-                    </div>
                   </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Workspace ID</span>
-                      <span className={classes.reviewValue}>
-                        {form.workloadId || '—'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Workspace type</span>
-                      <span className={classes.reviewValue}>
-                        {selectedWorkspaceType?.title ?? '—'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Template</span>
-                      <span className={classes.reviewValue}>
-                        {selectedTemplate?.title ?? '—'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Flavor</span>
-                      <span className={classes.reviewValue}>
-                        {form.flavor || '—'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Queue</span>
-                      <span className={classes.reviewValue}>
-                        {selectedQueue?.name ??
-                          (selectedProject?.defaultQueue
-                            ? `${selectedProject.defaultQueue} (default)`
-                            : 'Project default')}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Container image</span>
-                      <span className={classes.reviewValue}>{form.image || '—'}</span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Ports</span>
-                      <span className={classes.reviewValue}>
-                        {form.ports || 'Default (22, 11111)'}
-                      </span>
-                    </div>
-                  </Grid>
-                  <Grid item xs={12}>
-                    <div className={classes.reviewRow}>
-                      <span className={classes.reviewLabel}>Environment variables</span>
-                      <span className={classes.reviewValue}>
-                        {form.env || 'Inherited defaults'}
-                      </span>
+                  <Grid item xs={12} md={7}>
+                    <div className={classes.formSection}>
+                      <Typography variant="overline" color="textSecondary">
+                        Workspace type
+                      </Typography>
+                      {renderWorkspaceTypeCards()}
+                      <Divider />
+                      <Typography variant="overline" color="textSecondary">
+                        Templates
+                      </Typography>
+                      {renderTemplateCards()}
                     </div>
                   </Grid>
                 </Grid>
-              </Paper>
-            )}
-
-            <div className={classes.actionRow}>
-              <Box display="flex" style={{ gap: 16 }}>
-                <Button
-                  type="button"
-                  variant="outlined"
-                  disabled={activeStep === 0 || submitting}
-                  onClick={goPreviousStep}
-                >
-                  Back
-                </Button>
-                {activeStep < steps.length - 1 && (
-                  <Button
-                    type="button"
-                    color="primary"
-                    variant="contained"
-                    disabled={
-                      submitting ||
-                      (activeStep === 0 && !canProceedFromBasics) ||
-                      (activeStep === 1 && !canProceedFromResources)
-                    }
-                    onClick={goNextStep}
-                  >
-                    Next
-                  </Button>
-                )}
-              </Box>
-              {activeStep === steps.length - 1 && (
-                <Box
-                  display="flex"
-                  alignItems="center"
-                  style={{ gap: 16 }}
-                >
-                  <Button
-                    type="submit"
-                    color="primary"
-                    variant="contained"
-                    disabled={isSubmitDisabled}
-                    startIcon={<TimelineIcon />}
-                  >
-                    Launch workspace
-                  </Button>
-                  {submitting && <Progress />}
-                </Box>
               )}
-            </div>
-          </Paper>
-        </form>
 
-        {error && (
-          <Box marginTop={3}>
-            <WarningPanel severity="error" title="Workspace submission failed">
-              {error}
-            </WarningPanel>
-          </Box>
+              {activeStep === 1 && (
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.formSection}>
+                      <Typography variant="overline" color="textSecondary">
+                        Compute flavor
+                      </Typography>
+                      {renderFlavorCards()}
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.formSection}>
+                      <Typography variant="overline" color="textSecondary">
+                        Image & runtime
+                      </Typography>
+                      <TextField
+                        label="Container image"
+                        value={form.image}
+                        onChange={handleFormFieldChange('image')}
+                        variant="outlined"
+                        required
+                        fullWidth
+                        helperText="Container image reference, e.g. ghcr.io/aegis/workspace"
+                      />
+                      <FormControlLabel
+                        className={classes.toggleControl}
+                        control={
+                          <Switch
+                            color="primary"
+                            checked={advancedOpen || forceAdvancedOpen}
+                            onChange={handleAdvancedToggle}
+                            disabled={forceAdvancedOpen}
+                          />
+                        }
+                        label="Show advanced parameters"
+                      />
+                      <Collapse in={advancedOpen || forceAdvancedOpen}>
+                        <div className={classes.advancedSurface}>
+                          <TextField
+                            label="Expose ports"
+                            value={form.ports}
+                            onChange={handleFormFieldChange('ports')}
+                            variant="outlined"
+                            fullWidth
+                            helperText="Comma-separated port list (e.g. 22, 11111)"
+                          />
+                          <TextField
+                            label="Environment variables"
+                            value={form.env}
+                            onChange={handleFormFieldChange('env')}
+                            variant="outlined"
+                            fullWidth
+                            multiline
+                            rows={4}
+                            helperText="KEY=VALUE pairs, one per line"
+                          />
+                        </div>
+                      </Collapse>
+                    </div>
+                  </Grid>
+                </Grid>
+              )}
+
+              {activeStep === 2 && (
+                <Paper elevation={0} className={classes.reviewPaper}>
+                  <Typography variant="overline" color="textSecondary">
+                    Launch summary
+                  </Typography>
+                  <Grid container spacing={3} className={classes.selectionGrid}>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Project</span>
+                        <span className={classes.reviewValue}>
+                          {selectedProject?.name ?? (form.projectId || '—')}
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Workspace ID</span>
+                        <span className={classes.reviewValue}>
+                          {form.workloadId || '—'}
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Workspace type</span>
+                        <span className={classes.reviewValue}>
+                          {selectedWorkspaceType?.title ?? '—'}
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Template</span>
+                        <span className={classes.reviewValue}>
+                          {selectedTemplate?.title ?? '—'}
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Queue</span>
+                        <span className={classes.reviewValue}>
+                          {selectedQueue?.name ?? (form.queue || '—')}
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Cluster</span>
+                        <span className={classes.reviewValue}>
+                          {selectedCluster?.displayName ||
+                            selectedQueue?.clusterName ||
+                            '—'}
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Flavor</span>
+                        <span className={classes.reviewValue}>
+                          {
+                            availableFlavorOptions.find(
+                              option => option.flavor === form.flavor,
+                            )?.title ?? form.flavor || '—'
+                          }
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Container image</span>
+                        <span className={classes.reviewValue}>
+                          {form.image || '—'}
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Ports</span>
+                        <span className={classes.reviewValue}>
+                          {form.ports || 'Default'}
+                        </span>
+                      </div>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <div className={classes.reviewRow}>
+                        <span className={classes.reviewLabel}>Environment</span>
+                        <span className={classes.reviewValue}>
+                          {form.env ? form.env.split('\n').join(', ') : 'Default'}
+                        </span>
+                      </div>
+                    </Grid>
+                  </Grid>
+                </Paper>
+              )}
+
+              {error && (
+                <WarningPanel severity="error" title="Launch failed">
+                  {error}
+                </WarningPanel>
+              )}
+
+              <div className={classes.actionRow}>
+                <div>
+                  {activeStep > 0 && (
+                    <Button
+                      onClick={goPreviousStep}
+                      color="default"
+                      variant="text"
+                    >
+                      Back
+                    </Button>
+                  )}
+                </div>
+                <div>
+                  {activeStep < steps.length - 1 && (
+                    <Button
+                      color="primary"
+                      variant="contained"
+                      onClick={goNextStep}
+                      disabled={
+                        (activeStep === 0 && !canProceedFromBasics) ||
+                        (activeStep === 1 && !canProceedFromResources)
+                      }
+                    >
+                      Continue
+                    </Button>
+                  )}
+                  {activeStep === steps.length - 1 && (
+                    <Button
+                      type="submit"
+                      color="primary"
+                      variant="contained"
+                      disabled={isSubmitDisabled}
+                      startIcon={<TimelineIcon />}
+                    >
+                      Launch workspace
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </Paper>
+          </form>
         )}
       </Content>
     </Page>
