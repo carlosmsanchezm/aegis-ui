@@ -6,18 +6,29 @@ import {
   fetchApiRef,
   identityApiRef,
   useApi,
+  useRouteRef,
 } from '@backstage/core-plugin-api';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
   Card,
   CardContent,
+  CardHeader,
+  Divider,
   Grid,
   LinearProgress,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  MenuItem,
   TextField,
   Typography,
 } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
+import Alert from '@material-ui/lab/Alert';
+import InfoOutlinedIcon from '@material-ui/icons/InfoOutlined';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -25,6 +36,7 @@ import {
   getClusterJobStatus,
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
+import { launchWorkspaceRouteRef, projectManagementRouteRef } from '../routes';
 
 const useStyles = makeStyles(theme => ({
   form: {
@@ -32,10 +44,26 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'column',
     gap: theme.spacing(2),
   },
+  formIntro: {
+    marginBottom: theme.spacing(2),
+  },
   actionRow: {
     display: 'flex',
     alignItems: 'center',
     gap: theme.spacing(2),
+  },
+  helperCard: {
+    height: '100%',
+  },
+  helperDivider: {
+    marginTop: theme.spacing(2),
+    marginBottom: theme.spacing(2),
+  },
+  helperActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(1.5),
+    marginTop: theme.spacing(2),
   },
   progressSection: {
     marginTop: theme.spacing(2),
@@ -43,10 +71,38 @@ const useStyles = makeStyles(theme => ({
   progressLabel: {
     marginTop: theme.spacing(1),
   },
+  statusHeadline: {
+    marginTop: theme.spacing(1),
+  },
+  statusMeta: {
+    marginTop: theme.spacing(1),
+    color: theme.palette.text.secondary,
+  },
+  statusActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(1),
+    marginTop: theme.spacing(2),
+  },
+  statusAlert: {
+    marginTop: theme.spacing(2),
+  },
+  statusJobId: {
+    marginTop: theme.spacing(1),
+    fontFamily: 'monospace',
+    wordBreak: 'break-all',
+  },
 }));
 
 const JOB_STORAGE_KEY = 'aegis.clusterJobState';
 const POLL_INTERVAL_MS = 5000;
+
+const AWS_REGION_OPTIONS = [
+  { value: 'us-east-1', label: 'US East (N. Virginia)' },
+  { value: 'us-west-2', label: 'US West (Oregon)' },
+  { value: 'us-gov-west-1', label: 'AWS GovCloud (US-West)' },
+  { value: 'us-gov-east-1', label: 'AWS GovCloud (US-East)' },
+] as const;
 
 const isTerminalStatus = (status?: string | null): boolean => {
   if (!status) {
@@ -61,6 +117,33 @@ const isTerminalStatus = (status?: string | null): boolean => {
     normalized === 'CANCELLED' ||
     normalized === 'CANCELED'
   );
+};
+
+const normalizeJobProgress = (value?: number | null): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0;
+  }
+  if (value >= 0 && value <= 1) {
+    return Math.round(value * 100);
+  }
+  if (value < 0) {
+    return 0;
+  }
+  if (value > 100) {
+    return 100;
+  }
+  return Math.round(value);
+};
+
+const formatStatus = (status?: string | null): string => {
+  if (!status) {
+    return 'Awaiting status';
+  }
+  return status
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
 };
 
 type StoredClusterJob = {
@@ -78,6 +161,9 @@ export const CreateClusterPage: FC = () => {
   const identityApi = useApi(identityApiRef);
   const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
+  const navigate = useNavigate();
+  const launchWorkspaceLink = useRouteRef(launchWorkspaceRouteRef);
+  const projectManagementLink = useRouteRef(projectManagementRouteRef);
 
   const [form, setForm] = useState({
     projectId: '',
@@ -87,9 +173,13 @@ export const CreateClusterPage: FC = () => {
   });
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const [jobMessage, setJobMessage] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resumeNotice, setResumeNotice] = useState(false);
+  const [resumedJobId, setResumedJobId] = useState<string | null>(null);
   const pollerRef = useRef<ReturnType<typeof setInterval>>();
 
   const jobActive = Boolean(jobId && !isTerminalStatus(jobStatus));
@@ -110,7 +200,9 @@ export const CreateClusterPage: FC = () => {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(JOB_STORAGE_KEY);
     }
-  }, []);
+    setResumeNotice(false);
+    setResumedJobId(null);
+  }, [setResumeNotice, setResumedJobId]);
 
   const persistStoredJob = useCallback((state: StoredClusterJob) => {
     if (typeof window !== 'undefined') {
@@ -150,13 +242,19 @@ export const CreateClusterPage: FC = () => {
           authApi,
           id,
         );
-        setError(null);
         setJobStatus(job.status ?? null);
-        setProgress(
-          typeof job.progress === 'number' ? Math.max(0, job.progress) : 0,
+        setJobMessage(job.statusMessage ?? null);
+        const nextProgress = normalizeJobProgress(
+          typeof job.percentComplete === 'number'
+            ? job.percentComplete
+            : job.progress,
         );
+        setProgress(nextProgress);
+        setLastUpdated(Date.now());
         if (job.status === 'FAILED') {
           setError(job.error || 'Cluster deployment failed.');
+        } else {
+          setError(null);
         }
         handleTerminalJob(job.status, job.error);
         if (isTerminalStatus(job.status)) {
@@ -170,10 +268,19 @@ export const CreateClusterPage: FC = () => {
           message = e.message || message;
         }
         setError(message);
+        alertApi.post({ message, severity: 'error' });
         clearPoller();
       }
     },
-    [clearPoller, discoveryApi, fetchApi, handleTerminalJob, identityApi, authApi],
+    [
+      alertApi,
+      authApi,
+      clearPoller,
+      discoveryApi,
+      fetchApi,
+      handleTerminalJob,
+      identityApi,
+    ],
   );
 
   const startPolling = useCallback(
@@ -187,27 +294,72 @@ export const CreateClusterPage: FC = () => {
     [clearPoller, fetchJobStatus],
   );
 
+  const handleRetry = useCallback(() => {
+    if (jobId) {
+      startPolling(jobId);
+    }
+  }, [jobId, startPolling]);
+
+  const handleReset = useCallback(() => {
+    clearPoller();
+    clearStoredJob();
+    setJobId(null);
+    setJobStatus(null);
+    setJobMessage(null);
+    setProgress(0);
+    setLastUpdated(null);
+    setError(null);
+  }, [clearPoller, clearStoredJob]);
+
+  const handleNavigateToProjects = useCallback(() => {
+    navigate(projectManagementLink());
+  }, [navigate, projectManagementLink]);
+
+  const handleNavigateToWizard = useCallback(() => {
+    navigate(launchWorkspaceLink());
+  }, [launchWorkspaceLink, navigate]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
+    setResumeNotice(false);
+    setResumedJobId(null);
     try {
+      const payload = {
+        projectId: form.projectId.trim(),
+        clusterId: form.clusterId.trim(),
+        provider: form.provider,
+        region: form.region,
+      };
       const { job } = await createCluster(
         fetchApi,
         discoveryApi,
         identityApi,
         authApi,
-        form,
+        payload,
       );
+      const nextProgress = normalizeJobProgress(
+        typeof job.percentComplete === 'number'
+          ? job.percentComplete
+          : job.progress,
+      );
+      setForm(prev => ({
+        ...prev,
+        projectId: payload.projectId,
+        clusterId: payload.clusterId,
+      }));
       setJobId(job.id);
-      setJobStatus(job.status);
-      setProgress(job.progress ?? 0);
+      setJobStatus(job.status ?? null);
+      setJobMessage(job.statusMessage ?? null);
+      setProgress(nextProgress);
+      setLastUpdated(Date.now());
       persistStoredJob({
         jobId: job.id,
-        projectId: form.projectId,
-        clusterId: form.clusterId,
-        provider: form.provider,
-        region: form.region,
+        projectId: payload.projectId,
+        clusterId: payload.clusterId,
+        provider: payload.provider,
+        region: payload.region,
       });
       alertApi.post({
         message: `Cluster creation job ${job.id} submitted.`,
@@ -222,6 +374,7 @@ export const CreateClusterPage: FC = () => {
         message = e.message || message;
       }
       setError(message);
+      alertApi.post({ message, severity: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -250,25 +403,86 @@ export const CreateClusterPage: FC = () => {
       }));
       setJobId(stored.jobId);
       setJobStatus('RESUMING');
+      setJobMessage('Reconnecting to deployment job…');
       setProgress(0);
+      setResumeNotice(true);
+      setResumedJobId(stored.jobId);
+      setError(null);
+      setLastUpdated(null);
       startPolling(stored.jobId);
     } catch (err) {
       window.localStorage.removeItem(JOB_STORAGE_KEY);
     }
   }, [startPolling]);
 
+  useEffect(() => {
+    if (resumedJobId) {
+      alertApi.post({
+        message: `Resumed monitoring cluster job ${resumedJobId}.`,
+        severity: 'info',
+      });
+    }
+  }, [alertApi, resumedJobId]);
+
   useEffect(() => clearPoller, [clearPoller]);
 
   const normalizedProgress = Math.min(100, Math.max(0, progress ?? 0));
+  const statusTone = (() => {
+    const normalized = jobStatus?.toUpperCase() ?? '';
+    if (!normalized) {
+      return 'idle';
+    }
+    if (normalized.startsWith('SUCC') || normalized === 'COMPLETED') {
+      return 'success';
+    }
+    if (
+      normalized.includes('FAIL') ||
+      normalized === 'CANCELLED' ||
+      normalized === 'CANCELED'
+    ) {
+      return 'failure';
+    }
+    return 'progress';
+  })();
+  const statusColor: 'primary' | 'error' | 'textSecondary' =
+    statusTone === 'failure'
+      ? 'error'
+      : statusTone === 'success'
+        ? 'primary'
+        : 'textSecondary';
+  const jobStatusLabel = formatStatus(jobStatus);
+  const disableSubmit = submitting || jobActive;
+  const lastUpdatedLabel =
+    typeof lastUpdated === 'number'
+      ? new Date(lastUpdated).toLocaleString()
+      : undefined;
+  const canRetry = Boolean(jobId);
+  const canClear = Boolean(jobId && !jobActive);
 
   return (
     <Page themeId="tool">
       <Content>
-        <ContentHeader title="Create New Cluster" />
+        <ContentHeader
+          title="Provision ÆGIS cluster"
+          description="Stand up AWS infrastructure before assigning projects, queues, and flavors to your teams."
+        />
+        <Box mb={3}>
+          <Alert severity="info">
+            <strong>AWS only:</strong> Cluster automation currently targets AWS accounts (including GovCloud). Multi-cloud options are on the roadmap.
+          </Alert>
+        </Box>
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} md={7}>
             <Card>
+              <CardHeader title="Cluster parameters" />
               <CardContent>
+                <Typography
+                  variant="body2"
+                  color="textSecondary"
+                  className={classes.formIntro}
+                >
+                  Launch the Pulumi automation that creates a new ÆGIS control plane cluster. Link the deployment to an existing project so you can attach queues and flavors immediately after provisioning.
+                </Typography>
                 <form onSubmit={handleSubmit} className={classes.form}>
                   <TextField
                     label="Project ID"
@@ -277,6 +491,8 @@ export const CreateClusterPage: FC = () => {
                     variant="outlined"
                     required
                     fullWidth
+                    disabled={jobActive}
+                    helperText="Provisioning links the cluster to this existing project."
                   />
                   <TextField
                     label="Cluster ID"
@@ -285,33 +501,45 @@ export const CreateClusterPage: FC = () => {
                     variant="outlined"
                     required
                     fullWidth
+                    disabled={jobActive}
+                    helperText="Use lowercase letters, numbers, or dashes."
                   />
                   <TextField
                     label="Provider"
-                    value={form.provider}
-                    onChange={handleFormFieldChange('provider')}
+                    value="AWS"
                     variant="outlined"
                     required
                     fullWidth
                     disabled
-                    helperText="AWS only (multi-cloud coming soon)"
+                    helperText="AWS is the only supported provider today."
                   />
                   <TextField
-                    label="Region"
+                    label="AWS region"
                     value={form.region}
                     onChange={handleFormFieldChange('region')}
                     variant="outlined"
                     required
                     fullWidth
-                  />
+                    select
+                    disabled={jobActive}
+                    helperText="Select the region that matches your infrastructure account."
+                  >
+                    {AWS_REGION_OPTIONS.map(region => (
+                      <MenuItem key={region.value} value={region.value}>
+                        {region.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
                   <div className={classes.actionRow}>
                     <Button
                       type="submit"
                       color="primary"
                       variant="contained"
-                      disabled={submitting || jobActive}
+                      disabled={disableSubmit}
                     >
-                      Create Cluster
+                      {jobActive
+                        ? 'Cluster deployment in progress'
+                        : 'Create cluster'}
                     </Button>
                     {submitting && <Progress />}
                   </div>
@@ -319,36 +547,155 @@ export const CreateClusterPage: FC = () => {
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={6}>
-            {jobId && (
-              <Card>
-                <CardContent>
-                  <Typography variant="h6">Job Status</Typography>
-                  <Typography>Job ID: {jobId}</Typography>
-                  <Typography>Status: {jobStatus}</Typography>
-                  <div className={classes.progressSection}>
-                    <LinearProgress
-                      variant="determinate"
-                      value={normalizedProgress}
-                    />
-                    <Typography
-                      className={classes.progressLabel}
-                      variant="body2"
-                      color="textSecondary"
-                    >
-                      Progress: {normalizedProgress}%
+          <Grid item xs={12} md={5}>
+            <Grid container spacing={3}>
+              <Grid item xs={12}>
+                <Card className={classes.helperCard}>
+                  <CardHeader title="Provisioning playbook" />
+                  <CardContent>
+                    <Typography variant="body2" color="textSecondary" paragraph>
+                      Admins should prepare infrastructure before inviting daily users into the workspace wizard.
                     </Typography>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            {error && (
-              <Box marginTop={3}>
-                <WarningPanel severity="error" title="Cluster creation failed">
-                  {error}
-                </WarningPanel>
-              </Box>
-            )}
+                    <List dense>
+                      <ListItem>
+                        <ListItemIcon>
+                          <InfoOutlinedIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary="1. Stand up an AWS cluster"
+                          secondary="Kick off Pulumi from this page to create networking, compute, and control-plane services."
+                        />
+                      </ListItem>
+                      <ListItem>
+                        <ListItemIcon>
+                          <InfoOutlinedIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary="2. Register project, queue, and flavor guardrails"
+                          secondary="Use the project console to add queues and flavors that route workloads onto the new cluster."
+                        />
+                      </ListItem>
+                      <ListItem>
+                        <ListItemIcon>
+                          <InfoOutlinedIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary="3. Let daily users launch workspaces"
+                          secondary="The workspace wizard automatically lists approved clusters and projects so daily users can launch without extra configuration."
+                        />
+                      </ListItem>
+                    </List>
+                    <Divider className={classes.helperDivider} />
+                    <Typography variant="body2" color="textSecondary">
+                      Have a cluster ready? Manage its projects or send teammates directly to the launch wizard.
+                    </Typography>
+                    <div className={classes.helperActions}>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        onClick={handleNavigateToProjects}
+                      >
+                        Manage projects
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        onClick={handleNavigateToWizard}
+                      >
+                        Open workspace wizard
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12}>
+                <Card>
+                  <CardHeader title="Deployment status" />
+                  <CardContent>
+                    {jobId ? (
+                      <>
+                        <Typography variant="body2" color="textSecondary">
+                          Job ID
+                        </Typography>
+                        <Typography component="code" className={classes.statusJobId}>
+                          {jobId}
+                        </Typography>
+                        <Typography
+                          variant="subtitle1"
+                          color={statusColor}
+                          className={classes.statusHeadline}
+                        >
+                          {jobStatusLabel}
+                        </Typography>
+                        {jobMessage && (
+                          <Typography variant="body2" className={classes.statusMeta}>
+                            {jobMessage}
+                          </Typography>
+                        )}
+                        {resumeNotice && (
+                          <Alert severity="info" className={classes.statusAlert}>
+                            We resumed monitoring this deployment after you returned to ÆGIS.
+                          </Alert>
+                        )}
+                        <div className={classes.progressSection}>
+                          <LinearProgress
+                            variant="determinate"
+                            value={normalizedProgress}
+                          />
+                          <Typography
+                            className={classes.progressLabel}
+                            variant="body2"
+                            color="textSecondary"
+                          >
+                            Progress: {normalizedProgress}%
+                          </Typography>
+                        </div>
+                        {lastUpdatedLabel && (
+                          <Typography variant="caption" className={classes.statusMeta}>
+                            Last updated: {lastUpdatedLabel}
+                          </Typography>
+                        )}
+                        {error && (
+                          <Box marginTop={2}>
+                            <WarningPanel severity="error" title="Cluster deployment issue">
+                              {error}
+                            </WarningPanel>
+                          </Box>
+                        )}
+                        <div className={classes.statusActions}>
+                          <Button
+                            variant="outlined"
+                            color="primary"
+                            onClick={handleRetry}
+                            disabled={!canRetry || submitting}
+                          >
+                            Retry status check
+                          </Button>
+                          {canClear && (
+                            <Button variant="outlined" onClick={handleReset}>
+                              Clear status
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Typography variant="body2" color="textSecondary">
+                          Submit the form to launch a Pulumi deployment job. We poll every five seconds and keep the job ID in local storage so you can navigate elsewhere while the cluster comes online.
+                        </Typography>
+                        {error && (
+                          <Box marginTop={2}>
+                            <WarningPanel severity="error" title="Cluster deployment issue">
+                              {error}
+                            </WarningPanel>
+                          </Box>
+                        )}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
           </Grid>
         </Grid>
       </Content>

@@ -82,8 +82,10 @@ export type CreateClusterRequest = {
 export type Job = {
   id: string;
   status: string;
-  progress: number;
-  error?: string;
+  progress?: number | null;
+  error?: string | null;
+  statusMessage?: string | null;
+  percentComplete?: number | null;
 };
 
 export type CreateClusterResponse = {
@@ -546,7 +548,7 @@ export const createCluster = async (
     discoveryApi,
     identityApi,
     authApi,
-    '/api/v1/clusters',
+    '/api/clusters',
     {
       method: 'POST',
       body: req,
@@ -567,7 +569,7 @@ export const getClusterJobStatus = async (
     discoveryApi,
     identityApi,
     authApi,
-    `/api/v1/clusters/jobs/${encodeURIComponent(jobId)}/status`,
+    `/api/clusters/${encodeURIComponent(jobId)}/status`,
     {
       method: 'GET',
       requireAuth: true,
