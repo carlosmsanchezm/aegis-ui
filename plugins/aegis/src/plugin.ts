@@ -21,6 +21,7 @@ import {
   policyManagementRouteRef,
   userManagementRouteRef,
   auditLogRouteRef,
+  createClusterRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -78,6 +79,17 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
         m => m.LaunchWorkspacePage,
       ),
     mountPoint: createWorkspaceRouteRef,
+  }),
+);
+
+export const AegisCreateClusterPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisCreateClusterPage',
+    component: () =>
+      import('./components/CreateClusterPage').then(
+        m => m.CreateClusterPage,
+      ),
+    mountPoint: createClusterRouteRef,
   }),
 );
 

@@ -45,7 +45,13 @@ import DeveloperModeIcon from '@material-ui/icons/DeveloperMode';
 import StorageIcon from '@material-ui/icons/Storage';
 import MemoryIcon from '@material-ui/icons/Memory';
 import TimelineIcon from '@material-ui/icons/Timeline';
-import { SubmitWorkspaceRequest, submitWorkspace } from '../api/aegisClient';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  CreateWorkspaceRequest,
+  createWorkspace,
+} from '../api/aegisClient';
+import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
 import { workloadsRouteRef } from '../routes';
 
@@ -437,6 +443,7 @@ export const LaunchWorkspacePage: FC = () => {
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
   const navigate = useNavigate();
@@ -573,10 +580,14 @@ export const LaunchWorkspacePage: FC = () => {
     const ports = parsePortsInput(form.ports);
     const env = parseEnvInput(form.env);
 
-    const payload: SubmitWorkspaceRequest = {
-      id: form.workloadId.trim(),
-      projectId: form.projectId.trim(),
-      queue: form.queue.trim() || undefined,
+    const projectId = form.projectId.trim();
+    const workspaceId = form.workloadId.trim();
+    const queue = form.queue.trim();
+
+    const payload: CreateWorkspaceRequest = {
+      projectId,
+      workspaceId,
+      ...(queue ? { queue } : {}),
       workspace: {
         flavor: form.flavor.trim() || undefined,
         image: form.image.trim() || undefined,
@@ -589,20 +600,34 @@ export const LaunchWorkspacePage: FC = () => {
     try {
       setSubmitting(true);
       setError(null);
-      await submitWorkspace(fetchApi, discoveryApi, identityApi, payload);
+      const response = await createWorkspace(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        authApi,
+        payload,
+      );
+      const createdId = response?.workload?.id ?? workspaceId;
       alertApi.post({
-        message: `Submitted interactive workspace ${payload.id}`,
+        message: `Submitted interactive workspace ${createdId}`,
         severity: 'success',
       });
       if (workloadsLink) {
         navigate(workloadsLink());
       }
-    } catch (e: any) {
-      const msg = e?.message ?? String(e);
+    } catch (e: unknown) {
+      let msg = 'Failed to submit workspace.';
+      let severity: 'error' | 'warning' = 'error';
+      if (e instanceof AuthenticationError || e instanceof AuthorizationError) {
+        msg = e.message;
+        severity = 'warning';
+      } else if (e instanceof Error) {
+        msg = e.message || msg;
+      }
       setError(msg);
       alertApi.post({
-        message: `Failed to submit workspace: ${msg}`,
-        severity: 'error',
+        message: msg,
+        severity,
       });
     } finally {
       setSubmitting(false);
