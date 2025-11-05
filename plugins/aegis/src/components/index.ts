@@ -10,6 +10,7 @@ export { AegisLogExplorerPage } from './AegisLogExplorerPage';
 export { AegisAlertsDashboardPage } from './AegisAlertsDashboardPage';
 export { AegisClusterConfigPage } from './AegisClusterConfigPage';
 export { AegisCostAnalyticsPage } from './AegisCostAnalyticsPage';
+export { AegisProjectManagementPage } from './AegisProjectManagementPage';
 export { AegisPolicyManagementPage } from './AegisPolicyManagementPage';
 export { AegisUserManagementPage } from './AegisUserManagementPage';
 export { AegisAuditLogPage } from './AegisAuditLogPage';

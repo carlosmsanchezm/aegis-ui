@@ -3,6 +3,7 @@ import {
   ComponentType,
   FC,
   FormEvent,
+  useEffect,
   useMemo,
   useState,
 } from 'react';
@@ -15,7 +16,7 @@ import {
   useApi,
   useRouteRef,
 } from '@backstage/core-plugin-api';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -27,6 +28,8 @@ import {
   Divider,
   FormControlLabel,
   Grid,
+  LinearProgress,
+  MenuItem,
   Paper,
   Step,
   StepLabel,
@@ -35,7 +38,7 @@ import {
   TextField,
   Typography,
 } from '@material-ui/core';
-import { makeStyles } from '@material-ui/core/styles';
+import { makeStyles, useTheme } from '@material-ui/core/styles';
 import { alpha } from '@material-ui/core/styles/colorManipulator';
 import { StepIconProps } from '@material-ui/core/StepIcon';
 import CheckRoundedIcon from '@material-ui/icons/CheckRounded';
@@ -53,9 +56,16 @@ import {
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
-import { workloadsRouteRef } from '../routes';
+import { projectManagementRouteRef, workloadsRouteRef } from '../routes';
+import {
+  getDefaultProject,
+  getProjectById,
+  getQueueFromProject,
+  getVisibilityColor,
+  projectCatalog,
+} from './projectCatalog';
 
-import type { Theme } from '@material-ui/core/styles/createMuiTheme';
+import type { Theme } from '@material-ui/core/styles';
 
 type WorkspaceTypeId = 'vscode' | 'jupyter' | 'cli';
 
@@ -138,7 +148,7 @@ const templateCatalog: TemplateOption[] = [
     defaults: {
       flavor: 'gpu-standard',
       image: 'ghcr.io/aegis/workspace-jupyter-pytorch:latest',
-      queue: 'gpu',
+      queue: 'gpu-strike',
       ports: [22, 8888],
       env: {
         NOTEBOOK_TOKEN: 'aegis',
@@ -153,7 +163,7 @@ const templateCatalog: TemplateOption[] = [
     defaults: {
       flavor: 'gpu-large',
       image: 'ghcr.io/aegis/workspace-jupyter-rapids:latest',
-      queue: 'gpu',
+      queue: 'gpu-exploratory',
       ports: [22, 8888],
     },
   },
@@ -325,6 +335,100 @@ const useStyles = makeStyles((theme: Theme) => {
       gap: theme.spacing(2),
       padding: theme.spacing(3),
     },
+    projectHeader: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1),
+    },
+    projectMetadata: {
+      display: 'flex',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1),
+    },
+    projectVisibilityChip: {
+      fontWeight: 600,
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+    },
+    projectTagChip: {
+      backgroundColor: alpha(accent, isDark ? 0.14 : 0.09),
+      color: accent,
+      fontWeight: 600,
+    },
+    budgetMeter: {
+      marginTop: theme.spacing(1),
+    },
+    budgetProgress: {
+      height: 8,
+      borderRadius: theme.shape.borderRadius,
+    },
+    budgetLegend: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      color: theme.palette.text.secondary,
+      fontSize: '0.85rem',
+    },
+    selectorMenuItem: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      gap: theme.spacing(0.5),
+    },
+    selectorMenuPrimary: {
+      fontWeight: 600,
+    },
+    selectorMenuSecondary: {
+      fontSize: '0.8rem',
+      color: theme.palette.text.secondary,
+    },
+    selectorMenuBadge: {
+      fontSize: '0.7rem',
+      fontWeight: 700,
+      letterSpacing: '0.08em',
+      textTransform: 'uppercase',
+      marginLeft: theme.spacing(1),
+      padding: theme.spacing(0.25, 0.75),
+      borderRadius: 999,
+      border: `1px solid ${alpha(accent, isDark ? 0.5 : 0.35)}`,
+      color: accent,
+    },
+    queueSummary: {
+      backgroundColor: isDark ? alpha('#0F172A', 0.65) : '#F7F7F9',
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+      padding: theme.spacing(2.5),
+    },
+    queueSummaryHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: theme.spacing(2),
+    },
+    queueBadgeRow: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1),
+    },
+    metricPill: {
+      borderRadius: 999,
+      padding: theme.spacing(0.5, 1.5),
+      backgroundColor: isDark ? alpha('#1F2937', 0.9) : '#FFFFFF',
+      border: `1px solid ${borderColor}`,
+      fontSize: '0.8rem',
+      fontWeight: 600,
+      color: theme.palette.text.secondary,
+    },
+    projectActions: {
+      marginTop: theme.spacing(1),
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1.5),
+      alignItems: 'center',
+    },
     sectionDivider: {
       backgroundColor: 'var(--aegis-muted)',
       margin: theme.spacing(3, 0),
@@ -440,12 +544,14 @@ const getFlavorIcon = (flavorId: string) =>
 
 export const LaunchWorkspacePage: FC = () => {
   const classes = useStyles();
+  const theme = useTheme();
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
   const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
   const workloadsLink = useRouteRef(workloadsRouteRef);
+  const projectAdminLink = useRouteRef(projectManagementRouteRef);
   const navigate = useNavigate();
 
   const [activeStep, setActiveStep] = useState(0);
@@ -454,17 +560,108 @@ export const LaunchWorkspacePage: FC = () => {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [forceAdvancedOpen, setForceAdvancedOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [form, setForm] = useState({
-    workloadId: randomId(),
-    projectId: '',
-    queue: '',
-    flavor: '',
-    image: '',
-    ports: '22',
-    env: '',
+  const [form, setForm] = useState(() => {
+    const defaultProject = getDefaultProject();
+    const fallbackQueue =
+      defaultProject?.defaultQueueId || defaultProject?.queues[0]?.id || '';
+
+    return {
+      workloadId: randomId(),
+      projectId: defaultProject?.id ?? '',
+      queue: fallbackQueue,
+      flavor: '',
+      image: '',
+      ports: '22',
+      env: '',
+    };
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedProject = useMemo(
+    () => getProjectById(form.projectId),
+    [form.projectId],
+  );
+
+  const availableQueues = selectedProject?.queues ?? [];
+
+  const selectedQueue = useMemo(
+    () => getQueueFromProject(selectedProject, form.queue),
+    [selectedProject, form.queue],
+  );
+
+  const visibilityStyle = useMemo(() => {
+    if (!selectedProject) {
+      return null;
+    }
+    return getVisibilityColor(selectedProject.visibility, theme.palette);
+  }, [
+    selectedProject,
+    theme.palette.info.main,
+    theme.palette.primary.main,
+    theme.palette.warning.main,
+  ]);
+
+  const budgetPercent = useMemo(() => {
+    if (!selectedProject) {
+      return 0;
+    }
+    const { allocated, consumed } = selectedProject.budget;
+    if (!allocated) {
+      return 0;
+    }
+    return Math.min(100, Math.round((consumed / allocated) * 100));
+  }, [selectedProject]);
+
+  const queueDisciplineStyle = useMemo(() => {
+    if (!selectedQueue) {
+      return null;
+    }
+
+    const palette = theme.palette;
+    const baseColor = (() => {
+      if (selectedQueue.discipline === 'gpu') {
+        return palette.secondary?.main ?? palette.primary.main;
+      }
+      if (selectedQueue.discipline === 'burst') {
+        return palette.warning.main;
+      }
+      return palette.success?.main ?? palette.primary.main;
+    })();
+
+    return {
+      background: alpha(baseColor, palette.type === 'dark' ? 0.3 : 0.18),
+      color: baseColor,
+    };
+  }, [
+    selectedQueue,
+    theme.palette.primary.main,
+    theme.palette.secondary?.main,
+    theme.palette.success?.main,
+    theme.palette.warning.main,
+    theme.palette.type,
+  ]);
+
+  useEffect(() => {
+    if (!selectedProject) {
+      return;
+    }
+
+    const queueIds = selectedProject.queues.map(queue => queue.id);
+    const fallbackQueue =
+      selectedProject.defaultQueueId || queueIds[0] || '';
+
+    if (queueIds.length === 0) {
+      if (form.queue !== '') {
+        setForm(prev => ({ ...prev, queue: '' }));
+      }
+      return;
+    }
+
+    if (!queueIds.includes(form.queue)) {
+      setForm(prev => ({ ...prev, queue: fallbackQueue }));
+    }
+  }, [form.queue, selectedProject]);
 
   const templatesForType = useMemo(() => {
     if (!workspaceTypeId) {
@@ -538,6 +735,31 @@ export const LaunchWorkspacePage: FC = () => {
 
   const handleFlavorSelect = (flavor: FlavorOption) => {
     setForm(prev => ({ ...prev, flavor: flavor.flavor }));
+  };
+
+  const handleProjectSelect = (
+    event: ChangeEvent<{ value: unknown }>,
+  ) => {
+    const nextProjectId = event.target.value as string;
+    const nextProject = getProjectById(nextProjectId);
+    setForm(prev => {
+      const queueIds = nextProject?.queues.map(queue => queue.id) ?? [];
+      const fallbackQueue =
+        nextProject?.defaultQueueId || queueIds[0] || '';
+      const nextQueue = queueIds.includes(prev.queue)
+        ? prev.queue
+        : fallbackQueue;
+
+      return {
+        ...prev,
+        projectId: nextProjectId,
+        queue: nextQueue,
+      };
+    });
+  };
+
+  const handleQueueSelect = (event: ChangeEvent<{ value: unknown }>) => {
+    setForm(prev => ({ ...prev, queue: event.target.value as string }));
   };
 
   const handleAdvancedToggle = (event: ChangeEvent<HTMLInputElement>) => {
@@ -779,14 +1001,164 @@ export const LaunchWorkspacePage: FC = () => {
                       Project context
                     </Typography>
                     <TextField
-                      label="Project ID"
+                      select
+                      label="Launch under project"
                       value={form.projectId}
-                      onChange={handleFormFieldChange('projectId')}
+                      onChange={handleProjectSelect}
                       variant="outlined"
                       required
                       fullWidth
-                      helperText="Owner project for access controls and billing"
-                    />
+                      helperText="Projects drive visibility, billing, and guardrails"
+                    >
+                      {projectCatalog.map(project => (
+                        <MenuItem key={project.id} value={project.id}>
+                          <div className={classes.selectorMenuItem}>
+                            <div>
+                              <span className={classes.selectorMenuPrimary}>
+                                {project.name}
+                              </span>
+                              {project.isDefault ? (
+                                <span className={classes.selectorMenuBadge}>
+                                  Auto
+                                </span>
+                              ) : null}
+                            </div>
+                            <span className={classes.selectorMenuSecondary}>
+                              {project.visibility} • {project.id}
+                            </span>
+                          </div>
+                        </MenuItem>
+                      ))}
+                    </TextField>
+
+                    {selectedProject ? (
+                      <>
+                        <div className={classes.projectHeader}>
+                          <Typography variant="h6">
+                            {selectedProject.name}
+                          </Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            {selectedProject.description}
+                          </Typography>
+                        </div>
+                        <div className={classes.projectMetadata}>
+                          <Chip
+                            size="small"
+                            label={selectedProject.visibility}
+                            className={classes.projectVisibilityChip}
+                            style={visibilityStyle ?? undefined}
+                          />
+                          <Typography variant="caption" color="textSecondary">
+                            Owner: {selectedProject.owner}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Mission: {selectedProject.missionFocus}
+                          </Typography>
+                        </div>
+                        {selectedProject.tags.length > 0 ? (
+                          <div className={classes.projectMetadata}>
+                            {selectedProject.tags.map(tag => (
+                              <Chip
+                                key={`${selectedProject.id}-${tag}`}
+                                size="small"
+                                label={tag}
+                                className={classes.projectTagChip}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className={classes.budgetMeter}>
+                          <LinearProgress
+                            variant="determinate"
+                            value={budgetPercent}
+                            className={classes.budgetProgress}
+                          />
+                          <div className={classes.budgetLegend}>
+                            <span>
+                              ${selectedProject.budget.consumed.toLocaleString()} spent
+                            </span>
+                            <span>
+                              ${selectedProject.budget.allocated.toLocaleString()} FY cap ({
+                                budgetPercent
+                              }
+                              %)
+                            </span>
+                          </div>
+                        </div>
+                        <TextField
+                          select
+                          label="Launch queue"
+                          value={form.queue}
+                          onChange={handleQueueSelect}
+                          variant="outlined"
+                          fullWidth
+                          helperText="Queues enforce scheduling, GPU access, and budget guardrails"
+                        >
+                          {availableQueues.map(queue => (
+                            <MenuItem key={queue.id} value={queue.id}>
+                              <div className={classes.selectorMenuItem}>
+                                <span className={classes.selectorMenuPrimary}>
+                                  {queue.name}
+                                </span>
+                                <span className={classes.selectorMenuSecondary}>
+                                  {queue.id} • Concurrency {queue.concurrency}
+                                </span>
+                              </div>
+                            </MenuItem>
+                          ))}
+                          {form.queue &&
+                          !availableQueues.some(queue => queue.id === form.queue) ? (
+                            <MenuItem value={form.queue}>
+                              <div className={classes.selectorMenuItem}>
+                                <span className={classes.selectorMenuPrimary}>
+                                  {form.queue}
+                                </span>
+                                <span className={classes.selectorMenuSecondary}>
+                                  Custom override
+                                </span>
+                              </div>
+                            </MenuItem>
+                          ) : null}
+                        </TextField>
+                        <div className={classes.queueSummary}>
+                          <div className={classes.queueSummaryHeader}>
+                            <Typography variant="subtitle1">
+                              {selectedQueue?.name ?? 'Project default queue'}
+                            </Typography>
+                            <Chip
+                              size="small"
+                              label={(selectedQueue?.discipline ?? 'policy').toUpperCase()}
+                              className={classes.projectVisibilityChip}
+                              style={queueDisciplineStyle ?? undefined}
+                            />
+                          </div>
+                          <Typography variant="body2" color="textSecondary">
+                            {selectedQueue?.description ??
+                              'Queue inherits from project guardrails with automatic capacity balancing.'}
+                          </Typography>
+                          <div className={classes.queueBadgeRow}>
+                            <span className={classes.metricPill}>
+                              Health: {selectedQueue?.health ?? 'Managed'}
+                            </span>
+                            <span className={classes.metricPill}>
+                              Concurrency: {selectedQueue?.concurrency ?? '—'}
+                            </span>
+                            <span className={classes.metricPill}>
+                              Utilization:{' '}
+                              {selectedQueue
+                                ? `${Math.round(selectedQueue.utilization * 100)}%`
+                                : 'adaptive'}
+                            </span>
+                            {selectedQueue?.budgetGuardrail ? (
+                              <span className={classes.metricPill}>
+                                {selectedQueue.budgetGuardrail}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+
                     <TextField
                       label="Workspace ID"
                       value={form.workloadId}
@@ -796,6 +1168,22 @@ export const LaunchWorkspacePage: FC = () => {
                       fullWidth
                       helperText="Identifier visible to mission operators"
                     />
+
+                    <div className={classes.projectActions}>
+                      <Button
+                        component={RouterLink}
+                        to={projectAdminLink()}
+                        variant="outlined"
+                        color="primary"
+                        size="small"
+                      >
+                        Manage projects & queues
+                      </Button>
+                      <Typography variant="caption" color="textSecondary">
+                        Defaults auto-provisioned for fresh tenants; admins can
+                        fine-tune from the management console.
+                      </Typography>
+                    </div>
                     <Divider className={classes.sectionDivider} />
                     <Typography variant="overline" color="textSecondary">
                       Workspace type
@@ -848,13 +1236,40 @@ export const LaunchWorkspacePage: FC = () => {
                       helperText="OCI image with your workspace runtime"
                     />
                     <TextField
-                      label="Queue (optional)"
+                      select
+                      label="Launch queue"
                       value={form.queue}
-                      onChange={handleFormFieldChange('queue')}
+                      onChange={handleQueueSelect}
                       variant="outlined"
                       fullWidth
-                      helperText="Override default queue for launch scheduling"
-                    />
+                      helperText="Override the project default when coordinating special launches"
+                    >
+                      {availableQueues.map(queue => (
+                        <MenuItem key={`resources-${queue.id}`} value={queue.id}>
+                          <div className={classes.selectorMenuItem}>
+                            <span className={classes.selectorMenuPrimary}>
+                              {queue.name}
+                            </span>
+                            <span className={classes.selectorMenuSecondary}>
+                              {queue.id} • Concurrency {queue.concurrency}
+                            </span>
+                          </div>
+                        </MenuItem>
+                      ))}
+                      {form.queue &&
+                      !availableQueues.some(queue => queue.id === form.queue) ? (
+                        <MenuItem value={form.queue}>
+                          <div className={classes.selectorMenuItem}>
+                            <span className={classes.selectorMenuPrimary}>
+                              {form.queue}
+                            </span>
+                            <span className={classes.selectorMenuSecondary}>
+                              Custom override
+                            </span>
+                          </div>
+                        </MenuItem>
+                      ) : null}
+                    </TextField>
                     <FormControlLabel
                       className={classes.toggleControl}
                       control={
@@ -904,7 +1319,9 @@ export const LaunchWorkspacePage: FC = () => {
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Project</span>
                       <span className={classes.reviewValue}>
-                        {form.projectId || '—'}
+                        {selectedProject
+                          ? `${selectedProject.name} (${selectedProject.id})`
+                          : form.projectId || '—'}
                       </span>
                     </div>
                   </Grid>
@@ -944,7 +1361,9 @@ export const LaunchWorkspacePage: FC = () => {
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Queue</span>
                       <span className={classes.reviewValue}>
-                        {form.queue || 'Default'}
+                        {selectedQueue
+                          ? `${selectedQueue.name} (${selectedQueue.id})`
+                          : form.queue || 'Project default'}
                       </span>
                     </div>
                   </Grid>
