@@ -56,6 +56,7 @@ import ScheduleIcon from '@material-ui/icons/Schedule';
 import TimelineIcon from '@material-ui/icons/Timeline';
 import { useNavigate } from 'react-router-dom';
 import {
+  ApiError,
   ClusterActivityItem,
   ClusterDetail,
   ClusterJobCondition,
@@ -67,6 +68,7 @@ import {
   listClusters,
 } from '../../../../../plugins/aegis/src/api/aegisClient';
 import { keycloakAuthApiRef } from '../../../../../plugins/aegis/src/api/refs';
+import { mockClusterDetails, mockClusterSummaries } from './clusterMockData';
 
 type FilterState = {
   projectId: string;
@@ -269,6 +271,21 @@ const ClusterDetailDialog = ({
         setDetail(result);
       })
       .catch((err: unknown) => {
+        if (
+          err instanceof ApiError &&
+          (err.status === 405 || err.message.toLowerCase().includes('method not allowed'))
+        ) {
+          const mock = mockClusterDetails[clusterId];
+          if (mock) {
+            setDetail(mock);
+            setError(null);
+            alertApi.post({
+              message: 'Showing sample cluster details because the platform API is unavailable.',
+              severity: 'info',
+            });
+            return;
+          }
+        }
         setError(err instanceof Error ? err.message : 'Unable to load cluster details.');
       })
       .finally(() => setLoading(false));
@@ -461,15 +478,25 @@ export const AegisClustersPage = () => {
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [usingMockData, setUsingMockData] = useState(false);
   const [filters, setFilters] = useState<FilterState>({ projectId: 'all', region: 'all', mode: 'all' });
   const [selectedCluster, setSelectedCluster] = useState<string | undefined>();
 
   const loadClusters = useCallback(() => {
     setLoading(true);
     setError(null);
+    setUsingMockData(false);
     listClusters(fetchApi, discoveryApi, identityApi, authApi)
       .then((items: ClusterSummary[]) => setClusters(items))
       .catch((err: unknown) => {
+        if (
+          err instanceof ApiError &&
+          (err.status === 405 || err.message.toLowerCase().includes('method not allowed'))
+        ) {
+          setClusters(mockClusterSummaries);
+          setUsingMockData(true);
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Unable to load clusters.');
       })
       .finally(() => setLoading(false));
@@ -523,6 +550,11 @@ export const AegisClustersPage = () => {
           </Button>
         </ContentHeader>
         {error && <WarningPanel severity="error" title="Unable to load clusters">{error}</WarningPanel>}
+        {usingMockData && !error && (
+          <WarningPanel severity="warning" title="Showing sample data">
+            The platform API is unavailable in this environment. Displaying staged clusters for UI review.
+          </WarningPanel>
+        )}
         {loading && <Progress />}
         {!loading && clusters.length === 0 && !error && (
           <Box className={classes.emptyState}>
@@ -692,4 +724,3 @@ export const AegisClustersPage = () => {
     </Page>
   );
 };
-
