@@ -22,8 +22,8 @@ export const launchWorkspaceRouteRef = createSubRouteRef({
   path: '/workspaces/launch',
 });
 
-export const createClusterRouteRef = createRouteRef({
-  id: 'aegis.create-cluster',
+export const createClusterRouteRef = createSubRouteRef({
+  id: 'aegis-create-cluster',
   parent: rootRouteRef,
   path: '/create-cluster',
 });
@@ -116,4 +116,16 @@ export const auditLogRouteRef = createSubRouteRef({
   id: 'aegis-audit-log',
   parent: rootRouteRef,
   path: '/admin/audit-logs',
+});
+
+export const clusterProfilesRouteRef = createSubRouteRef({
+  id: 'aegis-cluster-profiles',
+  parent: rootRouteRef,
+  path: '/admin/cluster-profiles',
+});
+
+export const iacConnectorsRouteRef = createSubRouteRef({
+  id: 'aegis-iac-connectors',
+  parent: rootRouteRef,
+  path: '/admin/iac-connectors',
 });

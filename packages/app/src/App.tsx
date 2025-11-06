@@ -64,6 +64,8 @@ import {
   AegisPolicyManagementPage,
   AegisUserManagementPage,
   AegisAuditLogPage,
+  AegisClusterProfilesAdminPage,
+  AegisIaCConnectorsAdminPage,
 } from '@internal/plugin-aegis';
 import { keycloakAuthApiRef } from './apis';
 
@@ -176,6 +178,14 @@ const routes = (
       element={<AegisBillingAlertsFinOpsPage />}
     />
     <Route path="/aegis/admin/analytics" element={<AegisCostAnalyticsPage />} />
+    <Route
+      path="/aegis/admin/cluster-profiles"
+      element={<AegisClusterProfilesAdminPage />}
+    />
+    <Route
+      path="/aegis/admin/iac-connectors"
+      element={<AegisIaCConnectorsAdminPage />}
+    />
     <Route path="/aegis/admin/projects/create" element={<CreateProjectPage />} />
     <Route path="/aegis/admin/projects" element={<AegisProjectManagementPage />} />
     <Route path="/aegis/admin/policies" element={<AegisPolicyManagementPage />} />

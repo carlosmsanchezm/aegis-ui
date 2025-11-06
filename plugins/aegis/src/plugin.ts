@@ -24,6 +24,8 @@ import {
   auditLogRouteRef,
   createClusterRouteRef,
   createProjectRouteRef,
+  clusterProfilesRouteRef,
+  iacConnectorsRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -246,5 +248,27 @@ export const AegisAuditLogPage = aegisPlugin.provide(
         m => m.AegisAuditLogPage,
       ),
     mountPoint: auditLogRouteRef,
+  }),
+);
+
+export const AegisClusterProfilesAdminPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisClusterProfilesAdminPage',
+    component: () =>
+      import('./components/admin/ClusterProfilesAdminPage').then(
+        m => m.ClusterProfilesAdminPage,
+      ),
+    mountPoint: clusterProfilesRouteRef,
+  }),
+);
+
+export const AegisIaCConnectorsAdminPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisIaCConnectorsAdminPage',
+    component: () =>
+      import('./components/admin/IaCConnectorsAdminPage').then(
+        m => m.IaCConnectorsAdminPage,
+      ),
+    mountPoint: iacConnectorsRouteRef,
   }),
 );
