@@ -25,8 +25,11 @@ import { entityPage } from './components/catalog/EntityPage';
 import { searchPage } from './components/search/SearchPage';
 import { Root } from './components/Root';
 import {
+  AegisClusterCreatePage,
+  AegisClusterProfilesPage,
   AegisClustersPage,
   AegisDashboardPage,
+  AegisIaCConnectorsPage,
   AegisPosturePage,
   AegisTelemetryPage,
 } from './components/aegis';
@@ -135,6 +138,7 @@ const routes = (
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/notifications" element={<NotificationsPage />} />
     <Route path="/aegis" element={<AegisPage />} />
+    <Route path="/aegis/create/clusters" element={<AegisClusterCreatePage />} />
     <Route path="/aegis/dashboard" element={<AegisDashboardPage />} />
     <Route path="/aegis/telemetry" element={<AegisTelemetryPage />} />
     <Route path="/aegis/posture" element={<AegisPosturePage />} />
@@ -168,6 +172,8 @@ const routes = (
       path="/aegis/finops/alerts"
       element={<AegisBillingAlertsFinOpsPage />}
     />
+    <Route path="/aegis/admin/cluster-profiles" element={<AegisClusterProfilesPage />} />
+    <Route path="/aegis/admin/iac-connectors" element={<AegisIaCConnectorsPage />} />
     <Route path="/aegis/admin/analytics" element={<AegisCostAnalyticsPage />} />
     <Route path="/aegis/admin/policies" element={<AegisPolicyManagementPage />} />
     <Route path="/aegis/admin/users" element={<AegisUserManagementPage />} />
