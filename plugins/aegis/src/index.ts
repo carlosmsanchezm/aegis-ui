@@ -19,7 +19,27 @@ export {
   AegisAuditLogPage,
   AegisProjectManagementPage,
   AegisCreateProjectPage,
+  AegisClusterProfilesAdminPage,
+  AegisIaCConnectorsAdminPage,
 } from './plugin';
+export type {
+  AegisRole,
+  ClusterActivityItem,
+  ClusterAddon,
+  ClusterChangeSet,
+  ClusterComplianceStatus,
+  ClusterDetail,
+  ClusterDriftStatus,
+  ClusterFleetItem,
+  ClusterProfile,
+  ClusterProfileParameter,
+  ClusterProfileStatus,
+  ClusterTimelineEvent,
+  ClusterNodePool,
+  ClusterCostInsight,
+  ComplianceLevel,
+  FedrampLevel,
+} from './components';
 export {
   rootRouteRef,
   workloadsRouteRef,
@@ -40,4 +60,6 @@ export {
   policyManagementRouteRef,
   userManagementRouteRef,
   auditLogRouteRef,
+  clusterProfilesRouteRef,
+  iacConnectorsRouteRef,
 } from './routes';
