@@ -164,6 +164,17 @@ const initialFilters: ClusterFilterState = {
   drift: 'all',
 };
 
+const getFilterValue = (cluster: ClusterDetail, key: keyof ClusterFilterState): string => {
+  switch (key) {
+    case 'profile':
+      return cluster.profileRef?.id || 'unassigned';
+    case 'compliance':
+      return cluster.compliance?.level || 'unclassified';
+    default:
+      return String(cluster[key as keyof ClusterDetail] ?? '');
+  }
+};
+
 const clustersSeed: ClusterDetail[] = [
   {
     id: 'aurora-east-il5',
@@ -703,10 +714,7 @@ export const AegisClustersPage = () => {
                 {[...new Set(
                   clustersSeed
                     .map(cluster => {
-                      if (key === 'profile') {
-                        return cluster.profileRef?.id || 'unassigned';
-                      }
-                      return cluster[key as keyof ClusterDetail] as string;
+                      return getFilterValue(cluster, key);
                     })
                     .filter(Boolean),
                 )].map(value => (
@@ -935,4 +943,3 @@ export const AegisClustersPage = () => {
     </Page>
   );
 };
-
