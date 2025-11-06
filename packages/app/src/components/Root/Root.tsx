@@ -179,7 +179,7 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
 
           <NavSection label="Create" icon={<AddCircleOutlineIcon />}>
             <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspace" />
-            <SidebarItem icon={BuildIcon} to="aegis" text="Cluster" />
+            <SidebarItem icon={BuildIcon} to="aegis/clusters/create" text="Cluster" />
           </NavSection>
 
           <SidebarDivider />
