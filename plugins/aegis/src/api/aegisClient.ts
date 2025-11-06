@@ -72,11 +72,110 @@ export type CreateWorkspaceResponse = {
   workload: WorkloadDTO;
 };
 
+export type ClusterMode = 'provision' | 'import';
+
+export type ClusterTaint = {
+  key: string;
+  value?: string;
+  effect?: string;
+};
+
+export type ClusterNodePoolSpec = {
+  name: string;
+  instanceType: string;
+  minSize: number;
+  maxSize: number;
+  desiredSize: number;
+  gpu?: boolean;
+  spot?: boolean;
+  labels?: Record<string, string>;
+  taints?: ClusterTaint[];
+};
+
+export type ClusterTopologySpec = {
+  clusterId: string;
+  name?: string;
+  kubernetesVersion?: string;
+  controlPlaneRoleArn?: string;
+  nodePools: ClusterNodePoolSpec[];
+  additionalLabels?: Record<string, string>;
+};
+
+export type ClusterHelmIntegrationSpec = {
+  namespace?: string;
+  chartVersion?: string;
+  values?: Record<string, unknown>;
+};
+
+export type ClusterPlatformOverrides = {
+  apiServer?: string;
+  metricsEndpoint?: string;
+  loggingEndpoint?: string;
+};
+
+export type ClusterImportSecretSpec = {
+  name: string;
+  namespace?: string;
+  keys?: string[];
+};
+
 export type CreateClusterRequest = {
   projectId: string;
-  clusterId: string;
-  provider: string;
-  region: string;
+  mode: ClusterMode;
+  aws: {
+    region: string;
+    accountId?: string;
+    assumeRoleArn?: string;
+  };
+  topology?: {
+    clusters: ClusterTopologySpec[];
+  };
+  import?: {
+    kubeconfigSecret?: ClusterImportSecretSpec;
+  };
+  platform?: {
+    helm?: ClusterHelmIntegrationSpec;
+    overrides?: ClusterPlatformOverrides;
+  };
+  metadata?: {
+    estimatedHourlyCost?: number;
+    currency?: string;
+  };
+};
+
+export type ClusterCostEstimate = {
+  hourly: number;
+  currency?: string;
+  description?: string;
+};
+
+export type ClusterOutputSecret = {
+  name: string;
+  namespace?: string;
+  description?: string;
+};
+
+export type ClusterOutputEndpoint = {
+  label: string;
+  url: string;
+  type?: string;
+  description?: string;
+};
+
+export type ClusterJobCondition = {
+  type: string;
+  status: 'True' | 'False' | 'Unknown';
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+};
+
+export type ClusterJobMilestone = {
+  id: string;
+  label: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETE' | 'ERROR';
+  timestamp?: string;
+  details?: string;
 };
 
 export type Job = {
@@ -86,12 +185,68 @@ export type Job = {
   error?: string;
 };
 
+export type ClusterJob = Job & {
+  phase?: 'Provisioning' | 'Ready' | 'Error';
+  projectId?: string;
+  clusterId?: string;
+  mode?: ClusterMode;
+  conditions?: ClusterJobCondition[];
+  milestones?: ClusterJobMilestone[];
+  outputs?: {
+    kubeconfigSecrets?: ClusterOutputSecret[];
+    endpoints?: ClusterOutputEndpoint[];
+    helmReleases?: { name: string; namespace?: string; version?: string }[];
+    costEstimate?: ClusterCostEstimate;
+  };
+};
+
 export type CreateClusterResponse = {
-  job: Job;
+  job: ClusterJob;
+  costEstimate?: ClusterCostEstimate;
 };
 
 export type GetClusterJobStatusResponse = {
-  job: Job;
+  job: ClusterJob;
+};
+
+export type ClusterSummary = {
+  id: string;
+  name: string;
+  projectId: string;
+  mode: ClusterMode;
+  provider: string;
+  region: string;
+  phase: 'Provisioning' | 'Ready' | 'Error' | 'Degraded';
+  createdAt?: string;
+  lastSyncedAt?: string;
+  costEstimate?: ClusterCostEstimate;
+  latestCondition?: ClusterJobCondition;
+};
+
+export type ClusterNodePoolStatus = ClusterNodePoolSpec & {
+  actualSize?: number;
+};
+
+export type ClusterActivityItem = {
+  id: string;
+  phase: string;
+  timestamp: string;
+  message?: string;
+  actor?: string;
+};
+
+export type ClusterDetail = ClusterSummary & {
+  accountId?: string;
+  assumeRoleArn?: string;
+  kubernetesVersion?: string;
+  nodePools?: ClusterNodePoolStatus[];
+  additionalClusters?: ClusterTopologySpec[];
+  platformOverrides?: ClusterPlatformOverrides;
+  helm?: ClusterHelmIntegrationSpec;
+  conditions?: ClusterJobCondition[];
+  endpoints?: ClusterOutputEndpoint[];
+  kubeconfigSecrets?: ClusterOutputSecret[];
+  activity?: ClusterActivityItem[];
 };
 
 export type ListWorkloadsResponse = {
@@ -568,6 +723,72 @@ export const getClusterJobStatus = async (
     identityApi,
     authApi,
     `/api/v1/clusters/jobs/${encodeURIComponent(jobId)}/status`,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+};
+
+export type ListClustersOptions = {
+  projectId?: string;
+  region?: string;
+  mode?: ClusterMode;
+};
+
+type ListClustersResponse = {
+  items: ClusterSummary[];
+};
+
+export const listClusters = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  options?: ListClustersOptions,
+): Promise<ClusterSummary[]> => {
+  const params = new URLSearchParams();
+  if (options?.projectId) {
+    params.append('projectId', options.projectId);
+  }
+  if (options?.region) {
+    params.append('region', options.region);
+  }
+  if (options?.mode) {
+    params.append('mode', options.mode);
+  }
+
+  const query = params.toString();
+  const path = query ? `/api/v1/clusters?${query}` : '/api/v1/clusters';
+
+  const response = await restJson<undefined, ListClustersResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    path,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+
+  return response?.items ?? [];
+};
+
+export const getCluster = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  id: string,
+): Promise<ClusterDetail> => {
+  return restJson<undefined, ClusterDetail>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/clusters/${encodeURIComponent(id)}`,
     {
       method: 'GET',
       requireAuth: true,
