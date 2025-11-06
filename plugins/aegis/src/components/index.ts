@@ -9,6 +9,7 @@ export { AegisResourceDetailsPage } from './AegisResourceDetailsPage';
 export { AegisLogExplorerPage } from './AegisLogExplorerPage';
 export { AegisAlertsDashboardPage } from './AegisAlertsDashboardPage';
 export { AegisClusterConfigPage } from './AegisClusterConfigPage';
+export { AegisClusterDetailsPage } from './AegisClusterDetailsPage';
 export { AegisCostAnalyticsPage } from './AegisCostAnalyticsPage';
 export { AegisPolicyManagementPage } from './AegisPolicyManagementPage';
 export { AegisUserManagementPage } from './AegisUserManagementPage';

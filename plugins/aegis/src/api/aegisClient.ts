@@ -72,11 +72,43 @@ export type CreateWorkspaceResponse = {
   workload: WorkloadDTO;
 };
 
+export type ClusterNodePoolSpec = {
+  name: string;
+  instanceType: string;
+  minSize: number;
+  maxSize: number;
+  labels?: Record<string, string>;
+  taints?: string[];
+};
+
+export type ClusterSpec = {
+  name: string;
+  version: string;
+  nodePools: ClusterNodePoolSpec[];
+};
+
+export type PlatformIntegrationSpec = {
+  platformEndpoint?: string;
+  caBundle?: string;
+  customSpokeImage?: string;
+  valuesFile?: string;
+};
+
 export type CreateClusterRequest = {
   projectId: string;
   clusterId: string;
   provider: string;
   region: string;
+  awsAccountId?: string;
+  roleArn?: string;
+  externalId?: string;
+  existingVpcId?: string;
+  provisioningMode: 'new' | 'import';
+  primaryCluster: ClusterSpec;
+  additionalClusters?: ClusterSpec[];
+  platform?: PlatformIntegrationSpec;
+  pulumiStackName?: string;
+  costEstimateUsdPerHour?: number;
 };
 
 export type Job = {
