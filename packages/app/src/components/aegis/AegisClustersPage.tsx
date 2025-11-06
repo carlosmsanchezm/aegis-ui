@@ -271,9 +271,13 @@ const ClusterDetailDialog = ({
         setDetail(result);
       })
       .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message.toLowerCase() : '';
         if (
           err instanceof ApiError &&
-          (err.status === 405 || err.message.toLowerCase().includes('method not allowed'))
+          (err.status === 405 ||
+            err.status === 404 ||
+            message.includes('method not allowed') ||
+            message.includes('not found'))
         ) {
           const mock = mockClusterDetails[clusterId];
           if (mock) {
@@ -489,9 +493,13 @@ export const AegisClustersPage = () => {
     listClusters(fetchApi, discoveryApi, identityApi, authApi)
       .then((items: ClusterSummary[]) => setClusters(items))
       .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message.toLowerCase() : '';
         if (
           err instanceof ApiError &&
-          (err.status === 405 || err.message.toLowerCase().includes('method not allowed'))
+          (err.status === 405 ||
+            err.status === 404 ||
+            message.includes('method not allowed') ||
+            message.includes('not found'))
         ) {
           setClusters(mockClusterSummaries);
           setUsingMockData(true);
