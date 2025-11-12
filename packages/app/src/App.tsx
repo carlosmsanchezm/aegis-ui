@@ -93,9 +93,10 @@ const app = createApp({
   },
   components: {
     // Force Keycloak SSO with automatic redirect to eliminate guest fallback paths.
-    SignInPage: props => (
-      <SignInPage {...props} auto provider={keycloakSignInProvider} />
-    ),
+    // Temporarily disabled for local development without Keycloak
+    // SignInPage: props => (
+    //   <SignInPage {...props} auto provider={keycloakSignInProvider} />
+    // ),
   },
 });
 
