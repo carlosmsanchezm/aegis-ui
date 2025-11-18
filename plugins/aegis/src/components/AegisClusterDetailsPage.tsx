@@ -327,7 +327,7 @@ export const AegisClusterDetailsPage = () => {
     if (!cluster) {
       return;
     }
-    navigate('/aegis/clusters/create', {
+    navigate('/aegis/create/clusters', {
       state: {
         projectId: cluster.projectId,
         region: cluster.region,
@@ -345,7 +345,7 @@ export const AegisClusterDetailsPage = () => {
     if (!cluster) {
       return;
     }
-    navigate('/aegis/clusters/create', {
+    navigate('/aegis/create/clusters', {
       state: { projectId: cluster.projectId, region: cluster.region, mode: 'provision' },
     });
   };

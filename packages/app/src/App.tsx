@@ -25,11 +25,11 @@ import { entityPage } from './components/catalog/EntityPage';
 import { searchPage } from './components/search/SearchPage';
 import { Root } from './components/Root';
 import {
+  AegisClusterCreatePage,
   AegisClustersPage,
   AegisDashboardPage,
   AegisPosturePage,
   AegisTelemetryPage,
-  CreateClusterPage,
   CreateProjectPage,
 } from './components/aegis';
 import { aegisDarkTheme, aegisLightTheme } from './theme';
@@ -140,6 +140,7 @@ const routes = (
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/notifications" element={<NotificationsPage />} />
     <Route path="/aegis" element={<AegisPage />} />
+    <Route path="/aegis/create/clusters" element={<AegisClusterCreatePage />} />
     <Route path="/aegis/dashboard" element={<AegisDashboardPage />} />
     <Route path="/aegis/telemetry" element={<AegisTelemetryPage />} />
     <Route path="/aegis/posture" element={<AegisPosturePage />} />
@@ -160,10 +161,6 @@ const routes = (
     <Route
       path="/aegis/workspaces/create"
       element={<AegisCreateWorkspacePage />}
-    />
-    <Route
-      path="/aegis/clusters/create"
-      element={<CreateClusterPage />}
     />
     <Route
       path="/aegis/finops/cost-dashboard"
