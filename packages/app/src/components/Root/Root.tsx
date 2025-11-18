@@ -180,12 +180,8 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
           <SidebarDivider />
 
           <NavSection label="Create" icon={<AddCircleOutlineIcon />}>
-            <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspace" />
-            <SidebarItem
-              icon={CloudQueueIcon}
-              to="aegis/clusters/create"
-              text="Cluster from profile"
-            />
+            <SidebarItem icon={BuildIcon} to="aegis/create/clusters" text="Clusters" />
+            <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspaces" />
           </NavSection>
 
           <SidebarDivider />
