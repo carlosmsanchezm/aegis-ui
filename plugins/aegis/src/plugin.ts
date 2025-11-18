@@ -22,8 +22,9 @@ import {
   policyManagementRouteRef,
   userManagementRouteRef,
   auditLogRouteRef,
-  createClusterRouteRef,
   createProjectRouteRef,
+  clusterProfilesRouteRef,
+  iacConnectorsRouteRef,
 } from './routes';
 
 export const aegisPlugin = createPlugin({
@@ -81,17 +82,6 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
         m => m.LaunchWorkspacePage,
       ),
     mountPoint: createWorkspaceRouteRef,
-  }),
-);
-
-export const AegisCreateClusterPage = aegisPlugin.provide(
-  createRoutableExtension({
-    name: 'AegisCreateClusterPage',
-    component: () =>
-      import('./components/CreateClusterPage').then(
-        m => m.CreateClusterPage,
-      ),
-    mountPoint: createClusterRouteRef,
   }),
 );
 
@@ -246,5 +236,27 @@ export const AegisAuditLogPage = aegisPlugin.provide(
         m => m.AegisAuditLogPage,
       ),
     mountPoint: auditLogRouteRef,
+  }),
+);
+
+export const AegisClusterProfilesAdminPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisClusterProfilesAdminPage',
+    component: () =>
+      import('./components/admin/ClusterProfilesAdminPage').then(
+        m => m.ClusterProfilesAdminPage,
+      ),
+    mountPoint: clusterProfilesRouteRef,
+  }),
+);
+
+export const AegisIaCConnectorsAdminPage = aegisPlugin.provide(
+  createRoutableExtension({
+    name: 'AegisIaCConnectorsAdminPage',
+    component: () =>
+      import('./components/admin/IaCConnectorsAdminPage').then(
+        m => m.IaCConnectorsAdminPage,
+      ),
+    mountPoint: iacConnectorsRouteRef,
   }),
 );
