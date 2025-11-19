@@ -38,7 +38,7 @@ export const AegisPage = aegisPlugin.provide(
   createRoutableExtension({
     name: 'AegisPage',
     component: () =>
-      import('./components/SubmitWorkloadPage').then(m => m.SubmitWorkloadPage),
+      import('./components/SubmitWorkloadPage').then(m => m.SubmitWorkloadPage as any),
     mountPoint: rootRouteRef,
   }),
 );
@@ -47,8 +47,8 @@ export const AegisWorkloadListPage = aegisPlugin.provide(
   createRoutableExtension({
     name: 'AegisWorkloadListPage',
     component: () =>
-      import('./components/WorkloadListPage').then(m => m.WorkloadListPage),
-    mountPoint: workloadsRouteRef,
+      import('./components/WorkloadListPage').then(m => m.WorkloadListPage as any),
+    mountPoint: workloadsRouteRef as any,
   }),
 );
 
@@ -57,9 +57,9 @@ export const AegisWorkloadDetailsPage = aegisPlugin.provide(
     name: 'AegisWorkloadDetailsPage',
     component: () =>
       import('./components/WorkloadDetailsPage').then(
-        m => m.WorkloadDetailsPage,
+        m => m.WorkloadDetailsPage as any,
       ),
-    mountPoint: workloadDetailsRouteRef,
+    mountPoint: workloadDetailsRouteRef as any,
   }),
 );
 
@@ -68,9 +68,9 @@ export const AegisLaunchWorkspacePage = aegisPlugin.provide(
     name: 'AegisLaunchWorkspacePage',
     component: () =>
       import('./components/LaunchWorkspacePage').then(
-        m => m.LaunchWorkspacePage,
+        m => m.LaunchWorkspacePage as any,
       ),
-    mountPoint: launchWorkspaceRouteRef,
+    mountPoint: launchWorkspaceRouteRef as any,
   }),
 );
 
@@ -79,9 +79,9 @@ export const AegisCreateWorkspacePage = aegisPlugin.provide(
     name: 'AegisCreateWorkspacePage',
     component: () =>
       import('./components/LaunchWorkspacePage').then(
-        m => m.LaunchWorkspacePage,
+        m => m.LaunchWorkspacePage as any,
       ),
-    mountPoint: createWorkspaceRouteRef,
+    mountPoint: createWorkspaceRouteRef as any,
   }),
 );
 
@@ -90,9 +90,9 @@ export const AegisCreateProjectPage = aegisPlugin.provide(
     name: 'AegisCreateProjectPage',
     component: () =>
       import('./components/projects/CreateProjectPage').then(
-        m => m.CreateProjectPage,
+        m => m.CreateProjectPage as any,
       ),
-    mountPoint: createProjectRouteRef,
+    mountPoint: createProjectRouteRef as any,
   }),
 );
 
@@ -101,9 +101,9 @@ export const AegisCostAnalyticsFinOpsPage = aegisPlugin.provide(
     name: 'AegisCostAnalyticsFinOpsPage',
     component: () =>
       import('./components/AegisCostDashboardPage').then(
-        m => m.AegisCostDashboardPage,
+        m => m.AegisCostDashboardPage as any,
       ),
-    mountPoint: costDashboardRouteRef,
+    mountPoint: costDashboardRouteRef as any,
   }),
 );
 
@@ -112,9 +112,9 @@ export const AegisQuotaManagementFinOpsPage = aegisPlugin.provide(
     name: 'AegisQuotaManagementFinOpsPage',
     component: () =>
       import('./components/AegisQuotaManagementPage').then(
-        m => m.AegisQuotaManagementPage,
+        m => m.AegisQuotaManagementPage as any,
       ),
-    mountPoint: quotaManagementRouteRef,
+    mountPoint: quotaManagementRouteRef as any,
   }),
 );
 
@@ -123,9 +123,9 @@ export const AegisBillingAlertsFinOpsPage = aegisPlugin.provide(
     name: 'AegisBillingAlertsFinOpsPage',
     component: () =>
       import('./components/AegisBillingAlertsPage').then(
-        m => m.AegisBillingAlertsPage,
+        m => m.AegisBillingAlertsPage as any,
       ),
-    mountPoint: billingAlertsRouteRef,
+    mountPoint: billingAlertsRouteRef as any,
   }),
 );
 
@@ -134,9 +134,9 @@ export const AegisOpsMetricsPage = aegisPlugin.provide(
     name: 'AegisOpsMetricsPage',
     component: () =>
       import('./components/AegisOpsMetricsPage').then(
-        m => m.AegisOpsMetricsPage,
+        m => m.AegisOpsMetricsPage as any,
       ),
-    mountPoint: opsMetricsRouteRef,
+    mountPoint: opsMetricsRouteRef as any,
   }),
 );
 
@@ -145,9 +145,9 @@ export const AegisResourceDetailsPage = aegisPlugin.provide(
     name: 'AegisResourceDetailsPage',
     component: () =>
       import('./components/AegisResourceDetailsPage').then(
-        m => m.AegisResourceDetailsPage,
+        m => m.AegisResourceDetailsPage as any,
       ),
-    mountPoint: opsResourceDetailsRouteRef,
+    mountPoint: opsResourceDetailsRouteRef as any,
   }),
 );
 
@@ -156,9 +156,9 @@ export const AegisLogExplorerPage = aegisPlugin.provide(
     name: 'AegisLogExplorerPage',
     component: () =>
       import('./components/AegisLogExplorerPage').then(
-        m => m.AegisLogExplorerPage,
+        m => m.AegisLogExplorerPage as any,
       ),
-    mountPoint: opsLogExplorerRouteRef,
+    mountPoint: opsLogExplorerRouteRef as any,
   }),
 );
 
@@ -167,9 +167,9 @@ export const AegisAlertsDashboardPage = aegisPlugin.provide(
     name: 'AegisAlertsDashboardPage',
     component: () =>
       import('./components/AegisAlertsDashboardPage').then(
-        m => m.AegisAlertsDashboardPage,
+        m => m.AegisAlertsDashboardPage as any,
       ),
-    mountPoint: opsAlertsRouteRef,
+    mountPoint: opsAlertsRouteRef as any,
   }),
 );
 
@@ -178,9 +178,9 @@ export const AegisClusterConfigPage = aegisPlugin.provide(
     name: 'AegisClusterConfigPage',
     component: () =>
       import('./components/AegisClusterConfigPage').then(
-        m => m.AegisClusterConfigPage,
+        m => m.AegisClusterConfigPage as any,
       ),
-    mountPoint: opsConfigRouteRef,
+    mountPoint: opsConfigRouteRef as any,
   }),
 );
 
@@ -189,9 +189,9 @@ export const AegisCostAnalyticsPage = aegisPlugin.provide(
     name: 'AegisCostAnalyticsPage',
     component: () =>
       import('./components/AegisCostAnalyticsPage').then(
-        m => m.AegisCostAnalyticsPage,
+        m => m.AegisCostAnalyticsPage as any,
       ),
-    mountPoint: costAnalyticsRouteRef,
+    mountPoint: costAnalyticsRouteRef as any,
   }),
 );
 
@@ -200,9 +200,9 @@ export const AegisPolicyManagementPage = aegisPlugin.provide(
     name: 'AegisPolicyManagementPage',
     component: () =>
       import('./components/AegisPolicyManagementPage').then(
-        m => m.AegisPolicyManagementPage,
+        m => m.AegisPolicyManagementPage as any,
       ),
-    mountPoint: policyManagementRouteRef,
+    mountPoint: policyManagementRouteRef as any,
   }),
 );
 
@@ -211,9 +211,9 @@ export const AegisProjectManagementPage = aegisPlugin.provide(
     name: 'AegisProjectManagementPage',
     component: () =>
       import('./components/projects/ProjectManagementPage').then(
-        m => m.ProjectManagementPage,
+        m => m.ProjectManagementPage as any,
       ),
-    mountPoint: projectManagementRouteRef,
+    mountPoint: projectManagementRouteRef as any,
   }),
 );
 
@@ -222,9 +222,9 @@ export const AegisUserManagementPage = aegisPlugin.provide(
     name: 'AegisUserManagementPage',
     component: () =>
       import('./components/AegisUserManagementPage').then(
-        m => m.AegisUserManagementPage,
+        m => m.AegisUserManagementPage as any,
       ),
-    mountPoint: userManagementRouteRef,
+    mountPoint: userManagementRouteRef as any,
   }),
 );
 
@@ -233,9 +233,9 @@ export const AegisAuditLogPage = aegisPlugin.provide(
     name: 'AegisAuditLogPage',
     component: () =>
       import('./components/AegisAuditLogPage').then(
-        m => m.AegisAuditLogPage,
+        m => m.AegisAuditLogPage as any,
       ),
-    mountPoint: auditLogRouteRef,
+    mountPoint: auditLogRouteRef as any,
   }),
 );
 
@@ -244,9 +244,9 @@ export const AegisClusterProfilesAdminPage = aegisPlugin.provide(
     name: 'AegisClusterProfilesAdminPage',
     component: () =>
       import('./components/admin/ClusterProfilesAdminPage').then(
-        m => m.ClusterProfilesAdminPage,
+        m => m.ClusterProfilesAdminPage as any,
       ),
-    mountPoint: clusterProfilesRouteRef,
+    mountPoint: clusterProfilesRouteRef as any,
   }),
 );
 
@@ -255,8 +255,8 @@ export const AegisIaCConnectorsAdminPage = aegisPlugin.provide(
     name: 'AegisIaCConnectorsAdminPage',
     component: () =>
       import('./components/admin/IaCConnectorsAdminPage').then(
-        m => m.IaCConnectorsAdminPage,
+        m => m.IaCConnectorsAdminPage as any,
       ),
-    mountPoint: iacConnectorsRouteRef,
+    mountPoint: iacConnectorsRouteRef as any,
   }),
 );
