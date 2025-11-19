@@ -45,6 +45,12 @@ export type GuardrailDefinition = {
   maxBudgetPerWorkspaceUsd: number;
 };
 
+export type ProjectAwsBinding = {
+  accountId?: string;
+  roleArn?: string;
+  externalId?: string;
+};
+
 export type ProjectDefinition = {
   id: string;
   slug: string;
@@ -61,6 +67,7 @@ export type ProjectDefinition = {
   guardrails: GuardrailDefinition;
   badges?: string[];
   costAlerts?: string[];
+  aws?: ProjectAwsBinding;
 };
 
 export const projectManagementCatalog: ProjectDefinition[] = [

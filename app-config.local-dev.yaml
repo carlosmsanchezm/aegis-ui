@@ -32,7 +32,7 @@ auth:
 proxy:
   endpoints:
     '/aegis':
-      target: 'https://platform-api.localtest.me'
+      target: 'http://localhost:10080'
       changeOrigin: true
       credentials: forward
       allowedHeaders:

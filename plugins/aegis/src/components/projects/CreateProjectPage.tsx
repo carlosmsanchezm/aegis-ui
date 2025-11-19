@@ -28,7 +28,20 @@ import {
 } from '@material-ui/core';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { alertApiRef, useApi } from '@backstage/core-plugin-api';
+import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../../api/refs';
+import {
+  ApiError,
+  createProject,
+  upsertBudget,
+  upsertQueue,
+} from '../../api/aegisClient';
 import {
   ComputeProfileDefinition,
   ProjectEnvironment,
@@ -89,6 +102,18 @@ const useStyles = makeStyles(theme => ({
 
 const environments: ProjectEnvironment[] = ['dev', 'test', 'prod'];
 
+const priorityTierByEnvironment: Record<ProjectEnvironment, string> = {
+  dev: 'research',
+  test: 'research',
+  prod: 'prod',
+};
+
+const dataLevelByEnvironment: Record<ProjectEnvironment, string> = {
+  dev: 'IL4',
+  test: 'IL4',
+  prod: 'IL5',
+};
+
 const slugify = (value: string) =>
   value
     .trim()
@@ -102,12 +127,35 @@ const formatCurrency = (value: number) =>
 const defaultProfiles: ComputeProfileDefinition[] =
   projectCreationCatalog[0]?.computeProfiles ?? [];
 
+const serializeComputeProfileAnnotations = (
+  profiles: ComputeProfileDefinition[],
+): string =>
+  JSON.stringify(
+    profiles.map(profile => ({
+      id: profile.id,
+      label: profile.label,
+      queueId: profile.queueId,
+      flavorId: profile.flavor,
+      hourlyRateUsd: profile.hourlyRate,
+      region: profile.cluster.region,
+      namespace: profile.namespace,
+      storageClass: profile.storageClass,
+      networkZone: profile.networkZone,
+      badges: profile.badges,
+    })),
+  );
+
 export const CreateProjectPage: FC = () => {
   const classes = useStyles();
   const alertApi = useApi(alertApiRef);
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
   const navigate = useNavigate();
 
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     displayName: '',
     slug: '',
@@ -120,6 +168,9 @@ export const CreateProjectPage: FC = () => {
     computeProfiles: defaultProfiles.map(profile => profile.id),
     enableFips: true,
     enforceNetworkIsolation: true,
+    awsAccountId: '',
+    awsRoleArn: '',
+    awsExternalId: '',
   });
 
   const availableProfiles = useMemo(
@@ -189,7 +240,7 @@ export const CreateProjectPage: FC = () => {
       setForm(prev => ({ ...prev, [field]: checked }));
     };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.displayName.trim()) {
       setError('Provide a project name before creating the project.');
@@ -199,12 +250,105 @@ export const CreateProjectPage: FC = () => {
       setError('Project slug is required.');
       return;
     }
+    const selectedProfiles = availableProfiles.filter(profile =>
+      form.computeProfiles.includes(profile.id),
+    );
+    if (selectedProfiles.length === 0) {
+      setError('Select at least one compute profile.');
+      return;
+    }
+    const awsAccountId = form.awsAccountId.trim();
+    const awsRoleArn = form.awsRoleArn.trim();
+    const awsExternalId = form.awsExternalId.trim();
+    if (!awsAccountId || !awsRoleArn || !awsExternalId) {
+      setError('Provide the AWS account ID, IAM role ARN, and external ID for this project.');
+      return;
+    }
+    if (!/^\d{12}$/.test(awsAccountId)) {
+      setError('AWS account ID must be a 12-digit identifier.');
+      return;
+    }
+
+    const projectId = form.slug.trim();
+    const displayName = form.displayName.trim();
+    const ownerGroup = form.owners.trim() || `${projectId}-owners`;
+    const regions = Array.from(
+      new Set(selectedProfiles.map(profile => profile.cluster.region)),
+    );
+    if (regions.length === 0) {
+      regions.push('us-east-1');
+    }
+    const policy = {
+      regions,
+      dataLevel: dataLevelByEnvironment[form.environment],
+      denyEgressByDefault: form.enforceNetworkIsolation,
+    };
+    const annotations: Record<string, string> = {
+      'aegis/environment': form.environment,
+      'aegis/monthly_budget': String(form.monthlyBudget),
+      'aegis/monthly_alert_percent': String(form.monthlyAlertPercent),
+      'aegis/owners': form.owners,
+      'aegis/enable_fips': String(form.enableFips),
+      'aegis/network_isolation': String(form.enforceNetworkIsolation),
+      'aegis/compute_profiles': serializeComputeProfileAnnotations(selectedProfiles),
+      'aegis/description': 'Provisioned via Backstage',
+    };
+
+    const perQueueBudget = Math.max(
+      100,
+      Math.round(form.monthlyBudget / Math.max(selectedProfiles.length, 1)),
+    );
+    const queueDuration = form.environment === 'prod' ? 86400 : 28800;
+    const budgetPolicy = form.environment === 'prod' ? 'HARD' : 'ALERT';
+
+    setSubmitting(true);
     setError(null);
-    alertApi.post({
-      message: `Project ${form.slug} created with ${form.computeProfiles.length} compute profiles`,
-      severity: 'success',
-    });
-    navigate('/aegis/admin/projects');
+
+    try {
+      await createProject(fetchApi, discoveryApi, identityApi, authApi, {
+        id: projectId,
+        displayName,
+        ownerGroup,
+        policy,
+        annotations,
+        aws: {
+          accountId: awsAccountId,
+          roleArn: awsRoleArn,
+          externalId: awsExternalId,
+        },
+      });
+
+      for (const profile of selectedProfiles) {
+        await upsertQueue(fetchApi, discoveryApi, identityApi, authApi, {
+          name: profile.queueId,
+          projectId,
+          priorityTier: priorityTierByEnvironment[form.environment],
+          allowedFlavors: [profile.flavor],
+          defaultMaxDurationSeconds: queueDuration,
+        });
+        await upsertBudget(fetchApi, discoveryApi, identityApi, authApi, {
+          projectId,
+          queue: profile.queueId,
+          limitUsd: perQueueBudget,
+          policyMode: budgetPolicy,
+        });
+      }
+
+      alertApi.post({
+        message: `Project ${projectId} created with ${selectedProfiles.length} compute profiles`,
+        severity: 'success',
+      });
+      navigate('/aegis/admin/projects');
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : 'Unable to create project via Platform API';
+      setError(message);
+      alertApi.post({ severity: 'error', message });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -348,6 +492,45 @@ export const CreateProjectPage: FC = () => {
                     />
                   }
                   label="Enforce project network isolation"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card elevation={0} className={classes.card}>
+            <CardContent className={classes.cardContent}>
+              <Typography variant="h6" className={classes.sectionTitle}>
+                AWS deployment credentials
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                ÆGIS uses a per-project AWS account binding when launching clusters. Provide the account, IAM role ARN,
+                and external ID configured for this project&apos;s spoke account.
+              </Typography>
+              <div className={classes.gridRow}>
+                <TextField
+                  label="AWS Account ID"
+                  variant="outlined"
+                  required
+                  value={form.awsAccountId}
+                  onChange={handleTextField('awsAccountId')}
+                  inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                  helperText="12-digit AWS account where the EKS cluster will be deployed."
+                />
+                <TextField
+                  label="IAM Role ARN"
+                  variant="outlined"
+                  required
+                  value={form.awsRoleArn}
+                  onChange={handleTextField('awsRoleArn')}
+                  helperText="Cross-account role that Pulumi assumes (e.g. arn:aws:iam::123456789012:role/AegisPlatformRole)."
+                />
+                <TextField
+                  label="External ID"
+                  variant="outlined"
+                  required
+                  value={form.awsExternalId}
+                  onChange={handleTextField('awsExternalId')}
+                  helperText="External ID configured on the IAM role trust policy."
                 />
               </div>
             </CardContent>
@@ -513,8 +696,13 @@ export const CreateProjectPage: FC = () => {
             <Button variant="text" component={RouterLink} to="/aegis/admin/projects">
               Cancel
             </Button>
-            <Button color="primary" variant="contained" type="submit">
-              Create Project
+            <Button
+              color="primary"
+              variant="contained"
+              type="submit"
+              disabled={submitting}
+            >
+              {submitting ? 'Creating…' : 'Create Project'}
             </Button>
           </Box>
         </form>

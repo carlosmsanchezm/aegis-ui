@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -48,7 +48,25 @@ import {
   InfoCard,
   Page,
   Progress,
+  WarningPanel,
 } from '@backstage/core-components';
+import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../../apis';
+import {
+  ApiError,
+  Job,
+  ProjectRecord,
+  createCluster,
+  getClusterJobStatus,
+  isTerminalStatus,
+  listProjects,
+} from '../../../../../plugins/aegis/src/api/aegisClient';
 const parseLooseYaml = (input: string): Record<string, unknown> => {
   const result: Record<string, any> = {};
   const stack: { indent: number; target: Record<string, any> }[] = [
@@ -105,6 +123,8 @@ type Persona = 'platform-admin' | 'cluster-creator' | 'ml-engineer';
 type ProfileCard = {
   id: string;
   name: string;
+  version: string;
+  provider: 'aws';
   description: string;
   ilLevel: 'IL-4' | 'IL-5';
   fedramp: 'Moderate' | 'High';
@@ -118,6 +138,8 @@ const profileCards: ProfileCard[] = [
   {
     id: 'eks-gpu-train',
     name: 'Atlas GPU Training',
+    version: '1.4.0',
+    provider: 'aws',
     description: 'EKS based GPU-accelerated cluster with hardened posture.',
     ilLevel: 'IL-5',
     fedramp: 'High',
@@ -129,6 +151,8 @@ const profileCards: ProfileCard[] = [
   {
     id: 'eks-general',
     name: 'Sentinel General Purpose',
+    version: '2.0.0',
+    provider: 'aws',
     description: 'Optimized for notebooks, inference, and mixed workloads.',
     ilLevel: 'IL-4',
     fedramp: 'Moderate',
@@ -140,6 +164,8 @@ const profileCards: ProfileCard[] = [
   {
     id: 'eks-secure',
     name: 'Redshift Mission Critical',
+    version: '1.2.0',
+    provider: 'aws',
     description: 'GovCloud-only deployment with zero-trust guardrails.',
     ilLevel: 'IL-5',
     fedramp: 'High',
@@ -170,15 +196,26 @@ const schemaFields: SchemaField[] = [
     type: 'string',
     description: 'Target project within the mission space.',
     required: true,
+    defaultValue: 'mission-alpha',
+    roleVisibility: ['platform-admin', 'cluster-creator'],
+  },
+  {
+    path: 'cluster.id',
+    title: 'Cluster slug',
+    type: 'string',
+    description: 'DNS-safe identifier for ProjectInfra and Pulumi stacks.',
+    required: true,
+    defaultValue: 'atlas-train-govcloud',
     roleVisibility: ['platform-admin', 'cluster-creator'],
   },
   {
     path: 'region',
     title: 'Region',
     type: 'string',
-    enum: ['us-gov-west-1', 'us-gov-east-1'],
-    description: 'Must stay within approved compliance boundary.',
+    enum: ['us-east-1', 'us-east-2', 'us-west-1', 'us-west-2'],
+    description: 'AWS region for cluster deployment.',
     required: true,
+    defaultValue: 'us-east-1',
     roleVisibility: ['platform-admin', 'cluster-creator'],
   },
   {
@@ -237,6 +274,8 @@ const readinessChecks = [
     label: 'Cost impact within guardrails',
   },
 ];
+
+const jobStorageKey = 'aegis.cluster.job';
 
 const useStyles = makeStyles(theme => ({
   layout: {
@@ -317,8 +356,71 @@ type TimelineStep = {
   hint?: string;
 };
 
+const baseTimeline = (): TimelineStep[] => [
+  { id: 'submit', label: 'Submit spec', status: 'pending' },
+  { id: 'pulumi', label: 'Pulumi apply', status: 'pending' },
+  { id: 'ready', label: 'Cluster ready', status: 'pending' },
+];
+
+const buildTimeline = (status?: string): TimelineStep[] => {
+  const normalized = status?.toUpperCase();
+  const steps = baseTimeline().map(step => ({ ...step }));
+  switch (normalized) {
+    case 'PENDING':
+      steps[0].status = 'running';
+      break;
+    case 'RUNNING':
+      steps[0].status = 'done';
+      steps[1].status = 'running';
+      break;
+    case 'SUCCEEDED':
+      return steps.map(step => ({ ...step, status: 'done' as TimelineStep['status'] }));
+    case 'FAILED':
+      steps[0].status = steps[0].status === 'pending' ? 'done' : steps[0].status;
+      steps[1].status = 'error';
+      steps[2].status = 'error';
+      break;
+    default:
+      break;
+  }
+  return steps;
+};
+
+const sanitizeClusterId = (value: string): string => {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return slug || `cluster-${Date.now().toString(36)}`;
+};
+
+const buildProfileParameters = (
+  formState: FormState,
+): Record<string, string | number | boolean> | undefined => {
+  const params: Record<string, string | number | boolean> = {};
+  if (typeof formState['k8s.version'] === 'string' && formState['k8s.version']) {
+    params['k8s.version'] = formState['k8s.version'];
+  }
+  if (typeof formState['gpu.count'] === 'number' && !Number.isNaN(formState['gpu.count'])) {
+    params['gpu.count'] = formState['gpu.count'];
+  }
+  if (typeof formState['gpu.type'] === 'string' && formState['gpu.type']) {
+    params['gpu.type'] = formState['gpu.type'];
+  }
+  if (typeof formState['nodePool.spotAllowed'] === 'boolean') {
+    params['nodePool.spotAllowed'] = formState['nodePool.spotAllowed'];
+  }
+  return Object.keys(params).length > 0 ? params : undefined;
+};
+
 export const AegisClusterCreatePage = () => {
   const classes = useStyles();
+  const alertApi = useApi(alertApiRef);
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
   const [tab, setTab] = useState(0);
   const [persona, setPersona] = useState<Persona>('cluster-creator');
   const [activeProfileId, setActiveProfileId] = useState<string | null>(
@@ -334,7 +436,7 @@ export const AegisClusterCreatePage = () => {
     });
     return defaults;
   });
-  const [timeline, setTimeline] = useState<TimelineStep[]>([]);
+  const [timeline, setTimeline] = useState<TimelineStep[]>(() => buildTimeline());
   const [isLaunching, setIsLaunching] = useState(false);
   const [gitMode, setGitMode] = useState<'plan' | 'apply'>('plan');
   const [gitEngine, setGitEngine] = useState<'pulumi' | 'terraform'>(
@@ -350,11 +452,29 @@ export const AegisClusterCreatePage = () => {
   const [planOutput, setPlanOutput] = useState<string>('');
   const [importMethod, setImportMethod] = useState<'arn' | 'kubeconfig'>('arn');
   const [attachVerified, setAttachVerified] = useState(false);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
+  const [jobContext, setJobContext] = useState<{ projectId: string; clusterId: string } | null>(null);
+  const jobStatusNotifiedRef = useRef<string | null>(null);
+  const projectHasAwsCredentials = (project?: ProjectRecord | null) =>
+    Boolean(
+      project?.aws?.accountId &&
+        project.aws?.roleArn &&
+        project.aws?.externalId,
+    );
 
   const selectedProfile = useMemo(
     () => profileCards.find(card => card.id === activeProfileId) ?? null,
     [activeProfileId],
   );
+  const selectedProjectId = String(formState['project'] ?? '');
+  const selectedProjectRecord = useMemo(
+    () => projects.find(project => project.id === selectedProjectId) ?? null,
+    [projects, selectedProjectId],
+  );
+  const selectedProjectHasAws = projectHasAwsCredentials(selectedProjectRecord);
 
   const personaLabel = useMemo(() => {
     switch (persona) {
@@ -370,54 +490,142 @@ export const AegisClusterCreatePage = () => {
   }, [persona]);
 
   useEffect(() => {
-    if (!isLaunching) {
+    let active = true;
+    const loadProjects = async () => {
+      setLoadingProjects(true);
+      try {
+        const response = await listProjects(fetchApi, discoveryApi, identityApi, authApi);
+        if (!active) {
+          return;
+        }
+        const items = response.items ?? [];
+        setProjects(items);
+        if (items.length > 0) {
+          setFormState(prev => {
+            if (prev['project']) {
+              return prev;
+            }
+            return { ...prev, project: items[0].id };
+          });
+        }
+        setProjectError(null);
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : 'Unable to load projects from the platform API.';
+        setProjectError(message);
+      } finally {
+        if (active) {
+          setLoadingProjects(false);
+        }
+      }
+    };
+    loadProjects();
+    return () => {
+      active = false;
+    };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem(jobStorageKey);
+    if (!raw) {
       return;
     }
+    try {
+      const parsed = JSON.parse(raw) as {
+        projectId?: string;
+        clusterId?: string;
+        job?: Job;
+      };
+      if (!parsed?.job) {
+        return;
+      }
+      setJob(parsed.job);
+      if (parsed.projectId) {
+        setFormState(prev => ({ ...prev, project: prev['project'] ?? parsed.projectId }));
+      }
+      if (parsed.projectId && parsed.clusterId) {
+        setJobContext({ projectId: parsed.projectId, clusterId: parsed.clusterId });
+      }
+      setFromProfileStep(2);
+      setTimeline(buildTimeline(parsed.job.status));
+      setIsLaunching(!isTerminalStatus(parsed.job.status));
+    } catch {
+      sessionStorage.removeItem(jobStorageKey);
+    }
+  }, []);
 
-    const steps: TimelineStep[] = [
-      { id: 'spec-accepted', label: 'Spec accepted', status: 'running' },
-      { id: 'plan', label: 'Plan', status: 'pending' },
-      { id: 'apply', label: 'Apply', status: 'pending' },
-      {
-        id: 'kubeconfig',
-        label: 'Kubeconfig sync',
-        status: 'pending',
-      },
-      {
-        id: 'registration',
-        label: 'Registration with Aegis',
-        status: 'pending',
-      },
-    ];
-    setTimeline(steps);
+  useEffect(() => {
+    if (!job || !jobContext) {
+      sessionStorage.removeItem(jobStorageKey);
+      return;
+    }
+    sessionStorage.setItem(
+      jobStorageKey,
+      JSON.stringify({ projectId: jobContext.projectId, clusterId: jobContext.clusterId, job }),
+    );
+    if (isTerminalStatus(job.status)) {
+      sessionStorage.removeItem(jobStorageKey);
+      setJobContext(null);
+    }
+  }, [job, jobContext]);
 
-    const timeouts: NodeJS.Timeout[] = [];
-    steps.forEach((step, index) => {
-      const timeout = setTimeout(() => {
-        setTimeline(current =>
-          current.map(item => {
-            if (item.id === step.id) {
-              return { ...item, status: 'done' };
-            }
-            if (current[index + 1] && item.id === current[index + 1].id) {
-              return { ...item, status: 'running' };
-            }
-            return item;
-          }),
-        );
-      }, (index + 1) * 1800);
-      timeouts.push(timeout);
-    });
-
-    const finish = setTimeout(() => {
+  useEffect(() => {
+    if (!job) {
+      setTimeline(buildTimeline());
+      return;
+    }
+    setTimeline(buildTimeline(job.status));
+    if (isTerminalStatus(job.status)) {
       setIsLaunching(false);
-    }, (steps.length + 1) * 1800);
-    timeouts.push(finish);
+      if (jobStatusNotifiedRef.current !== job.status) {
+        jobStatusNotifiedRef.current = job.status;
+        if (job.status === 'SUCCEEDED') {
+          alertApi.post({
+            severity: 'success',
+            message: `Cluster job ${job.id} completed successfully`,
+          });
+        } else if (job.status === 'FAILED') {
+          alertApi.post({
+            severity: 'error',
+            message: job.error
+              ? `Cluster job ${job.id} failed: ${job.error}`
+              : `Cluster job ${job.id} failed`,
+          });
+        }
+      }
+    }
+  }, [job, alertApi]);
 
-    return () => {
-      timeouts.forEach(clearTimeout);
-    };
-  }, [isLaunching]);
+  useEffect(() => {
+    if (!job || isTerminalStatus(job.status)) {
+      return undefined;
+    }
+    const timeout = setTimeout(async () => {
+      try {
+        const response = await getClusterJobStatus(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          authApi,
+          job.id,
+        );
+        setJob(response.job);
+      } catch (error) {
+        setIsLaunching(false);
+        const message =
+          error instanceof ApiError
+            ? error.message
+            : 'Unable to refresh cluster job status';
+        alertApi.post({ severity: 'error', message });
+      }
+    }, 5000);
+    return () => clearTimeout(timeout);
+  }, [job, fetchApi, discoveryApi, identityApi, authApi, alertApi]);
 
   const readinessState = useMemo(() => {
     return readinessChecks.map(check => {
@@ -517,8 +725,75 @@ export const AegisClusterCreatePage = () => {
     );
   };
 
-  const handleLaunch = () => {
+  const handleLaunch = async () => {
+    const profile = selectedProfile;
+    if (!profile) {
+      alertApi.post({ severity: 'error', message: 'Select a cluster profile before launching.' });
+      return;
+    }
+    const projectId = String(formState['project'] ?? '').trim();
+    if (!projectId) {
+      alertApi.post({ severity: 'error', message: 'Project ID is required.' });
+      return;
+    }
+    const region = String(formState['region'] ?? '').trim();
+    if (!region) {
+      alertApi.post({ severity: 'error', message: 'Region is required.' });
+      return;
+    }
+    const clusterInput = String(formState['cluster.id'] ?? '').trim();
+    const clusterId = sanitizeClusterId(clusterInput || `${profile.id}-${Date.now().toString(36)}`);
+
+    const profileParameters = buildProfileParameters(formState);
+    const profilePayload = {
+      id: profile.id,
+      version: profile.version,
+      ...(profileParameters ? { parameters: profileParameters } : {}),
+    };
+    const launchProject = projects.find(project => project.id === projectId);
+    if (launchProject && !projectHasAwsCredentials(launchProject)) {
+      alertApi.post({
+        severity: 'error',
+        message: 'Selected project is missing AWS credentials. Update the project in the admin page before launching.',
+      });
+      return;
+    }
+
+    jobStatusNotifiedRef.current = null;
+    setJob(null);
+    setTimeline(buildTimeline());
     setIsLaunching(true);
+
+    try {
+      const response = await createCluster(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        authApi,
+        {
+          projectId,
+          clusterId,
+          provider: profile.provider,
+          region,
+          profile: profilePayload,
+        },
+      );
+      setJob(response.job);
+      setJobContext({ projectId, clusterId });
+      alertApi.post({
+        severity: 'info',
+        message: `Cluster job ${response.job.id} submitted`,
+      });
+    } catch (error) {
+      setIsLaunching(false);
+      setJobContext(null);
+      sessionStorage.removeItem(jobStorageKey);
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : 'Failed to submit cluster launch request';
+      alertApi.post({ severity: 'error', message });
+    }
   };
 
   const attachCommand =
@@ -563,6 +838,64 @@ export const AegisClusterCreatePage = () => {
               </RadioGroup>
             </FormControl>
           </Box>
+          {projectError && (
+            <WarningPanel severity="warning" title="Projects unavailable">
+              {projectError}
+            </WarningPanel>
+          )}
+          {loadingProjects && !projectError && (
+            <Typography variant="body2" color="textSecondary" style={{ marginTop: 16 }}>
+              Loading projects…
+            </Typography>
+          )}
+          {projects.length > 0 ? (
+            <FormControl variant="outlined" fullWidth style={{ marginTop: 16 }}>
+              <InputLabel id="cluster-project-select">Project</InputLabel>
+              <Select
+                labelId="cluster-project-select"
+                value={selectedProjectId}
+                onChange={event =>
+                  setFormState(prev => ({ ...prev, project: event.target.value as string }))
+                }
+                label="Project"
+              >
+                {projects.map(project => (
+                  <MenuItem key={project.id} value={project.id}>
+                    {project.displayName || project.id}
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>Choose the owning project to enforce guardrails.</FormHelperText>
+            </FormControl>
+          ) : (
+            <TextField
+              label="Project ID"
+              value={selectedProjectId}
+              onChange={event => setFormState(prev => ({ ...prev, project: event.target.value }))}
+              helperText="Enter the project slug while backend projects are unavailable."
+              variant="outlined"
+              fullWidth
+              style={{ marginTop: 16 }}
+            />
+          )}
+          {selectedProjectRecord && selectedProjectHasAws && (
+            <Box mt={2}>
+              <Typography variant="body2" color="textSecondary">
+                Deployments will assume {selectedProjectRecord.aws?.roleArn}
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                Account {selectedProjectRecord.aws?.accountId} · External ID {selectedProjectRecord.aws?.externalId}
+              </Typography>
+            </Box>
+          )}
+          {selectedProjectRecord && !selectedProjectHasAws && (
+            <Box mt={2}>
+              <WarningPanel severity="warning" title="Project missing AWS credentials">
+                Update the project in the admin portal with the AWS account ID, IAM role ARN, and external ID before launching
+                clusters.
+              </WarningPanel>
+            </Box>
+          )}
           <div className={classes.cardsGrid}>
             {profileCards.map(card => {
               const isSelected = card.id === activeProfileId;
@@ -743,7 +1076,7 @@ export const AegisClusterCreatePage = () => {
                   fontFamily: 'Source Code Pro, monospace',
                 }}
               >
-                {`profileRef: ${selectedProfile.id}@1.4.0\nregion: ${formState['region']}\nparameters:\n  gpu:\n    count: ${formState['gpu.count'] ?? '—'}\n    type: ${formState['gpu.type'] ?? 'H100'}\n  nodePool:\n    spotAllowed: ${Boolean(formState['nodePool.spotAllowed'])}\n`}
+                {`profileRef: ${selectedProfile.id}@${selectedProfile.version}\nregion: ${formState['region']}\nparameters:\n  gpu:\n    count: ${formState['gpu.count'] ?? '—'}\n    type: ${formState['gpu.type'] ?? 'H100'}\n  nodePool:\n    spotAllowed: ${Boolean(formState['nodePool.spotAllowed'])}\n`}
               </Typography>
             </InfoCard>
           </div>
@@ -753,6 +1086,9 @@ export const AegisClusterCreatePage = () => {
               color="primary"
               onClick={handleLaunch}
               startIcon={<LaunchIcon />}
+              disabled={
+                isLaunching || (!!job && !isTerminalStatus(job.status)) || !selectedProjectId
+              }
             >
               Launch
             </Button>
@@ -768,38 +1104,56 @@ export const AegisClusterCreatePage = () => {
             <Typography variant="h6" gutterBottom>
               Provisioning timeline
             </Typography>
-            {isLaunching ? (
+            {isLaunching && !job ? (
               <Progress />
             ) : (
-              <Box display="grid" style={{ gap: 16 }}>
-                {timeline.map(step => (
-                  <Paper key={step.id} className={classes.helperCard} variant="outlined">
-                    <Box display="flex" alignItems="center" justifyContent="space-between">
-                      <Box
-                        display="flex"
-                        alignItems="center"
-                        style={{ gap: 12 }}
-                      >
-                        {step.status === 'done' && <DoneIcon color="primary" />}
-                        {step.status === 'running' && <HourglassEmptyIcon color="action" />}
-                        {step.status === 'pending' && <ReplayIcon color="disabled" />}
-                        <Typography variant="subtitle1">{step.label}</Typography>
+              <>
+                <Box display="grid" style={{ gap: 16 }}>
+                  {timeline.map(step => (
+                    <Paper key={step.id} className={classes.helperCard} variant="outlined">
+                      <Box display="flex" alignItems="center" justifyContent="space-between">
+                        <Box
+                          display="flex"
+                          alignItems="center"
+                          style={{ gap: 12 }}
+                        >
+                          {step.status === 'done' && <DoneIcon color="primary" />}
+                          {step.status === 'running' && <HourglassEmptyIcon color="action" />}
+                          {step.status === 'pending' && <ReplayIcon color="disabled" />}
+                          {step.status === 'error' && <ErrorOutlineIcon color="secondary" />}
+                          <Typography variant="subtitle1">{step.label}</Typography>
+                        </Box>
+                        <Chip
+                          size="small"
+                          color={
+                            step.status === 'done'
+                              ? 'primary'
+                              : step.status === 'running'
+                              ? 'default'
+                              : step.status === 'error'
+                              ? 'secondary'
+                              : 'secondary'
+                          }
+                          label={step.status}
+                        />
                       </Box>
-                      <Chip
-                        size="small"
-                        color={
-                          step.status === 'done'
-                            ? 'primary'
-                            : step.status === 'running'
-                            ? 'default'
-                            : 'secondary'
-                        }
-                        label={step.status}
-                      />
-                    </Box>
-                  </Paper>
-                ))}
-              </Box>
+                    </Paper>
+                  ))}
+                </Box>
+                {job && (
+                  <Box mt={2} display="flex" flexDirection="column" style={{ gap: 4 }}>
+                    <Typography variant="body2" color="textSecondary">
+                      Job {job.id} · Status {job.status}
+                      {Number.isFinite(job.progress) ? ` · ${job.progress}%` : ''}
+                    </Typography>
+                    {job.error && (
+                      <Typography variant="body2" color="error">
+                        {job.error}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+              </>
             )}
           </div>
         </Box>
