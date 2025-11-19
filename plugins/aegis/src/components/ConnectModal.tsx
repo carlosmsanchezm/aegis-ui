@@ -236,7 +236,6 @@ export const ConnectModal: FC<Props> = ({
                       </Typography>
                       <CopyTextButton
                         text={session.sshConfig}
-                        tooltip="Copy SSH config"
                       />
                     </Box>
                     <Box
@@ -261,7 +260,6 @@ export const ConnectModal: FC<Props> = ({
                     <Typography variant="subtitle1">SSH command</Typography>
                     <CopyTextButton
                       text={sshCommand}
-                      tooltip="Copy SSH command"
                     />
                   </Box>
                   <Box
@@ -283,7 +281,7 @@ export const ConnectModal: FC<Props> = ({
                     justifyContent="space-between"
                   >
                     <Typography variant="subtitle1">Session token</Typography>
-                    <CopyTextButton text={session.token} tooltip="Copy token" />
+                    <CopyTextButton text={session.token} />
                   </Box>
                   <Box
                     component="pre"

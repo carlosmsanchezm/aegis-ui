@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -401,10 +401,10 @@ export const ClusterProfilesAdminPage = () => {
     setPublishing(false);
     setProfiles(prev => {
       const next = draft.isNew
-        ? [...prev, { ...draft, status: 'Published', isNew: undefined }]
+        ? [...prev, { ...draft, status: 'Published' as ClusterProfileStatus, isNew: undefined }]
         : prev.map(profile =>
             profile.id === draft.id
-              ? { ...draft, status: 'Published', isNew: undefined }
+              ? { ...draft, status: 'Published' as ClusterProfileStatus, isNew: undefined }
               : profile,
           );
       return next.sort((a, b) => a.name.localeCompare(b.name));
@@ -1025,4 +1025,3 @@ export const ClusterProfilesAdminPage = () => {
     </Page>
   );
 };
-

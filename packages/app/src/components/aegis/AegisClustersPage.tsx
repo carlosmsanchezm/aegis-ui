@@ -560,7 +560,7 @@ const ChangeSetCard = ({ changeSet }: { changeSet: ClusterChangeSet }) => {
   );
 };
 
-const applyFilters = (clusters: ClusterFleetItem[], filters: ClusterFilterState) =>
+const applyFilters = (clusters: ClusterDetail[], filters: ClusterFilterState) =>
   clusters.filter(cluster => {
     if (filters.project !== 'all' && cluster.project !== filters.project) {
       return false;
