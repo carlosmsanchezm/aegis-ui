@@ -72,11 +72,43 @@ export type CreateWorkspaceResponse = {
   workload: WorkloadDTO;
 };
 
+export type PolicyDomain = {
+  regions?: string[];
+  dataLevel?: string;
+  denyEgressByDefault?: boolean;
+};
+
+export type ProjectAwsCredentials = {
+  accountId?: string;
+  roleArn?: string;
+  externalId?: string;
+};
+
+export type ProjectRecord = {
+  id: string;
+  displayName?: string;
+  ownerGroup?: string;
+  policy?: PolicyDomain;
+  annotations?: Record<string, string>;
+  aws?: ProjectAwsCredentials;
+};
+
+export type ListProjectsResponse = {
+  items: ProjectRecord[];
+};
+
+export type ClusterProfileSelection = {
+  id: string;
+  version?: string;
+  parameters?: Record<string, string | number | boolean>;
+};
+
 export type CreateClusterRequest = {
   projectId: string;
   clusterId: string;
   provider: string;
   region: string;
+  profile?: ClusterProfileSelection;
 };
 
 export type Job = {
@@ -170,6 +202,200 @@ export const mergeWorkspaceEnv = (
   }
 
   return Object.keys(merged).length > 0 ? merged : undefined;
+};
+
+const serializeProfileParameters = (
+  params?: Record<string, string | number | boolean>,
+): Record<string, string> | undefined => {
+  if (!params) {
+    return undefined;
+  }
+  const result: Record<string, string> = {};
+  Object.entries(params).forEach(([key, value]) => {
+    const trimmedKey = key?.trim();
+    if (!trimmedKey) {
+      return;
+    }
+    if (typeof value === 'string') {
+      if (value) {
+        result[trimmedKey] = value;
+      }
+      return;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      result[trimmedKey] = String(value);
+      return;
+    }
+    if (typeof value === 'boolean') {
+      result[trimmedKey] = value ? 'true' : 'false';
+      return;
+    }
+    result[trimmedKey] = String(value ?? '');
+  });
+  return Object.keys(result).length > 0 ? result : undefined;
+};
+
+const normalizeClusterProfile = (
+  profile?: ClusterProfileSelection,
+):
+  | {
+      id: string;
+      version?: string;
+      parameters?: Record<string, string>;
+    }
+  | undefined => {
+  if (!profile) {
+    return undefined;
+  }
+  const normalized: {
+    id: string;
+    version?: string;
+    parameters?: Record<string, string>;
+  } = {
+    id: profile.id,
+  };
+  if (profile.version) {
+    normalized.version = profile.version;
+  }
+  const parameters = serializeProfileParameters(profile.parameters);
+  if (parameters) {
+    normalized.parameters = parameters;
+  }
+  return normalized;
+};
+
+export type CreateProjectInput = {
+  id: string;
+  displayName: string;
+  ownerGroup?: string;
+  policy?: PolicyDomain;
+  annotations?: Record<string, string>;
+  aws?: ProjectAwsCredentials;
+};
+
+export const createProject = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  project: CreateProjectInput,
+): Promise<ProjectRecord> => {
+  const body = {
+    project: {
+      id: project.id,
+      displayName: project.displayName,
+      ...(project.ownerGroup ? { ownerGroup: project.ownerGroup } : {}),
+      ...(project.policy ? { policy: project.policy } : {}),
+      ...(project.annotations ? { annotations: project.annotations } : {}),
+      ...(project.aws ? { aws: project.aws } : {}),
+    },
+  };
+  return restJson<typeof body, ProjectRecord>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/projects',
+    {
+      method: 'POST',
+      body,
+      requireAuth: true,
+    },
+  );
+};
+
+export const listProjects = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<ListProjectsResponse> =>
+  restJson<undefined, ListProjectsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/projects',
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+
+export type QueueInput = {
+  name: string;
+  projectId: string;
+  priorityTier?: string;
+  allowedFlavors?: string[];
+  defaultMaxDurationSeconds?: number;
+};
+
+export const upsertQueue = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  queue: QueueInput,
+): Promise<unknown> => {
+  const body = {
+    queue: {
+      name: queue.name,
+      projectId: queue.projectId,
+      ...(queue.priorityTier ? { priorityTier: queue.priorityTier } : {}),
+      ...(queue.allowedFlavors ? { allowedFlavors: queue.allowedFlavors } : {}),
+      ...(queue.defaultMaxDurationSeconds
+        ? { defaultMaxDurationSeconds: queue.defaultMaxDurationSeconds }
+        : {}),
+    },
+  };
+  return restJson<typeof body, unknown>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/queues',
+    {
+      method: 'PUT',
+      body,
+      requireAuth: true,
+    },
+  );
+};
+
+export type BudgetInput = {
+  projectId: string;
+  queue: string;
+  limitUsd: number;
+  policyMode?: string;
+};
+
+export const upsertBudget = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  budget: BudgetInput,
+): Promise<unknown> => {
+  const body = {
+    budget: {
+      projectId: budget.projectId,
+      queue: budget.queue,
+      limitUsd: budget.limitUsd,
+      ...(budget.policyMode ? { policyMode: budget.policyMode } : {}),
+    },
+  };
+  return restJson<typeof body, unknown>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/projects/${encodeURIComponent(budget.projectId)}/budgets`,
+    {
+      method: 'PUT',
+      body,
+      requireAuth: true,
+    },
+  );
 };
 
 const buildProxyUrl = async (
@@ -541,6 +767,14 @@ export const createCluster = async (
   authApi: OAuthApi | undefined,
   req: CreateClusterRequest,
 ): Promise<CreateClusterResponse> => {
+  const profilePayload = normalizeClusterProfile(req.profile);
+  const body = {
+    projectId: req.projectId,
+    clusterId: req.clusterId,
+    provider: req.provider,
+    region: req.region,
+    ...(profilePayload ? { profile: profilePayload } : {}),
+  };
   return restJson<CreateClusterRequest, CreateClusterResponse>(
     fetchApi,
     discoveryApi,
@@ -549,7 +783,7 @@ export const createCluster = async (
     '/api/v1/clusters',
     {
       method: 'POST',
-      body: req,
+      body,
       requireAuth: true,
     },
   );

@@ -1,4 +1,4 @@
-import { FC, useMemo, useState } from 'react';
+import { FC, useEffect, useMemo, useState } from 'react';
 import {
   Content,
   ContentHeader,
@@ -6,7 +6,16 @@ import {
   Page,
   StatusOK,
   StatusWarning,
+  WarningPanel,
 } from '@backstage/core-components';
+import {
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../../api/refs';
+import { ApiError, listProjects, ProjectRecord } from '../../api/aegisClient';
 import {
   Accordion,
   AccordionDetails,
@@ -184,14 +193,181 @@ const environmentCopy: Record<ProjectEnvironment, string> = {
   prod: 'Production',
 };
 
+const parseNumberAnnotation = (value: string | undefined, fallback: number): number => {
+  if (value === undefined) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const fallbackComputeProfiles = (projectId: string): ProjectDefinition['computeProfiles'] => [
+  {
+    id: `${projectId}-default`,
+    label: 'Standard GPU',
+    description: 'Queue provisioned via Backstage.',
+    hourlyRateUsd: 1.0,
+    gpu: 'Custom GPU',
+    cpu: 'n/a',
+    memory: 'n/a',
+    queueId: `${projectId}-queue`,
+    flavorId: 'custom',
+    clusters: [],
+    visibility: 'internal',
+  },
+];
+
+const parseComputeProfilesAnnotation = (
+  value: string | undefined,
+): ProjectDefinition['computeProfiles'] => {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value) as Array<{
+      id: string;
+      label?: string;
+      queueId?: string;
+      flavorId?: string;
+      hourlyRateUsd?: number;
+      badges?: string[];
+      region?: string;
+    }>;
+    return parsed.map(profile => ({
+      id: profile.id,
+      label: profile.label ?? profile.id,
+      description: 'Provisioned compute profile',
+      hourlyRateUsd: profile.hourlyRateUsd ?? 1.0,
+      gpu: profile.flavorId ?? 'GPU queue',
+      cpu: 'n/a',
+      memory: 'n/a',
+      queueId: profile.queueId ?? `${profile.id}-queue`,
+      flavorId: profile.flavorId ?? profile.id,
+      clusters: profile.region ? [profile.region] : [],
+      badges: profile.badges,
+      visibility: 'internal',
+    }));
+  } catch (err) {
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.warn('Aegis: unable to parse compute profile annotations', err);
+    }
+    return [];
+  }
+};
+
+const backendProjectToDefinition = (
+  project: ProjectRecord,
+): ProjectDefinition => {
+  const annotations = project.annotations ?? {};
+  const environment = (annotations['aegis/environment'] as ProjectEnvironment) ?? 'dev';
+  const computeProfiles = parseComputeProfilesAnnotation(annotations['aegis/compute_profiles']);
+  const awsBinding = project.aws
+    ? {
+        accountId: project.aws.accountId ?? '',
+        roleArn: project.aws.roleArn ?? '',
+        externalId: project.aws.externalId ?? '',
+      }
+    : undefined;
+  return {
+    id: project.id,
+    slug: project.id,
+    name: project.displayName || project.id,
+    environment,
+    visibility: environment === 'prod' ? 'restricted' : 'internal',
+    description: annotations['aegis/description'] ?? 'Managed via Platform API',
+    lead: annotations['aegis/owners'] || project.ownerGroup || 'Platform Team',
+    budget: {
+      monthlyLimit: parseNumberAnnotation(annotations['aegis/monthly_budget'], 7500),
+      monthlyUsed: parseNumberAnnotation(annotations['aegis/monthly_used'], 0),
+    },
+    defaultComputeProfile:
+      computeProfiles[0]?.id ?? fallbackComputeProfiles(project.id)[0].id,
+    computeProfiles:
+      computeProfiles.length > 0 ? computeProfiles : fallbackComputeProfiles(project.id),
+    dataConnections: [],
+    secretScopes: [],
+    guardrails: {
+      maxConcurrentWorkspaces: parseNumberAnnotation(
+        annotations['aegis/guardrails.max_concurrent'],
+        8,
+      ),
+      maxGpuCount: parseNumberAnnotation(annotations['aegis/guardrails.max_gpu'], 8),
+      maxBudgetPerWorkspaceUsd: parseNumberAnnotation(
+        annotations['aegis/guardrails.max_budget_per_workspace'],
+        200,
+      ),
+    },
+    badges:
+      annotations['aegis/enable_fips'] === 'true' ? ['FIPS images'] : undefined,
+    aws: awsBinding,
+  };
+};
+
 export const ProjectManagementPage: FC = () => {
   const classes = useStyles();
-  const [selectedProjectId, setSelectedProjectId] = useState(projectManagementCatalog[0]?.id ?? '');
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [dynamicProjects, setDynamicProjects] = useState<ProjectDefinition[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const selectedProject = useMemo(
-    () => projectManagementCatalog.find(project => project.id === selectedProjectId) ?? projectManagementCatalog[0],
-    [selectedProjectId],
-  );
+  const combinedProjects = useMemo(() => {
+    const merged = [...dynamicProjects];
+    projectManagementCatalog.forEach(project => {
+      if (!merged.some(item => item.id === project.id)) {
+        merged.push(project);
+      }
+    });
+    return merged;
+  }, [dynamicProjects]);
+
+  const selectedProject = useMemo(() => {
+    if (combinedProjects.length === 0) {
+      return undefined;
+    }
+    return combinedProjects.find(project => project.id === selectedProjectId) ?? combinedProjects[0];
+  }, [combinedProjects, selectedProjectId]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchProjects = async () => {
+      setLoadingProjects(true);
+      try {
+        const response = await listProjects(fetchApi, discoveryApi, identityApi, authApi);
+        if (!active) {
+          return;
+        }
+        const transformed = (response.items ?? []).map(item => backendProjectToDefinition(item));
+        setDynamicProjects(transformed);
+        setLoadError(null);
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+        const message = err instanceof ApiError ? err.message : 'Failed to load projects from Platform API';
+        setLoadError(message);
+      } finally {
+        if (active) {
+          setLoadingProjects(false);
+        }
+      }
+    };
+    fetchProjects();
+    return () => {
+      active = false;
+    };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  useEffect(() => {
+    if (combinedProjects.length === 0) {
+      return;
+    }
+    setSelectedProjectId(prev => prev || combinedProjects[0].id);
+  }, [combinedProjects]);
 
   const budgetUtilization = useMemo(() => {
     if (!selectedProject) {
@@ -208,8 +384,20 @@ export const ProjectManagementPage: FC = () => {
             Budgets, guardrails, and access policies for ÆGIS workspaces.
           </Typography>
           <HeaderLabel label="Persona" value="Project Admin" />
-          <HeaderLabel label="Budget" value={budgetCopy(selectedProject.budget)} />
+          {selectedProject && (
+            <HeaderLabel label="Budget" value={budgetCopy(selectedProject.budget)} />
+          )}
         </ContentHeader>
+        {loadError && (
+          <WarningPanel severity="warning" title="Backend projects unavailable">
+            {loadError}
+          </WarningPanel>
+        )}
+        {loadingProjects && !loadError && (
+          <Typography variant="body2" color="textSecondary">
+            Loading backend projects…
+          </Typography>
+        )}
         <div className={classes.root}>
           <Card className={classes.heroCard}>
             <Typography className={classes.heroTitle}>Project-centric controls with budget guardrails.</Typography>
@@ -240,7 +428,7 @@ export const ProjectManagementPage: FC = () => {
                   <Typography className={classes.panelTitle}>Projects</Typography>
                   <Chip
                     size="small"
-                    label={`${projectManagementCatalog.length} available`}
+                    label={`${combinedProjects.length} available`}
                     className={classes.statPill}
                     color="primary"
                   />
@@ -249,7 +437,7 @@ export const ProjectManagementPage: FC = () => {
                   Select a project to view budgets, compute access, and data guardrails.
                 </Typography>
                 <List className={classes.projectList} disablePadding>
-                  {projectManagementCatalog.map(project => (
+                  {combinedProjects.map(project => (
                     <ListItem
                       button
                       key={project.id}
@@ -317,6 +505,30 @@ export const ProjectManagementPage: FC = () => {
                       ))}
                     </div>
                   </div>
+                )}
+                <Divider />
+                <Typography variant="subtitle2">AWS deployment</Typography>
+                {selectedProject.aws && selectedProject.aws.accountId && selectedProject.aws.roleArn && selectedProject.aws.externalId ? (
+                  <div className={classes.panelMeta}>
+                    <Typography variant="body2" color="textSecondary">
+                      Account ID
+                    </Typography>
+                    <Typography variant="body1">{selectedProject.aws.accountId}</Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      Role ARN
+                    </Typography>
+                    <Typography variant="body1" style={{ wordBreak: 'break-all' }}>
+                      {selectedProject.aws.roleArn}
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      External ID
+                    </Typography>
+                    <Typography variant="body1">{selectedProject.aws.externalId}</Typography>
+                  </div>
+                ) : (
+                  <WarningPanel severity="warning" title="AWS credentials missing">
+                    Store the AWS account ID, IAM role ARN, and external ID on the project to enable cluster deployments.
+                  </WarningPanel>
                 )}
                 <Divider />
                 <Typography variant="subtitle2">Compute access</Typography>
