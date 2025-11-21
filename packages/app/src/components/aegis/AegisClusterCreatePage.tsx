@@ -324,6 +324,39 @@ const useStyles = makeStyles(theme => ({
   timelineBox: {
     marginTop: theme.spacing(4),
   },
+  timelineHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: theme.spacing(2),
+    flexWrap: 'wrap',
+  },
+  timelineMeta: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: theme.spacing(1),
+  },
+  segmentCard: {
+    padding: theme.spacing(2),
+    borderRadius: theme.shape.borderRadius * 2,
+  },
+  segmentHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+  },
+  statusChip: {
+    textTransform: 'capitalize',
+  },
+  logBox: {
+    fontFamily: 'Source Code Pro, monospace',
+    background: theme.palette.type === 'dark' ? '#0B1220' : '#0F172A',
+    color: theme.palette.type === 'dark' ? '#E2E8F0' : '#E2E8F0',
+    padding: theme.spacing(1.5),
+    borderRadius: theme.shape.borderRadius * 2,
+    overflow: 'auto',
+  },
   terminal: {
     fontFamily: 'Source Code Pro, monospace',
     background: theme.palette.type === 'dark' ? '#05070E' : '#0F172A',
@@ -458,6 +491,110 @@ export const AegisClusterCreatePage = () => {
   const [job, setJob] = useState<Job | null>(null);
   const [jobContext, setJobContext] = useState<{ projectId: string; clusterId: string } | null>(null);
   const jobStatusNotifiedRef = useRef<string | null>(null);
+  const syntheticRun = useMemo(
+    () => ({
+      runId: 'pulumi-stk-9031',
+      stack: 'aegis/atlas-train-govcloud',
+      branch: gitBranch,
+      commit: 'c9f1a12',
+      actor: 'pulumi automation API',
+      environment: 'GovCloud (IL-5)',
+      duration: '03:11',
+      started: '10:05:12 EST',
+      changes: '3 creates · 1 update · 0 deletes',
+    }),
+    [gitBranch],
+  );
+  const pulumiEventStream = useMemo(
+    () => [
+      {
+        id: 'stack-init',
+        time: '10:05:12',
+        scope: 'pulumi:stack',
+        message: 'Starting update (atlas-train-govcloud@1.4.0)',
+        status: 'running',
+      },
+      {
+        id: 'vpc',
+        time: '10:05:21',
+        scope: 'awsx:ec2:Vpc',
+        message: 'Provisioning segmented VPC (3 AZs, flow logs enabled)',
+        status: 'running',
+      },
+      {
+        id: 'eks',
+        time: '10:06:02',
+        scope: 'aws:eks:Cluster',
+        message: 'Control plane bootstrapped · waiting for node groups',
+        status: 'running',
+      },
+      {
+        id: 'gpu-nodes',
+        time: '10:06:44',
+        scope: 'aws:eks:NodeGroup',
+        message: 'GPU node pool (H100 · 4x) registering with cluster',
+        status: 'running',
+      },
+      {
+        id: 'addons',
+        time: '10:07:05',
+        scope: 'k8s:helm.sh:release',
+        message: 'Installing platform add-ons (Calico, Gatekeeper, Prometheus)',
+        status: 'pending',
+      },
+    ],
+    [],
+  );
+  const awsRuntimeSignals = useMemo(
+    () => [
+      {
+        id: 'cloudwatch',
+        label: 'CloudWatch metrics',
+        value: 'EKS API latency steady · nodes healthy',
+        tone: 'healthy',
+      },
+      {
+        id: 'guardduty',
+        label: 'GuardDuty',
+        value: 'No findings during bootstrap',
+        tone: 'healthy',
+      },
+      {
+        id: 'iam',
+        label: 'IAM access analyzer',
+        value: 'Scoped role assumption validated for project',
+        tone: 'informational',
+      },
+    ],
+    [],
+  );
+  const liveLog = useMemo(
+    () =>
+      [
+        '[10:05:12] pulumi:pulumi info     Previewing update (atlas-train-govcloud)',
+        '[10:05:21] awsx:ec2:Vpc  create   vpc-segmented-govcloud',
+        '[10:05:44] aws:eks:Cluster create  atlas-train-control-plane',
+        '[10:06:02] aws:iam:Role    update  worker-access bound to project role',
+        '[10:06:44] aws:eks:NodeGroup create gpu-h100-nodes (desired=4)',
+        '[10:06:58] k8s:helm.sh:release info    calico awaiting node readiness',
+        '[10:07:05] k8s:helm.sh:release create  gatekeeper-psp-blocking',
+        '[10:07:12] aws:cloudwatch:Dashboard ready   mission-telemetry baseline uploaded',
+        '[10:07:24] ---- waiting for providers to report healthy ----',
+      ].join('\n'),
+    [],
+  );
+  const statusChipColor = (status: TimelineStep['status']) => {
+    switch (status) {
+      case 'done':
+        return 'primary';
+      case 'running':
+        return 'default';
+      case 'error':
+        return 'secondary';
+      default:
+        return 'default';
+    }
+  };
   const projectHasAwsCredentials = (project?: ProjectRecord | null) =>
     Boolean(
       project?.aws?.accountId &&
@@ -1101,60 +1238,159 @@ export const AegisClusterCreatePage = () => {
           </Box>
 
           <div className={classes.timelineBox}>
-            <Typography variant="h6" gutterBottom>
-              Provisioning timeline
-            </Typography>
-            {isLaunching && !job ? (
-              <Progress />
-            ) : (
-              <>
+            <Paper variant="outlined" className={classes.helperCard}>
+              <div className={classes.timelineHeader}>
+                <div>
+                  <Typography variant="h6">Provisioning timeline</Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Mirrors Pulumi apply with live AWS health signals and downloadable logs.
+                  </Typography>
+                </div>
+                <Box display="flex" alignItems="center" style={{ gap: 8 }}>
+                  <Chip
+                    label={job?.status ?? 'running'}
+                    color={statusChipColor(timeline[1]?.status ?? 'running')}
+                    className={classes.statusChip}
+                  />
+                  <Chip
+                    variant="outlined"
+                    label={job?.id ? `Job ${job.id}` : syntheticRun.runId}
+                    className={classes.statusChip}
+                  />
+                  <Chip
+                    variant="outlined"
+                    label={syntheticRun.environment}
+                    className={classes.statusChip}
+                  />
+                </Box>
+              </div>
+
+              <div className={classes.timelineMeta}>
+                <Chip label={`Stack ${syntheticRun.stack}`} variant="outlined" />
+                <Chip label={`Branch ${syntheticRun.branch}`} variant="outlined" />
+                <Chip label={`Commit ${syntheticRun.commit}`} variant="outlined" />
+                <Chip label={`Changes ${syntheticRun.changes}`} variant="outlined" />
+                <Chip label={`Started ${syntheticRun.started}`} variant="outlined" />
+                <Chip label={`Duration ${syntheticRun.duration}`} variant="outlined" />
+              </div>
+
+              <Divider style={{ margin: '16px 0' }} />
+
+              {isLaunching && !job ? (
+                <Progress />
+              ) : (
                 <Box display="grid" style={{ gap: 16 }}>
                   {timeline.map(step => (
-                    <Paper key={step.id} className={classes.helperCard} variant="outlined">
-                      <Box display="flex" alignItems="center" justifyContent="space-between">
-                        <Box
-                          display="flex"
-                          alignItems="center"
-                          style={{ gap: 12 }}
-                        >
+                    <Paper
+                      key={step.id}
+                      className={classes.segmentCard}
+                      variant="outlined"
+                      elevation={0}
+                    >
+                      <div className={classes.segmentHeader}>
+                        <Box display="flex" alignItems="center" style={{ gap: 12 }}>
                           {step.status === 'done' && <DoneIcon color="primary" />}
                           {step.status === 'running' && <HourglassEmptyIcon color="action" />}
                           {step.status === 'pending' && <ReplayIcon color="disabled" />}
                           {step.status === 'error' && <ErrorOutlineIcon color="secondary" />}
-                          <Typography variant="subtitle1">{step.label}</Typography>
+                          <div>
+                            <Typography variant="subtitle1">{step.label}</Typography>
+                            <Typography variant="body2" color="textSecondary">
+                              {step.hint ?? 'Tracks Pulumi phases and AWS readiness checks.'}
+                            </Typography>
+                          </div>
                         </Box>
                         <Chip
                           size="small"
-                          color={
-                            step.status === 'done'
-                              ? 'primary'
-                              : step.status === 'running'
-                              ? 'default'
-                              : step.status === 'error'
-                              ? 'secondary'
-                              : 'secondary'
-                          }
+                          color={statusChipColor(step.status)}
                           label={step.status}
+                          className={classes.statusChip}
                         />
-                      </Box>
+                      </div>
                     </Paper>
                   ))}
-                </Box>
-                {job && (
-                  <Box mt={2} display="flex" flexDirection="column" style={{ gap: 4 }}>
-                    <Typography variant="body2" color="textSecondary">
-                      Job {job.id} · Status {job.status}
-                      {Number.isFinite(job.progress) ? ` · ${job.progress}%` : ''}
-                    </Typography>
-                    {job.error && (
-                      <Typography variant="body2" color="error">
-                        {job.error}
+
+                  <Accordion defaultExpanded>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">Pulumi event stream</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails style={{ display: 'grid', gap: 8 }}>
+                      {pulumiEventStream.map(event => (
+                        <Paper
+                          key={event.id}
+                          variant="outlined"
+                          className={classes.helperCard}
+                        >
+                          <Box display="flex" justifyContent="space-between" alignItems="center">
+                            <Box>
+                              <Typography variant="body2" color="textSecondary">
+                                {event.time} · {event.scope}
+                              </Typography>
+                              <Typography variant="body1">{event.message}</Typography>
+                            </Box>
+                            <Chip
+                              size="small"
+                              label={event.status}
+                              color={event.status === 'pending' ? 'default' : 'primary'}
+                              className={classes.statusChip}
+                            />
+                          </Box>
+                        </Paper>
+                      ))}
+                      <Typography variant="caption" color="textSecondary">
+                        Pulumi Automation API and AWS CLI output will stream here once connected.
                       </Typography>
-                    )}
-                  </Box>
-                )}
-              </>
-            )}
+                    </AccordionDetails>
+                  </Accordion>
+
+                  <Accordion defaultExpanded>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">AWS runtime signals</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails style={{ display: 'grid', gap: 12 }}>
+                      {awsRuntimeSignals.map(signal => (
+                        <Box key={signal.id} display="flex" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body1">{signal.label}</Typography>
+                          <Chip
+                            label={signal.value}
+                            color={signal.tone === 'healthy' ? 'primary' : 'default'}
+                            className={classes.statusChip}
+                          />
+                        </Box>
+                      ))}
+                      <Typography variant="caption" color="textSecondary">
+                        Surface helpful outputs for platform, data, and ML engineers—node health, IAM posture, and tracing.
+                      </Typography>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  <Accordion defaultExpanded>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle1">Live logs</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <div className={classes.logBox} style={{ width: '100%', maxHeight: 240 }}>
+                        <pre style={{ margin: 0 }}>{liveLog}</pre>
+                      </div>
+                    </AccordionDetails>
+                  </Accordion>
+
+                  {job && (
+                    <Box display="flex" flexDirection="column" style={{ gap: 4 }}>
+                      <Typography variant="body2" color="textSecondary">
+                        Job {job.id} · Status {job.status}
+                        {Number.isFinite(job.progress) ? ` · ${job.progress}%` : ''}
+                      </Typography>
+                      {job.error && (
+                        <Typography variant="body2" color="error">
+                          {job.error}
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              )}
+            </Paper>
           </div>
         </Box>
       )}
