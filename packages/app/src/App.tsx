@@ -31,6 +31,7 @@ import {
   AegisPosturePage,
   AegisTelemetryPage,
   CreateProjectPage,
+  ClusterProvisioningStatus,
 } from './components/aegis';
 import { aegisDarkTheme, aegisLightTheme } from './theme';
 
@@ -141,6 +142,7 @@ const routes = (
     <Route path="/notifications" element={<NotificationsPage />} />
     <Route path="/aegis" element={<AegisPage />} />
     <Route path="/aegis/create/clusters" element={<AegisClusterCreatePage />} />
+    <Route path="/aegis/provisioning/status" element={<ClusterProvisioningStatus />} />
     <Route path="/aegis/dashboard" element={<AegisDashboardPage />} />
     <Route path="/aegis/telemetry" element={<AegisTelemetryPage />} />
     <Route path="/aegis/posture" element={<AegisPosturePage />} />
