@@ -28,6 +28,7 @@ import LibraryBooksIcon from '@material-ui/icons/LibraryBooks';
 import LinkIcon from '@material-ui/icons/Link';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
+import { InteractiveBackground } from '../layout/InteractiveBackground';
 import {
   Settings as SidebarSettings,
   UserSettingsSignInAvatar,
@@ -174,6 +175,7 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
 
   return (
     <div className={classes.root}>
+      <InteractiveBackground />
       <SidebarPage>
         <Sidebar>
           <SidebarLogo />

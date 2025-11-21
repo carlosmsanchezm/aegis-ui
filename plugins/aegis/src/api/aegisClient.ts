@@ -130,6 +130,78 @@ export type ListWorkloadsResponse = {
   items: WorkloadDTO[];
 };
 
+export type ClusterJobCondition = {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+};
+
+export type ClusterNodePoolStatus = {
+  name: string;
+  instanceType: string;
+  desiredSize?: number;
+  actualSize?: number;
+  minSize: number;
+  maxSize: number;
+  labels?: Record<string, string>;
+  taints?: Array<{ key: string; value: string; effect: string }>;
+};
+
+export type ClusterActivityItem = {
+  id: string;
+  phase: string;
+  timestamp: string;
+  message?: string;
+  actor?: string;
+  status?: 'success' | 'warning' | 'error' | 'info';
+};
+
+export type ClusterDetail = {
+  id: string;
+  name: string;
+  projectId: string;
+  provider: string;
+  region: string;
+  phase: 'Ready' | 'Provisioning' | 'Error' | 'Degraded' | 'Upgrading' | 'Scaling';
+  createdAt: string;
+  lastSyncedAt?: string;
+  controllerCondition?: string;
+  costEstimate?: {
+    hourly: number;
+    currency?: string;
+    description?: string;
+  };
+  latestCondition?: ClusterJobCondition;
+  conditions?: ClusterJobCondition[];
+  nodePools?: ClusterNodePoolStatus[];
+  activity?: ClusterActivityItem[];
+  addons?: Array<{ id: string; name: string; type: string; version: string; status: string }>;
+  platformOverrides?: {
+    apiServer?: string;
+    metricsEndpoint?: string;
+    loggingEndpoint?: string;
+  };
+  helm?: {
+    namespace?: string;
+    chartVersion?: string;
+  };
+  kubeconfigSecrets?: Array<{
+    name: string;
+    namespace?: string;
+    description?: string;
+  }>;
+  additionalClusters?: Array<{
+    clusterId: string;
+    name?: string;
+    nodePools?: ClusterNodePoolStatus[];
+  }>;
+  account?: string;
+  assumeRoleArn?: string;
+  accountId?: string;
+};
+
 export const DEFAULT_SSH_PORT = 22;
 export const DEFAULT_VSCODE_PORT = 11111;
 
@@ -806,6 +878,24 @@ export const getClusterJobStatus = async (
       method: 'GET',
       requireAuth: true,
     },
+  );
+};
+
+export const getCluster = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  clusterId: string,
+): Promise<ClusterDetail> => {
+  return postJson<{ clusterId: string }, ClusterDetail>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    'GetCluster',
+    { clusterId },
+    { requireAuth: true },
   );
 };
 

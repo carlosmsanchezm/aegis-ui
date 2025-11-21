@@ -66,20 +66,33 @@ describe('SubmitWorkloadPage', () => {
     };
 
     const alertSpy = jest.fn();
-    const alertApi: AlertApi = { post: alertSpy };
+    const alertApi: AlertApi = {
+      post: alertSpy,
+      alert$: () => ({ subscribe: () => ({ unsubscribe: () => {} }) } as any),
+    };
     const fetchApi: FetchApi = {
       fetch: (...args) => fetch(...args),
     };
 
     const identityApi: IdentityApi = {
       async getBackstageIdentity() {
-        return { token: 'test-token', userEntityRef: 'user:default/tester' };
+        return {
+          type: 'user',
+          userEntityRef: 'user:default/tester',
+          ownershipEntityRefs: ['user:default/tester'],
+        };
       },
       async getCredentials() {
-        return { token: 'test-token', userEntityRef: 'user:default/tester' };
+        return { token: 'test-token' };
       },
       async signOut() {
         /* not needed */
+      },
+      async getProfileInfo() {
+        return {
+          email: 'tester@example.com',
+          displayName: 'Tester',
+        };
       },
     } as IdentityApi;
 

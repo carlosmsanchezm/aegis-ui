@@ -448,7 +448,6 @@ export const WorkloadDetailsPage: FC = () => {
                   <Typography variant="body2">{kubectlCmd}</Typography>
                   <CopyTextButton
                     text={kubectlCmd}
-                    tooltip="Copy kubectl describe"
                   />
                 </Box>
               </InfoCard>
