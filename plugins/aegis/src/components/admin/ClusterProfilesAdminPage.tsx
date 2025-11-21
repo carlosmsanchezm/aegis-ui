@@ -138,7 +138,7 @@ const emptyDraft = (): ProfileDraft => ({
   projects: [],
   groups: [],
   topologyDefaults: {
-    controlPlaneVersion: '1.28',
+    controlPlaneVersion: '1.34',
     nodePools: [
       {
         id: 'cpu-standard',
@@ -159,11 +159,11 @@ const emptyDraft = (): ProfileDraft => ({
   },
   addons: ['aegis-agent', 'opa-gatekeeper'],
   guardrails: ['pss-restricted', 'audit-logs'],
-  parameters: [
-    {
-      key: 'gpu.count',
-      title: 'GPU node count',
-      description: 'Requested number of GPU worker nodes',
+    parameters: [
+      {
+        key: 'gpu.count',
+        title: 'GPU node count',
+        description: 'Requested number of GPU worker nodes',
       type: 'integer',
       default: 4,
       minimum: 0,
@@ -173,17 +173,17 @@ const emptyDraft = (): ProfileDraft => ({
       editableBy: ['platform-admin', 'cluster-creator'],
       featured: true,
     },
-    {
-      key: 'k8s.version',
-      title: 'Kubernetes version',
-      type: 'enum',
-      enum: ['1.27', '1.28', '1.29'],
-      default: '1.28',
-      required: true,
-      visibility: ['platform-admin', 'cluster-creator', 'auditor'],
-      editableBy: ['platform-admin'],
-    },
-  ],
+      {
+        key: 'k8s.version',
+        title: 'Kubernetes version',
+        type: 'enum',
+        enum: ['1.34', '1.33', '1.32', '1.31', '1.30', '1.29'],
+        default: '1.34',
+        required: true,
+        visibility: ['platform-admin', 'cluster-creator', 'auditor'],
+        editableBy: ['platform-admin'],
+      },
+    ],
 });
 
 const sampleProfiles: ClusterProfile[] = [
@@ -205,7 +205,7 @@ const sampleProfiles: ClusterProfile[] = [
     projects: ['Project Aurora', 'Project Atlas'],
     groups: ['Mission Platform'],
     topologyDefaults: {
-      controlPlaneVersion: '1.28',
+      controlPlaneVersion: '1.34',
       nodePools: [
         {
           id: 'cpu-standard',
@@ -674,7 +674,51 @@ export const ClusterProfilesAdminPage = () => {
 
                 {activeStep === 1 && (
                   <div className={classes.section}>
-                    <Typography variant="h6">Node pools</Typography>
+                    <Typography variant="h6">Networking</Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          label="VPC ID"
+                          variant="outlined"
+                          fullWidth
+                          value={draft.topologyDefaults.networking.vpcId}
+                          onChange={event =>
+                            handleDraftChange('topologyDefaults', {
+                              ...draft.topologyDefaults,
+                              networking: {
+                                ...draft.topologyDefaults.networking,
+                                vpcId: event.target.value,
+                              },
+                            })
+                          }
+                          helperText="Pre-approved VPC for control plane and node groups."
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          label="Subnet IDs (comma separated)"
+                          variant="outlined"
+                          fullWidth
+                          value={draft.topologyDefaults.networking.subnets.join(', ')}
+                          onChange={event =>
+                            handleDraftChange('topologyDefaults', {
+                              ...draft.topologyDefaults,
+                              networking: {
+                                ...draft.topologyDefaults.networking,
+                                subnets: event.target.value
+                                  .split(',')
+                                  .map(item => item.trim())
+                                  .filter(Boolean),
+                              },
+                            })
+                          }
+                          helperText="Leave blank to fall back to the default VPC (unsupported AZs auto-filtered)."
+                        />
+                      </Grid>
+                    </Grid>
+                    <Typography variant="h6" style={{ marginTop: 16 }}>
+                      Node pools
+                    </Typography>
                     {draft.topologyDefaults.nodePools.map((pool, index) => (
                       <Paper key={pool.id} variant="outlined" style={{ padding: 16 }}>
                         <Grid container spacing={2}>
