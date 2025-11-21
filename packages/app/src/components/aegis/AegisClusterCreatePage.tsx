@@ -1221,7 +1221,7 @@ export const AegisClusterCreatePage = () => {
           {/* Vercel-style Provisioning UI */}
           {(isLaunching || job) && (
             <ClusterProvisioningDetails
-              clusterName={clusterId || 'aegis-gpu-accelerated-02'}
+              clusterName={jobContext?.clusterId || formState['cluster.id']?.toString() || 'aegis-gpu-accelerated-02'}
               status={job?.status === 'SUCCEEDED' ? 'Ready' : job?.status === 'FAILED' ? 'Error' : 'Building'}
               duration={job?.createdAt ?
                 `${Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 60000)}m ${Math.floor(((Date.now() - new Date(job.createdAt).getTime()) % 60000) / 1000)}s`
