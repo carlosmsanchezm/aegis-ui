@@ -5,3 +5,4 @@ export * from './AegisPosturePage';
 export * from './AegisTelemetryPage';
 export * from './CreateProjectPage';
 export * from './ClusterProvisioningStatus';
+export * from './ClusterProvisioningDetails';
