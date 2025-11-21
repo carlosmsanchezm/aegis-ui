@@ -67,6 +67,8 @@ import {
   isTerminalStatus,
   listProjects,
 } from '../../../../../plugins/aegis/src/api/aegisClient';
+import { ProvisioningTimeline } from './ProvisioningTimeline';
+
 const parseLooseYaml = (input: string): Record<string, unknown> => {
   const result: Record<string, any> = {};
   const stack: { indent: number; target: Record<string, any> }[] = [
@@ -1104,57 +1106,19 @@ export const AegisClusterCreatePage = () => {
             <Typography variant="h6" gutterBottom>
               Provisioning timeline
             </Typography>
-            {isLaunching && !job ? (
-              <Progress />
-            ) : (
-              <>
-                <Box display="grid" style={{ gap: 16 }}>
-                  {timeline.map(step => (
-                    <Paper key={step.id} className={classes.helperCard} variant="outlined">
-                      <Box display="flex" alignItems="center" justifyContent="space-between">
-                        <Box
-                          display="flex"
-                          alignItems="center"
-                          style={{ gap: 12 }}
-                        >
-                          {step.status === 'done' && <DoneIcon color="primary" />}
-                          {step.status === 'running' && <HourglassEmptyIcon color="action" />}
-                          {step.status === 'pending' && <ReplayIcon color="disabled" />}
-                          {step.status === 'error' && <ErrorOutlineIcon color="secondary" />}
-                          <Typography variant="subtitle1">{step.label}</Typography>
-                        </Box>
-                        <Chip
-                          size="small"
-                          color={
-                            step.status === 'done'
-                              ? 'primary'
-                              : step.status === 'running'
-                              ? 'default'
-                              : step.status === 'error'
-                              ? 'secondary'
-                              : 'secondary'
-                          }
-                          label={step.status}
-                        />
-                      </Box>
-                    </Paper>
-                  ))}
-                </Box>
-                {job && (
-                  <Box mt={2} display="flex" flexDirection="column" style={{ gap: 4 }}>
-                    <Typography variant="body2" color="textSecondary">
-                      Job {job.id} · Status {job.status}
-                      {Number.isFinite(job.progress) ? ` · ${job.progress}%` : ''}
-                    </Typography>
-                    {job.error && (
-                      <Typography variant="body2" color="error">
-                        {job.error}
-                      </Typography>
-                    )}
-                  </Box>
-                )}
-              </>
-            )}
+            <ProvisioningTimeline
+              status={
+                job?.status === 'SUCCEEDED'
+                  ? 'succeeded'
+                  : job?.status === 'FAILED'
+                  ? 'failed'
+                  : isLaunching || job?.status === 'RUNNING' || job?.status === 'PENDING'
+                  ? 'running'
+                  : 'pending'
+              }
+              jobId={job?.id}
+              clusterName={jobContext?.clusterId || String(formState['cluster.id'] || 'cluster-1')}
+            />
           </div>
         </Box>
       )}
