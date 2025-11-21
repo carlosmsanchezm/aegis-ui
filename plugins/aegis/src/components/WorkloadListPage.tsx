@@ -1,4 +1,4 @@
-import { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Page,
@@ -28,7 +28,6 @@ import {
   Grid,
   MenuItem,
   Select,
-  SelectChangeEvent,
   TextField,
   Typography,
 } from '@material-ui/core';
@@ -138,7 +137,7 @@ export const WorkloadListPage: FC = () => {
     setProjectId(event.target.value);
   };
 
-  const handleStatusFilter = (event: SelectChangeEvent<StatusFilter>) => {
+  const handleStatusFilter = (event: React.ChangeEvent<{ value: unknown }>) => {
     setStatusFilter(event.target.value as StatusFilter);
   };
 
@@ -217,7 +216,7 @@ export const WorkloadListPage: FC = () => {
             <Box display="flex" alignItems="center" gridGap={8}>
               <Typography variant="body2">{row.url}</Typography>
               {cmd ? (
-                <CopyTextButton text={cmd} tooltip="Copy kubectl describe" />
+                <CopyTextButton text={cmd} />
               ) : null}
             </Box>
           );

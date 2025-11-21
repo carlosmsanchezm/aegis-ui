@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Card,
@@ -35,7 +35,6 @@ import {
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import ErrorOutlineIcon from '@material-ui/icons/ErrorOutline';
 import TimelineIcon from '@material-ui/icons/Timeline';
-import AssignmentIcon from '@material-ui/icons/Assignment';
 import CloudQueueIcon from '@material-ui/icons/CloudQueue';
 import FileCopyIcon from '@material-ui/icons/FileCopy';
 import LaunchIcon from '@material-ui/icons/Launch';
@@ -88,6 +87,8 @@ const statusChipColor: Record<ClusterDetail['phase'], 'primary' | 'secondary' | 
   Provisioning: 'secondary',
   Error: 'default',
   Degraded: 'secondary',
+  Upgrading: 'default',
+  Scaling: 'default',
 };
 
 const statusIcon = (status: 'success' | 'warning' | 'error') => {
@@ -123,7 +124,6 @@ const buildFallbackCluster = (clusterId: string): ClusterDetail => ({
   projectId: 'mission-alpha',
   provider: 'AWS EKS',
   region: 'us-east-1',
-  mode: 'provision',
   phase: 'Provisioning',
   createdAt: new Date().toISOString(),
   lastSyncedAt: new Date().toISOString(),
