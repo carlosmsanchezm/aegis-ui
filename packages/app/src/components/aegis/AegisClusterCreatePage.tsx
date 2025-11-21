@@ -17,6 +17,7 @@ import {
   FormHelperText,
   InputAdornment,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Radio,
@@ -356,11 +357,101 @@ type TimelineStep = {
   hint?: string;
 };
 
+type TimelineMeta = {
+  personaFocus: string;
+  duration: string;
+  summary: string;
+  logStream: string;
+  checklist: string[];
+};
+
+type TimelineLogs = Record<string, Record<string, string[]>>;
+
 const baseTimeline = (): TimelineStep[] => [
   { id: 'submit', label: 'Submit spec', status: 'pending' },
   { id: 'pulumi', label: 'Pulumi apply', status: 'pending' },
   { id: 'ready', label: 'Cluster ready', status: 'pending' },
 ];
+
+const timelineMeta: Record<string, TimelineMeta> = {
+  submit: {
+    personaFocus: 'Platform & DevOps',
+    duration: '< 30s',
+    summary: 'Validating YAML, generating Pulumi stack inputs, and warming caches.',
+    logStream: 'pulumi',
+    checklist: [
+      'Schema validation complete',
+      'Credentials resolved via project role assumption',
+      'Preview run requested for approvers',
+    ],
+  },
+  pulumi: {
+    personaFocus: 'Platform, Data Science, ML/AI',
+    duration: '6-8 min',
+    summary:
+      'Provisioning EKS control plane, node groups, GPU quotas, and policy bindings using Pulumi.',
+    logStream: 'pulumi',
+    checklist: [
+      'Pulumi up streaming events',
+      'AWS service-linked roles created',
+      'Cluster OIDC + IRSA ready for notebooks',
+    ],
+  },
+  ready: {
+    personaFocus: 'All',
+    duration: '1-2 min',
+    summary: 'Health checks, GPU daemonset rollout, and notebook ingress warming.',
+    logStream: 'aws',
+    checklist: [
+      'Cluster bootstrap jobs completed',
+      'Autoscaler warm pool healthy',
+      'Ingress + certs validated',
+    ],
+  },
+};
+
+const timelineLogs: TimelineLogs = {
+  submit: {
+    pulumi: [
+      '🔎 Loading cluster spec atlas-train-govcloud…',
+      '✅ Schema validation succeeded (14 fields checked)',
+      '🔐 Assuming role arn:aws:iam::000000000000:role/aegis-platform via Pulumi provider',
+      '🧠 Persona hints: ML/AI engineers will see GPU topology overlay',
+      '📦 Cached providers pulled (aws@6.56.0)',
+    ],
+    aws: [
+      'aws sts get-caller-identity -> Account 000000000000',
+      'aws ec2 describe-instance-types --filters Name=processor-info.supported-architecture,Values=x86_64',
+    ],
+  },
+  pulumi: {
+    pulumi: [
+      '▶️ pulumi up --stack mission-alpha/atlas --non-interactive',
+      '   eks:index:NodeGroup gpu-workers created (t4g.large x3 burst A10G)',
+      '   k8s:core:Namespace notebooks configured labels=persona=ml',
+      '   helm.sh:chart:aegis-observability deployed version 1.12.3',
+      '✔️ Update duration: 5m41s • 0 failures',
+    ],
+    aws: [
+      'aws eks describe-cluster --name atlas-train-govcloud',
+      'aws cloudformation list-stack-resources --stack-name pulumi-eks-atlas',
+      'aws ec2 describe-instances --filters Name=tag:eks:nodegroup-name,Values=gpu-workers',
+    ],
+  },
+  ready: {
+    pulumi: [
+      'ℹ️ Waiting for daemonset/nvidia-device-plugin to be Ready (2/2)',
+      'ℹ️ Waiting for deployment/kube-prometheus-stack-grafana to be Available',
+      '✅ Post-create hook "seed-notebooks" finished in 48s',
+      '✅ Cluster status: Healthy • GPU quota: 4x H100 • Spot disabled',
+    ],
+    aws: [
+      'aws eks update-kubeconfig --name atlas-train-govcloud',
+      'kubectl get pods -A | head',
+      'kubectl describe ds/nvidia-device-plugin -n kube-system | grep -i ready',
+    ],
+  },
+};
 
 const buildTimeline = (status?: string): TimelineStep[] => {
   const normalized = status?.toUpperCase();
@@ -437,6 +528,10 @@ export const AegisClusterCreatePage = () => {
     return defaults;
   });
   const [timeline, setTimeline] = useState<TimelineStep[]>(() => buildTimeline());
+  const [focusedStageId, setFocusedStageId] = useState<string>('submit');
+  const [logSource, setLogSource] = useState<'pulumi' | 'aws'>(
+    timelineMeta.submit?.logStream === 'aws' ? 'aws' : 'pulumi',
+  );
   const [isLaunching, setIsLaunching] = useState(false);
   const [gitMode, setGitMode] = useState<'plan' | 'apply'>('plan');
   const [gitEngine, setGitEngine] = useState<'pulumi' | 'terraform'>(
@@ -469,7 +564,7 @@ export const AegisClusterCreatePage = () => {
     () => profileCards.find(card => card.id === activeProfileId) ?? null,
     [activeProfileId],
   );
-  const selectedProjectId = String(formState['project'] ?? '');
+  const selectedProjectId = String(formState.project ?? '');
   const selectedProjectRecord = useMemo(
     () => projects.find(project => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
@@ -502,7 +597,7 @@ export const AegisClusterCreatePage = () => {
         setProjects(items);
         if (items.length > 0) {
           setFormState(prev => {
-            if (prev['project']) {
+            if (prev.project) {
               return prev;
             }
             return { ...prev, project: items[0].id };
@@ -546,7 +641,7 @@ export const AegisClusterCreatePage = () => {
       }
       setJob(parsed.job);
       if (parsed.projectId) {
-        setFormState(prev => ({ ...prev, project: prev['project'] ?? parsed.projectId }));
+        setFormState(prev => ({ ...prev, project: prev.project ?? parsed.projectId }));
       }
       if (parsed.projectId && parsed.clusterId) {
         setJobContext({ projectId: parsed.projectId, clusterId: parsed.clusterId });
@@ -602,6 +697,18 @@ export const AegisClusterCreatePage = () => {
   }, [job, alertApi]);
 
   useEffect(() => {
+    const runningStep = timeline.find(step => step.status === 'running');
+    if (runningStep) {
+      setFocusedStageId(runningStep.id);
+      return;
+    }
+    const completed = timeline.find(step => step.status === 'done');
+    if (completed) {
+      setFocusedStageId(completed.id);
+    }
+  }, [timeline]);
+
+  useEffect(() => {
     if (!job || isTerminalStatus(job.status)) {
       return undefined;
     }
@@ -654,7 +761,7 @@ export const AegisClusterCreatePage = () => {
         };
       }
       if (check.id === 'region') {
-        const region = formState['region'];
+        const region = formState.region;
         return {
           ...check,
           status: region === 'us-gov-west-1' ? 'pass' : 'warn',
@@ -1108,37 +1215,192 @@ export const AegisClusterCreatePage = () => {
               <Progress />
             ) : (
               <>
-                <Box display="grid" style={{ gap: 16 }}>
-                  {timeline.map(step => (
-                    <Paper key={step.id} className={classes.helperCard} variant="outlined">
-                      <Box display="flex" alignItems="center" justifyContent="space-between">
-                        <Box
-                          display="flex"
-                          alignItems="center"
-                          style={{ gap: 12 }}
+                <Paper className={classes.helperCard} variant="outlined">
+                  <Box display="flex" justifyContent="space-between" alignItems="center">
+                    <div>
+                      <Typography variant="subtitle1">Live deployment view</Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        Streaming Pulumi + AWS CLI signals for platform, ML, and data science personas.
+                      </Typography>
+                    </div>
+                    <Box display="flex" alignItems="center" style={{ gap: 12 }}>
+                      <FormControl variant="outlined" size="small">
+                        <InputLabel id="timeline-stage-label">Stage</InputLabel>
+                        <Select
+                          labelId="timeline-stage-label"
+                          label="Stage"
+                          value={focusedStageId}
+                          onChange={event => setFocusedStageId(String(event.target.value))}
                         >
-                          {step.status === 'done' && <DoneIcon color="primary" />}
-                          {step.status === 'running' && <HourglassEmptyIcon color="action" />}
-                          {step.status === 'pending' && <ReplayIcon color="disabled" />}
-                          {step.status === 'error' && <ErrorOutlineIcon color="secondary" />}
-                          <Typography variant="subtitle1">{step.label}</Typography>
-                        </Box>
-                        <Chip
-                          size="small"
-                          color={
-                            step.status === 'done'
-                              ? 'primary'
-                              : step.status === 'running'
-                              ? 'default'
-                              : step.status === 'error'
-                              ? 'secondary'
-                              : 'secondary'
-                          }
-                          label={step.status}
-                        />
-                      </Box>
-                    </Paper>
-                  ))}
+                          {timeline.map(step => (
+                            <MenuItem key={step.id} value={step.id}>
+                              {step.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <FormControl variant="outlined" size="small">
+                        <InputLabel id="timeline-log-source-label">Log source</InputLabel>
+                        <Select
+                          labelId="timeline-log-source-label"
+                          label="Log source"
+                          value={logSource}
+                          onChange={event => setLogSource(event.target.value as 'pulumi' | 'aws')}
+                        >
+                          <MenuItem value="pulumi">Pulumi events</MenuItem>
+                          <MenuItem value="aws">AWS CLI / kubectl</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Box>
+                  </Box>
+                  <Box
+                    mt={2}
+                    display="grid"
+                    gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+                    style={{ gap: 12 }}
+                  >
+                    <InfoCard title="Job status" subheader="Synthetic preview">
+                      <Typography variant="body1" color="textPrimary">
+                        {job ? job.status : 'Not started'}
+                        {Number.isFinite(job?.progress)
+                          ? ` • ${job?.progress ?? 0}%`
+                          : ''}
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        Pulumi stack: mission-alpha/atlas · git: {gitBranch}
+                      </Typography>
+                    </InfoCard>
+                    <InfoCard title="Runtime focus" subheader="Persona-aware">
+                      <Typography variant="body1" color="textPrimary">
+                        {timelineMeta[focusedStageId]?.personaFocus ?? 'All'}
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        {timelineMeta[focusedStageId]?.summary ?? 'Stage details'}
+                      </Typography>
+                    </InfoCard>
+                    <InfoCard title="Elapsed" subheader="Synthetic data">
+                      <Typography variant="h6" component="div">
+                        {timelineMeta[focusedStageId]?.duration ?? '—'}
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        GPU-aware warmup and ingress checks included.
+                      </Typography>
+                    </InfoCard>
+                  </Box>
+                </Paper>
+
+                <Box display="grid" style={{ gap: 12 }}>
+                  {timeline.map(step => {
+                    const meta = timelineMeta[step.id];
+                    const logs = timelineLogs[step.id]?.[logSource] ?? [];
+                    const progressValue =
+                      step.status === 'done'
+                        ? 100
+                        : step.status === 'running'
+                        ? 68
+                        : step.status === 'pending'
+                        ? 12
+                        : 100;
+                    const isFocused = focusedStageId === step.id;
+                    return (
+                      <Accordion
+                        key={step.id}
+                        expanded={isFocused}
+                        onChange={() => setFocusedStageId(step.id)}
+                      >
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Box
+                            display="flex"
+                            alignItems="center"
+                            justifyContent="space-between"
+                            width="100%"
+                          >
+                            <Box display="flex" alignItems="center" style={{ gap: 12 }}>
+                              {step.status === 'done' && <DoneIcon color="primary" />}
+                              {step.status === 'running' && <HourglassEmptyIcon color="action" />}
+                              {step.status === 'pending' && <ReplayIcon color="disabled" />}
+                              {step.status === 'error' && <ErrorOutlineIcon color="secondary" />}
+                              <div>
+                                <Typography variant="subtitle1">{step.label}</Typography>
+                                {meta && (
+                                  <Typography variant="body2" color="textSecondary">
+                                    {meta.summary}
+                                  </Typography>
+                                )}
+                              </div>
+                            </Box>
+                            <Box display="flex" alignItems="center" style={{ gap: 8 }}>
+                              {meta?.duration && (
+                                <Chip size="small" label={`ETA ${meta.duration}`} />
+                              )}
+                              <Chip
+                                size="small"
+                                color={
+                                  step.status === 'done'
+                                    ? 'primary'
+                                    : step.status === 'running'
+                                    ? 'default'
+                                    : step.status === 'error'
+                                    ? 'secondary'
+                                    : 'secondary'
+                                }
+                                label={step.status}
+                              />
+                            </Box>
+                          </Box>
+                        </AccordionSummary>
+                        <AccordionDetails style={{ display: 'grid', gap: 12 }}>
+                          <Box display="grid" gridTemplateColumns="2fr 1fr" style={{ gap: 16 }}>
+                            <div>
+                              <Typography variant="body2" color="textSecondary">
+                                {meta?.personaFocus}
+                              </Typography>
+                              <Box mt={1}>
+                                <LinearProgress
+                                  variant={progressValue === 100 ? 'determinate' : 'determinate'}
+                                  value={progressValue}
+                                />
+                              </Box>
+                              <Box mt={1} display="flex" flexWrap="wrap" style={{ gap: 8 }}>
+                                {(meta?.checklist ?? []).map(item => (
+                                  <Chip key={item} size="small" label={item} />
+                                ))}
+                              </Box>
+                            </div>
+                            <Box>
+                              <Typography variant="body2" color="textSecondary">
+                                Artifacts
+                              </Typography>
+                              <Typography variant="body2">
+                                Pulumi stack: mission-alpha/{sanitizeClusterId(String(formState.name ?? 'atlas'))}
+                              </Typography>
+                              <Typography variant="body2">
+                                AWS region: {formState.region} · GPUs: {formState['gpu.count'] ?? 'N/A'} {String(formState['gpu.type'] ?? 'H100')}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <div>
+                            <Typography variant="subtitle2" gutterBottom>
+                              {logSource === 'pulumi' ? 'Pulumi stream' : 'AWS / kubectl stream'} · Stage {step.label}
+                            </Typography>
+                            <div className={classes.terminal}>
+                              {logs.length > 0 ? (
+                                <Typography variant="body2" component="div">
+                                  {logs.map(line => (
+                                    <div key={line}>{line}</div>
+                                  ))}
+                                </Typography>
+                              ) : (
+                                <Typography variant="body2" color="textSecondary">
+                                  No synthetic logs available for this source.
+                                </Typography>
+                              )}
+                            </div>
+                          </div>
+                        </AccordionDetails>
+                      </Accordion>
+                    );
+                  })}
                 </Box>
                 {job && (
                   <Box mt={2} display="flex" flexDirection="column" style={{ gap: 4 }}>
