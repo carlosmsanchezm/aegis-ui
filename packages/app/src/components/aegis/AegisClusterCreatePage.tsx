@@ -38,16 +38,13 @@ import DescriptionIcon from '@material-ui/icons/Description';
 import CodeIcon from '@material-ui/icons/Code';
 import CloudDownloadIcon from '@material-ui/icons/CloudDownload';
 import DoneIcon from '@material-ui/icons/Done';
-import HourglassEmptyIcon from '@material-ui/icons/HourglassEmpty';
 import ErrorOutlineIcon from '@material-ui/icons/ErrorOutline';
-import ReplayIcon from '@material-ui/icons/Replay';
 import LaunchIcon from '@material-ui/icons/Launch';
 import {
   Content,
   ContentHeader,
   InfoCard,
   Page,
-  Progress,
   WarningPanel,
 } from '@backstage/core-components';
 import {
@@ -66,7 +63,9 @@ import {
   getClusterJobStatus,
   isTerminalStatus,
   listProjects,
-} from '../../../../../plugins/aegis/src/api/aegisClient';
+} from '@internal/plugin-aegis/src/api/aegisClient';
+import { DeploymentTimeline, DeploymentStep } from './DeploymentTimeline';
+
 const parseLooseYaml = (input: string): Record<string, unknown> => {
   const result: Record<string, any> = {};
   const stack: { indent: number; target: Record<string, any> }[] = [
@@ -349,40 +348,103 @@ const useStyles = makeStyles(theme => ({
 
 type FormState = Record<string, string | number | boolean>;
 
-type TimelineStep = {
-  id: string;
-  label: string;
-  status: 'pending' | 'running' | 'done' | 'error';
-  hint?: string;
-};
+// --- Synthetic Data Generator for Vercel-like Timeline ---
 
-const baseTimeline = (): TimelineStep[] => [
-  { id: 'submit', label: 'Submit spec', status: 'pending' },
-  { id: 'pulumi', label: 'Pulumi apply', status: 'pending' },
-  { id: 'ready', label: 'Cluster ready', status: 'pending' },
-];
+const generateSyntheticTimeline = (status?: string): DeploymentStep[] => {
+  const normalized = status?.toUpperCase() ?? 'PENDING';
+  const now = Date.now();
 
-const buildTimeline = (status?: string): TimelineStep[] => {
-  const normalized = status?.toUpperCase();
-  const steps = baseTimeline().map(step => ({ ...step }));
-  switch (normalized) {
-    case 'PENDING':
-      steps[0].status = 'running';
-      break;
-    case 'RUNNING':
-      steps[0].status = 'done';
-      steps[1].status = 'running';
-      break;
-    case 'SUCCEEDED':
-      return steps.map(step => ({ ...step, status: 'done' as TimelineStep['status'] }));
-    case 'FAILED':
-      steps[0].status = steps[0].status === 'pending' ? 'done' : steps[0].status;
-      steps[1].status = 'error';
-      steps[2].status = 'error';
-      break;
-    default:
-      break;
+  // Define base structure
+  const steps: DeploymentStep[] = [
+    {
+      id: 'init',
+      label: 'Initializing Deployment',
+      status: 'pending',
+      duration: '1s',
+      logs: [
+        { timestamp: now - 10000, message: 'Fetching cluster profile configuration...', level: 'info' },
+        { timestamp: now - 9000, message: 'Validating AWS credentials for account 123456789012...', level: 'info' },
+        { timestamp: now - 8000, message: 'Credentials validated successfully.', level: 'info' },
+        { timestamp: now - 7500, message: 'Preparing Pulumi environment...', level: 'info' },
+      ],
+    },
+    {
+      id: 'infra',
+      label: 'Infrastructure Provisioning (Pulumi)',
+      status: 'pending',
+      duration: '45s',
+      logs: [
+         { timestamp: now - 7000, message: 'pulumi up -y --stack organization/dev/cluster-1', level: 'info' },
+         { timestamp: now - 6500, message: 'Previewing update (dev):', level: 'info' },
+         { timestamp: now - 6000, message: '     Type                 Name             Plan', level: 'info' },
+         { timestamp: now - 5900, message: ' +   pulumi:pulumi:Stack  cluster-1-dev    create', level: 'info' },
+         { timestamp: now - 5800, message: ' +   aws:ec2:Vpc          main-vpc         create', level: 'info' },
+         { timestamp: now - 5700, message: ' +   aws:eks:Cluster      primary-cluster  create', level: 'info' },
+         { timestamp: now - 5000, message: 'aws:ec2:Vpc (main-vpc): Creating...', level: 'info' },
+         { timestamp: now - 4000, message: 'aws:ec2:Vpc (main-vpc): Creation complete (10s)', level: 'info' },
+         { timestamp: now - 3500, message: 'aws:eks:Cluster (primary-cluster): Creating...', level: 'info' },
+      ],
+    },
+    {
+      id: 'k8s',
+      label: 'Kubernetes Setup & Add-ons',
+      status: 'pending',
+      logs: [
+          { timestamp: now - 3000, message: 'Waiting for cluster readiness...', level: 'info' },
+      ],
+    },
+    {
+      id: 'check',
+      label: 'Post-Provisioning Checks',
+      status: 'pending',
+      logs: [],
+    },
+  ];
+
+  // Update statuses based on overall job status
+  if (normalized === 'PENDING' || normalized === 'RUNNING') {
+     steps[0].status = 'success';
+     steps[1].status = 'running';
+     // Simulate ongoing logs for running step
+     steps[1].logs.push({ timestamp: now, message: 'aws:eks:Cluster (primary-cluster): Still creating... (2m)', level: 'info' });
+  } else if (normalized === 'SUCCEEDED') {
+     steps.forEach(s => { s.status = 'success'; });
+     // Fill in logs for completed steps
+     steps[1].status = 'success';
+     steps[1].duration = '5m 23s';
+     steps[1].logs.push(
+         { timestamp: now - 10000, message: 'aws:eks:Cluster (primary-cluster): Creation complete (5m)', level: 'info' },
+         { timestamp: now - 9000, message: 'Resources: \n    + 15 created', level: 'info' }
+     );
+
+     steps[2].status = 'success';
+     steps[2].duration = '45s';
+     steps[2].logs = [
+         { timestamp: now - 8000, message: 'Connecting to cluster endpoint...', level: 'info' },
+         { timestamp: now - 7500, message: 'Installing VPC CNI add-on...', level: 'info' },
+         { timestamp: now - 7000, message: 'Installing CoreDNS...', level: 'info' },
+         { timestamp: now - 6500, message: 'Installing kube-proxy...', level: 'info' },
+         { timestamp: now - 6000, message: 'Deploying Aegis Agent...', level: 'info' },
+         { timestamp: now - 5000, message: 'Agent connected to control plane.', level: 'info' },
+     ];
+
+     steps[3].status = 'success';
+     steps[3].duration = '12s';
+     steps[3].logs = [
+         { timestamp: now - 4000, message: 'Running connectivity tests...', level: 'info' },
+         { timestamp: now - 3000, message: 'Verifying GPU availability...', level: 'info' },
+         { timestamp: now - 2000, message: 'Checking policies compliance...', level: 'info' },
+         { timestamp: now - 1000, message: 'All checks passed.', level: 'info' },
+     ];
+
+  } else if (normalized === 'FAILED') {
+     steps[0].status = 'success';
+     steps[1].status = 'failed';
+     steps[1].logs.push({ timestamp: now, message: 'error: Resource monitor timeout', level: 'error' });
+     steps[2].status = 'canceled';
+     steps[3].status = 'canceled';
   }
+
   return steps;
 };
 
@@ -436,7 +498,7 @@ export const AegisClusterCreatePage = () => {
     });
     return defaults;
   });
-  const [timeline, setTimeline] = useState<TimelineStep[]>(() => buildTimeline());
+  const [timeline, setTimeline] = useState<DeploymentStep[]>(() => generateSyntheticTimeline());
   const [isLaunching, setIsLaunching] = useState(false);
   const [gitMode, setGitMode] = useState<'plan' | 'apply'>('plan');
   const [gitEngine, setGitEngine] = useState<'pulumi' | 'terraform'>(
@@ -469,7 +531,7 @@ export const AegisClusterCreatePage = () => {
     () => profileCards.find(card => card.id === activeProfileId) ?? null,
     [activeProfileId],
   );
-  const selectedProjectId = String(formState['project'] ?? '');
+  const selectedProjectId = String(formState.project ?? '');
   const selectedProjectRecord = useMemo(
     () => projects.find(project => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
@@ -502,7 +564,7 @@ export const AegisClusterCreatePage = () => {
         setProjects(items);
         if (items.length > 0) {
           setFormState(prev => {
-            if (prev['project']) {
+            if (prev.project) {
               return prev;
             }
             return { ...prev, project: items[0].id };
@@ -546,13 +608,13 @@ export const AegisClusterCreatePage = () => {
       }
       setJob(parsed.job);
       if (parsed.projectId) {
-        setFormState(prev => ({ ...prev, project: prev['project'] ?? parsed.projectId }));
+        setFormState(prev => ({ ...prev, project: prev.project ?? parsed.projectId }));
       }
       if (parsed.projectId && parsed.clusterId) {
         setJobContext({ projectId: parsed.projectId, clusterId: parsed.clusterId });
       }
       setFromProfileStep(2);
-      setTimeline(buildTimeline(parsed.job.status));
+      setTimeline(generateSyntheticTimeline(parsed.job.status));
       setIsLaunching(!isTerminalStatus(parsed.job.status));
     } catch {
       sessionStorage.removeItem(jobStorageKey);
@@ -576,10 +638,10 @@ export const AegisClusterCreatePage = () => {
 
   useEffect(() => {
     if (!job) {
-      setTimeline(buildTimeline());
+      setTimeline(generateSyntheticTimeline());
       return;
     }
-    setTimeline(buildTimeline(job.status));
+    setTimeline(generateSyntheticTimeline(job.status));
     if (isTerminalStatus(job.status)) {
       setIsLaunching(false);
       if (jobStatusNotifiedRef.current !== job.status) {
@@ -654,7 +716,7 @@ export const AegisClusterCreatePage = () => {
         };
       }
       if (check.id === 'region') {
-        const region = formState['region'];
+        const region = formState.region;
         return {
           ...check,
           status: region === 'us-gov-west-1' ? 'pass' : 'warn',
@@ -717,11 +779,17 @@ export const AegisClusterCreatePage = () => {
     if (yamlError) {
       return;
     }
-    setPlanOutput(prev =>
-      prev +
-      `\n--- Plan execution @ ${new Date().toLocaleTimeString()} ---\n` +
-        `• Repo: ${gitRepo}\n• Branch: ${gitBranch}\n• Path: ${gitPath}\n• Engine: ${gitEngine}\n• Mode: ${gitMode === 'plan' ? 'Plan only' : 'Plan + Apply'}\n` +
-        `→ Result: ${gitMode === 'plan' ? 'Change set pending approval' : 'Apply requires 1 approver'}\n`,
+    setPlanOutput(
+      prev =>
+        `${prev}\n--- Plan execution @ ${new Date().toLocaleTimeString()} ---\n` +
+        `• Repo: ${gitRepo}\n• Branch: ${gitBranch}\n• Path: ${gitPath}\n• Engine: ${gitEngine}\n• Mode: ${
+          gitMode === 'plan' ? 'Plan only' : 'Plan + Apply'
+        }\n` +
+        `→ Result: ${
+          gitMode === 'plan'
+            ? 'Change set pending approval'
+            : 'Apply requires 1 approver'
+        }\n`,
     );
   };
 
@@ -731,12 +799,12 @@ export const AegisClusterCreatePage = () => {
       alertApi.post({ severity: 'error', message: 'Select a cluster profile before launching.' });
       return;
     }
-    const projectId = String(formState['project'] ?? '').trim();
+    const projectId = String(formState.project ?? '').trim();
     if (!projectId) {
       alertApi.post({ severity: 'error', message: 'Project ID is required.' });
       return;
     }
-    const region = String(formState['region'] ?? '').trim();
+    const region = String(formState.region ?? '').trim();
     if (!region) {
       alertApi.post({ severity: 'error', message: 'Region is required.' });
       return;
@@ -761,7 +829,7 @@ export const AegisClusterCreatePage = () => {
 
     jobStatusNotifiedRef.current = null;
     setJob(null);
-    setTimeline(buildTimeline());
+    setTimeline(generateSyntheticTimeline('PENDING'));
     setIsLaunching(true);
 
     try {
@@ -798,6 +866,12 @@ export const AegisClusterCreatePage = () => {
 
   const attachCommand =
     'curl -fsSL https://aegis.run/install-agent | sudo PROFILE=atlas-gpu bash -s -- --verify-hash';
+
+  const getDeploymentStatus = (status?: string) => {
+    if (status === 'SUCCEEDED') return 'Ready';
+    if (status === 'FAILED') return 'Error';
+    return 'Building';
+  };
 
   const renderFromProfile = () => (
     <Box>
@@ -1076,7 +1150,7 @@ export const AegisClusterCreatePage = () => {
                   fontFamily: 'Source Code Pro, monospace',
                 }}
               >
-                {`profileRef: ${selectedProfile.id}@${selectedProfile.version}\nregion: ${formState['region']}\nparameters:\n  gpu:\n    count: ${formState['gpu.count'] ?? '—'}\n    type: ${formState['gpu.type'] ?? 'H100'}\n  nodePool:\n    spotAllowed: ${Boolean(formState['nodePool.spotAllowed'])}\n`}
+                {`profileRef: ${selectedProfile.id}@${selectedProfile.version}\nregion: ${formState.region}\nparameters:\n  gpu:\n    count: ${formState['gpu.count'] ?? '—'}\n    type: ${formState['gpu.type'] ?? 'H100'}\n  nodePool:\n    spotAllowed: ${Boolean(formState['nodePool.spotAllowed'])}\n`}
               </Typography>
             </InfoCard>
           </div>
@@ -1100,62 +1174,18 @@ export const AegisClusterCreatePage = () => {
             </Button>
           </Box>
 
-          <div className={classes.timelineBox}>
-            <Typography variant="h6" gutterBottom>
-              Provisioning timeline
-            </Typography>
-            {isLaunching && !job ? (
-              <Progress />
-            ) : (
-              <>
-                <Box display="grid" style={{ gap: 16 }}>
-                  {timeline.map(step => (
-                    <Paper key={step.id} className={classes.helperCard} variant="outlined">
-                      <Box display="flex" alignItems="center" justifyContent="space-between">
-                        <Box
-                          display="flex"
-                          alignItems="center"
-                          style={{ gap: 12 }}
-                        >
-                          {step.status === 'done' && <DoneIcon color="primary" />}
-                          {step.status === 'running' && <HourglassEmptyIcon color="action" />}
-                          {step.status === 'pending' && <ReplayIcon color="disabled" />}
-                          {step.status === 'error' && <ErrorOutlineIcon color="secondary" />}
-                          <Typography variant="subtitle1">{step.label}</Typography>
-                        </Box>
-                        <Chip
-                          size="small"
-                          color={
-                            step.status === 'done'
-                              ? 'primary'
-                              : step.status === 'running'
-                              ? 'default'
-                              : step.status === 'error'
-                              ? 'secondary'
-                              : 'secondary'
-                          }
-                          label={step.status}
-                        />
-                      </Box>
-                    </Paper>
-                  ))}
-                </Box>
-                {job && (
-                  <Box mt={2} display="flex" flexDirection="column" style={{ gap: 4 }}>
-                    <Typography variant="body2" color="textSecondary">
-                      Job {job.id} · Status {job.status}
-                      {Number.isFinite(job.progress) ? ` · ${job.progress}%` : ''}
-                    </Typography>
-                    {job.error && (
-                      <Typography variant="body2" color="error">
-                        {job.error}
-                      </Typography>
-                    )}
-                  </Box>
-                )}
-              </>
-            )}
-          </div>
+          {/* Vercel-like Deployment Timeline */}
+          {isLaunching && (
+            <div className={classes.timelineBox}>
+              <DeploymentTimeline
+                steps={timeline}
+                status={getDeploymentStatus(job?.status)}
+                totalDuration={
+                  job?.status === 'SUCCEEDED' ? '6m 20s' : undefined
+                }
+              />
+            </div>
+          )}
         </Box>
       )}
 
