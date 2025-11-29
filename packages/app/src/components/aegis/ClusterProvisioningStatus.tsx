@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -11,6 +12,7 @@ import {
   LinearProgress,
   Button,
   Tooltip,
+  CircularProgress,
 } from '@material-ui/core';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
@@ -18,6 +20,14 @@ import ErrorIcon from '@material-ui/icons/Error';
 import RadioButtonUncheckedIcon from '@material-ui/icons/RadioButtonUnchecked';
 import LaunchIcon from '@material-ui/icons/Launch';
 import FileCopyIcon from '@material-ui/icons/FileCopy';
+import ArrowBackIcon from '@material-ui/icons/ArrowBack';
+import { useApi, fetchApiRef, discoveryApiRef, identityApiRef } from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../../apis';
+import {
+  Job,
+  getClusterJobStatus,
+  isTerminalStatus,
+} from '../../../../../plugins/aegis/src/api/aegisClient';
 
 // --- TYPES & MOCK DATA ---
 
@@ -192,53 +202,161 @@ const StatusIcon = ({ status }: { status: ProvisioningStep['status'] }) => {
 
 export const ClusterProvisioningStatus = () => {
   const classes = useStyles();
+  const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
 
-  // Synthetic State
-  const [steps, setSteps] = useState<ProvisioningStep[]>([
-    {
-      id: 'init',
-      label: 'Initialization',
-      description: 'Pulumi login & Stack selection',
-      status: 'success',
-      duration: '4s',
-      logs: [
-        { timestamp: '14:01:55', level: 'info', message: 'Logged in to aegis-backend as user: carlos' },
-        { timestamp: '14:01:56', level: 'info', message: 'Selected stack: aegis-gpu-cluster-dev' },
-      ]
-    },
-    {
-      id: 'infra',
-      label: 'Network Infrastructure',
-      description: 'VPC, Subnets, Route Tables, Security Groups',
-      status: 'success',
-      duration: '18s',
-      logs: SYNTHETIC_LOGS_INFRA
-    },
-    {
-      id: 'compute',
-      label: 'Compute Resources',
-      description: 'EKS Control Plane & GPU Node Groups (g5.4xlarge)',
-      status: 'loading', // Currently running
-      logs: SYNTHETIC_LOGS_COMPUTE
-    },
-    {
-      id: 'software',
-      label: 'Cluster Software',
-      description: 'Nvidia Drivers, ArgoCD, JupyterHub',
-      status: 'idle', // Waiting
-      logs: []
-    },
-    {
-      id: 'final',
-      label: 'Finalization',
-      description: 'Output variables & Access keys',
-      status: 'idle',
-      logs: []
+  // API hooks
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
+
+  // State
+  const [job, setJob] = useState<Job | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [steps, setSteps] = useState<ProvisioningStep[]>([]);
+  const [expanded, setExpanded] = useState<string | false>(false);
+
+  // Fetch job data
+  useEffect(() => {
+    if (!jobId) {
+      setError('No job ID provided');
+      setLoading(false);
+      return;
     }
-  ]);
 
-  // Auto-expand the currently loading step
-  const [expanded, setExpanded] = useState<string | false>('compute');
+    const fetchJobData = async () => {
+      try {
+        const response = await getClusterJobStatus(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          authApi,
+          jobId,
+        );
+        setJob(response.job);
+        setError(null);
+      } catch (err: any) {
+        setError(err?.message || 'Failed to fetch job status');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchJobData();
+  }, [jobId, fetchApi, discoveryApi, identityApi, authApi]);
+
+  // Poll for updates
+  useEffect(() => {
+    if (!job || !jobId || isTerminalStatus(job.status)) {
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const response = await getClusterJobStatus(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          authApi,
+          jobId,
+        );
+        setJob(response.job);
+      } catch (err: any) {
+        console.error('Failed to poll job status:', err);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(intervalId);
+  }, [job, jobId, fetchApi, discoveryApi, identityApi, authApi]);
+
+  // Map job data to steps
+  useEffect(() => {
+    if (!job) {
+      return;
+    }
+
+    const jobStatus = job.status?.toUpperCase();
+    const progressPercent = job.progress || 0;
+
+    // Calculate which step should be active based on progress
+    const getStepStatus = (stepIndex: number, totalSteps: number): ProvisioningStep['status'] => {
+      const stepProgress = (stepIndex / totalSteps) * 100;
+
+      if (jobStatus === 'FAILED') {
+        return stepProgress <= progressPercent ? 'error' : 'idle';
+      }
+      if (jobStatus === 'SUCCEEDED') {
+        return 'success';
+      }
+      if (progressPercent > stepProgress + (100 / totalSteps)) {
+        return 'success';
+      }
+      if (progressPercent >= stepProgress) {
+        return 'loading';
+      }
+      return 'idle';
+    };
+
+    const totalSteps = 5;
+    const baseSteps: ProvisioningStep[] = [
+      {
+        id: 'init',
+        label: 'Initialization',
+        description: 'Job submission & validation',
+        status: getStepStatus(0, totalSteps),
+        duration: progressPercent > 20 ? '2s' : undefined,
+        logs: [
+          { timestamp: new Date().toLocaleTimeString(), level: 'info', message: `Job ${job.id} created` },
+          { timestamp: new Date().toLocaleTimeString(), level: 'info', message: 'Validating cluster configuration' },
+        ]
+      },
+      {
+        id: 'infra',
+        label: 'Infrastructure Provisioning',
+        description: 'VPC, Subnets, Security Groups',
+        status: getStepStatus(1, totalSteps),
+        duration: progressPercent > 40 ? '18s' : undefined,
+        logs: progressPercent >= 20 ? SYNTHETIC_LOGS_INFRA : [],
+      },
+      {
+        id: 'compute',
+        label: 'Compute Resources',
+        description: 'EKS Control Plane & Node Groups',
+        status: getStepStatus(2, totalSteps),
+        duration: progressPercent > 60 ? '45s' : undefined,
+        logs: progressPercent >= 40 ? SYNTHETIC_LOGS_COMPUTE : [],
+      },
+      {
+        id: 'software',
+        label: 'Cluster Software',
+        description: 'Add-ons and configurations',
+        status: getStepStatus(3, totalSteps),
+        duration: progressPercent > 80 ? '22s' : undefined,
+        logs: progressPercent >= 60 ? SYNTHETIC_LOGS_SOFTWARE : [],
+      },
+      {
+        id: 'final',
+        label: 'Finalization',
+        description: 'Output variables & health checks',
+        status: getStepStatus(4, totalSteps),
+        duration: progressPercent === 100 ? '8s' : undefined,
+        logs: progressPercent >= 80 ? [
+          { timestamp: new Date().toLocaleTimeString(), level: 'info', message: 'Generating kubeconfig' },
+          { timestamp: new Date().toLocaleTimeString(), level: 'info', message: 'Cluster provisioning complete' },
+        ] : [],
+      }
+    ];
+
+    setSteps(baseSteps);
+
+    // Auto-expand the currently running step
+    const activeStep = baseSteps.find(s => s.status === 'loading');
+    if (activeStep) {
+      setExpanded(activeStep.id);
+    }
+  }, [job]);
 
   const handleChange = (panel: string) => (_event: React.ChangeEvent<{}>, isExpanded: boolean) => {
     setExpanded(isExpanded ? panel : false);
@@ -253,32 +371,91 @@ export const ClusterProvisioningStatus = () => {
     }
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className={classes.root}>
+        <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="50vh" gap={2}>
+          <CircularProgress size={48} />
+          <Typography variant="h6" color="textSecondary">
+            Loading job status...
+          </Typography>
+        </Box>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error || !job) {
+    return (
+      <div className={classes.root}>
+        <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="50vh" gap={3}>
+          <ErrorIcon style={{ fontSize: 64, color: '#EF4444' }} />
+          <Typography variant="h5" style={{ fontWeight: 600 }}>
+            {error || 'Job not found'}
+          </Typography>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate('/aegis/create/clusters')}
+          >
+            Back to Cluster Creation
+          </Button>
+        </Box>
+      </div>
+    );
+  }
+
+  const jobStatus = job.status?.toUpperCase();
+  const isRunning = jobStatus === 'PENDING' || jobStatus === 'RUNNING';
+  const isComplete = jobStatus === 'SUCCEEDED';
+  const isFailed = jobStatus === 'FAILED';
+
   return (
     <div className={classes.root}>
       {/* Header Section */}
       <div className={classes.header}>
         <div className={classes.headerTitle}>
-          <div className={classes.statusBadge} />
+          <Button
+            variant="text"
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate('/aegis/create/clusters')}
+            style={{ marginRight: 16 }}
+          >
+            Back
+          </Button>
+          {isRunning && <div className={classes.statusBadge} />}
           <div>
             <Typography variant="h5" style={{ fontWeight: 600 }}>
-              Provisioning Cluster
+              {isRunning ? 'Provisioning Cluster' : isComplete ? 'Cluster Ready' : 'Provisioning Failed'}
             </Typography>
             <Typography variant="body2" color="textSecondary">
-              Stack: <span style={{ fontFamily: 'monospace' }}>aegis-gpu-cluster-dev</span> • Commit: 729a2f3
+              Job ID: <span style={{ fontFamily: 'monospace' }}>{job.id}</span>
+              {job.progress !== undefined && (
+                <> • Progress: {job.progress}%</>
+              )}
             </Typography>
           </div>
         </div>
         <Box display="flex" gap={2}>
-            <Button variant="outlined" startIcon={<FileCopyIcon />}>
-                Copy CLI Command
+            <Button
+              variant="outlined"
+              startIcon={<FileCopyIcon />}
+              onClick={() => {
+                navigator.clipboard.writeText(window.location.href);
+              }}
+            >
+                Copy Link
             </Button>
             <Button
                 variant="contained"
                 color="primary"
-                disabled
+                disabled={!isComplete}
                 startIcon={<LaunchIcon />}
+                onClick={() => navigate('/aegis/dashboard')}
             >
-                View Cluster (Pending)
+                {isComplete ? 'View Cluster' : 'View Cluster (Pending)'}
             </Button>
         </Box>
       </div>
@@ -365,20 +542,55 @@ export const ClusterProvisioningStatus = () => {
       </Paper>
 
       {/* Contextual Info for DevOps (Footer) */}
-      <Box display="flex" justifyContent="flex-end" mt={1}>
-          <Tooltip title="Provisioned via Pulumi automation API">
+      <Box display="flex" justifyContent="space-between" alignItems="center" mt={1}>
+          <Box>
             <Chip
-                label="Provider: AWS"
+              label={`Status: ${job.status}`}
+              variant="outlined"
+              size="small"
+              style={{
+                marginRight: 8,
+                backgroundColor: isComplete ? '#10B98144' : isFailed ? '#EF444444' : '#60A5FA44',
+                color: isComplete ? '#10B981' : isFailed ? '#EF4444' : '#60A5FA',
+                borderColor: isComplete ? '#10B981' : isFailed ? '#EF4444' : '#60A5FA',
+              }}
+            />
+            {job.progress !== undefined && (
+              <Chip
+                label={`Progress: ${job.progress}%`}
                 variant="outlined"
                 size="small"
                 style={{ marginRight: 8 }}
+              />
+            )}
+            {job.error && (
+              <Chip
+                label={`Error: ${job.error}`}
+                variant="outlined"
+                size="small"
+                style={{
+                  backgroundColor: '#EF444444',
+                  color: '#EF4444',
+                  borderColor: '#EF4444',
+                }}
+              />
+            )}
+          </Box>
+          <Box>
+            <Tooltip title="Provisioned via Pulumi automation API">
+              <Chip
+                  label="Provider: AWS"
+                  variant="outlined"
+                  size="small"
+                  style={{ marginRight: 8 }}
+              />
+            </Tooltip>
+            <Chip
+              label="Region: us-east-1"
+              variant="outlined"
+              size="small"
             />
-          </Tooltip>
-          <Chip
-            label="Region: us-east-1"
-            variant="outlined"
-            size="small"
-          />
+          </Box>
       </Box>
     </div>
   );

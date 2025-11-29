@@ -142,7 +142,7 @@ const routes = (
     <Route path="/notifications" element={<NotificationsPage />} />
     <Route path="/aegis" element={<AegisPage />} />
     <Route path="/aegis/create/clusters" element={<AegisClusterCreatePage />} />
-    <Route path="/aegis/provisioning/status" element={<ClusterProvisioningStatus />} />
+    <Route path="/aegis/provisioning/status/:jobId" element={<ClusterProvisioningStatus />} />
     <Route path="/aegis/dashboard" element={<AegisDashboardPage />} />
     <Route path="/aegis/telemetry" element={<AegisTelemetryPage />} />
     <Route path="/aegis/posture" element={<AegisPosturePage />} />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Accordion,
   AccordionDetails,
@@ -535,6 +536,7 @@ const generateProvisioningStages = (jobStatus?: string): ProvisioningStage[] => 
 
 export const AegisClusterCreatePage = () => {
   const classes = useStyles();
+  const navigate = useNavigate();
   const alertApi = useApi(alertApiRef);
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
@@ -901,8 +903,13 @@ export const AegisClusterCreatePage = () => {
       setJobContext({ projectId, clusterId });
       alertApi.post({
         severity: 'info',
-        message: `Cluster job ${response.job.id} submitted`,
+        message: `Cluster job ${response.job.id} submitted - redirecting to status page...`,
       });
+
+      // Navigate to standalone status page
+      setTimeout(() => {
+        navigate(`/aegis/provisioning/status/${response.job.id}`);
+      }, 1000); // Small delay to show the alert
     } catch (error) {
       setIsLaunching(false);
       setJobContext(null);
@@ -1219,40 +1226,8 @@ export const AegisClusterCreatePage = () => {
             </Button>
           </Box>
 
-          {/* Vercel-style Provisioning UI */}
-          {(isLaunching || job) && (
-            <ClusterProvisioningDetails
-              clusterName={jobContext?.clusterId || formState['cluster.id']?.toString() || 'aegis-gpu-accelerated-02'}
-              status={job?.status === 'SUCCEEDED' ? 'Ready' : job?.status === 'FAILED' ? 'Error' : 'Building'}
-              duration={job?.createdAt ?
-                `${Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 60000)}m ${Math.floor(((Date.now() - new Date(job.createdAt).getTime()) % 60000) / 1000)}s`
-                : '0m 5s'}
-              initiatedBy="ml.engineer@aegis.com"
-              environment="Development"
-              region="AWS (us-east-1)"
-              commitHash="f8a9c2d"
-              commitMessage="chore: update EKS version and add A100 node group"
-              branch="main"
-              k8sVersion={formState['cluster.k8sVersion']?.toString() || '1.29'}
-              primaryGpuNodes="p4d.24xlarge (8x A100 GPUs)"
-              secondaryGpuNodes="p3.8xlarge (4x V100 GPUs)"
-              totalNodeCount={10}
-              autoscaling={true}
-              logs={generateProvisioningLogs(job?.status)}
-              stages={generateProvisioningStages(job?.status)}
-              onViewPulumiConsole={() => {
-                window.open('https://app.pulumi.com', '_blank');
-              }}
-              onConnectToCluster={() => {
-                if (job?.status === 'SUCCEEDED') {
-                  alertApi.post({
-                    message: 'Cluster connection instructions will be displayed here',
-                    severity: 'info',
-                  });
-                }
-              }}
-            />
-          )}
+          {/* Inline provisioning UI removed - now redirects to standalone page */}
+          {/* Users will be redirected to /aegis/provisioning/status/:jobId after launch */}
         </Box>
       )}
 
