@@ -6,3 +6,4 @@ export * from './AegisTelemetryPage';
 export * from './CreateProjectPage';
 export * from './ClusterProvisioningStatus';
 export * from './ClusterProvisioningDetails';
+export * from './ClusterProvisioningDetailsPage';

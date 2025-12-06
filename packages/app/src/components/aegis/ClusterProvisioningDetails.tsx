@@ -11,6 +11,7 @@ import {
   TextField,
   Chip,
   CircularProgress,
+  LinearProgress,
 } from '@material-ui/core';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
@@ -64,6 +65,8 @@ export interface ClusterProvisioningDetailsProps {
   autoscaling: boolean;
   logs: LogEntry[];
   stages: ProvisioningStage[];
+  progress?: number;
+  jobError?: string | null;
   onViewPulumiConsole?: () => void;
   onConnectToCluster?: () => void;
 }
@@ -91,8 +94,9 @@ const useStyles = makeStyles(theme => ({
   },
   mainGrid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 2fr',
+    gridTemplateColumns: 'minmax(320px, 1fr) minmax(0, 2fr)',
     gap: theme.spacing(4),
+    alignItems: 'start',
     [theme.breakpoints.down('md')]: {
       gridTemplateColumns: '1fr',
     },
@@ -104,6 +108,12 @@ const useStyles = makeStyles(theme => ({
     display: 'flex',
     flexDirection: 'column',
     gap: theme.spacing(3),
+    zIndex: 1,
+    [theme.breakpoints.down('md')]: {
+      position: 'static',
+      top: 'auto',
+      zIndex: 'auto',
+    },
   },
   card: {
     backgroundColor: '#111111',
@@ -251,6 +261,29 @@ const useStyles = makeStyles(theme => ({
       borderColor: '#60A5FA',
     },
   },
+  progressWrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    minWidth: 160,
+  },
+  progressBar: {
+    width: 140,
+    backgroundColor: '#1f2937',
+    '& .MuiLinearProgress-barColorPrimary': {
+      backgroundColor: '#60A5FA',
+    },
+  },
+  errorText: {
+    color: '#F87171',
+    fontWeight: 500,
+    textAlign: 'right',
+    maxWidth: '65%',
+  },
+  logPlaceholder: {
+    color: '#9CA3AF',
+    display: 'block',
+  },
 }));
 
 // --- COMPONENT ---
@@ -272,6 +305,8 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
   autoscaling,
   logs,
   stages,
+  progress,
+  jobError,
   onViewPulumiConsole,
   onConnectToCluster,
 }) => {
@@ -403,6 +438,19 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
                 <span className={classes.detailLabel}>Duration</span>
                 <span className={classes.detailValue}>{duration}</span>
               </div>
+              {typeof progress === 'number' && !Number.isNaN(progress) && (
+                <div className={classes.detailRow}>
+                  <span className={classes.detailLabel}>Progress</span>
+                  <div className={classes.progressWrapper}>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(100, Math.max(0, progress))}
+                      className={classes.progressBar}
+                    />
+                    <span className={classes.detailValue}>{Math.round(progress)}%</span>
+                  </div>
+                </div>
+              )}
               <div className={classes.detailRow}>
                 <span className={classes.detailLabel}>Initiated By</span>
                 <span className={classes.detailValue}>{initiatedBy}</span>
@@ -419,6 +467,12 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
                 <span className={classes.detailLabel}>Cloud/Region</span>
                 <span className={classes.detailValue}>{region}</span>
               </div>
+              {jobError && (
+                <div className={classes.detailRow} style={{ alignItems: 'flex-start' }}>
+                  <span className={classes.detailLabel}>Error</span>
+                  <span className={classes.errorText}>{jobError}</span>
+                </div>
+              )}
               <Box mt={2} pt={2} style={{ borderTop: '1px solid #333333' }}>
                 <Typography variant="caption" style={{ color: '#9CA3AF', marginBottom: 8, display: 'block' }}>
                   Source
@@ -500,12 +554,18 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
               </div>
             </div>
             <div className={classes.logConsole} ref={logConsoleRef}>
-              {logs.map((log, index) => (
-                <span key={index} className={classes.logLine}>
-                  <span className={classes.logTimestamp}>{log.timestamp}</span>
-                  <span className={getLogStyle(log.level)}>{log.message}</span>
-                </span>
-              ))}
+              {logs.length === 0 ? (
+                <Typography variant="caption" className={classes.logPlaceholder}>
+                  Awaiting live updates from the control plane. Status and errors will appear here as they arrive.
+                </Typography>
+              ) : (
+                logs.map((log, index) => (
+                  <span key={index} className={classes.logLine}>
+                    <span className={classes.logTimestamp}>{log.timestamp}</span>
+                    <span className={getLogStyle(log.level)}>{log.message}</span>
+                  </span>
+                ))
+              )}
             </div>
           </Box>
 

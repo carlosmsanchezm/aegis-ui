@@ -5,6 +5,13 @@ backend:
   auth:
     keys:
       - secret: dev-secret
+    externalAccess:
+      - type: jwks
+        options:
+          url: https://keycloak.aegis-platform.tech/realms/aegis/protocol/openid-connect/certs
+          issuer: https://keycloak.aegis-platform.tech/realms/aegis
+          audience: backstage
+          subjectPrefix: 'keycloak:'
 
 auth:
   session:
@@ -18,8 +25,8 @@ auth:
       development:
         clientId: backstage
         clientSecret: local-backstage-client-secret
-        issuer: https://keycloak.localtest.me/realms/aegis
-        metadataUrl: https://keycloak.localtest.me/realms/aegis/.well-known/openid-configuration
+        issuer: https://keycloak.aegis-platform.tech/realms/aegis
+        metadataUrl: https://keycloak.aegis-platform.tech/realms/aegis/.well-known/openid-configuration
         additionalScopes:
           - offline_access
         callbackUrl: http://localhost:7008/api/auth/keycloak/handler/frame
