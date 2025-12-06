@@ -44,6 +44,7 @@ import {
 import { makeStyles } from '@material-ui/core/styles';
 import { alpha } from '@material-ui/core/styles/colorManipulator';
 import { StepIconProps } from '@material-ui/core/StepIcon';
+import { Autocomplete } from '@material-ui/lab';
 import CheckRoundedIcon from '@material-ui/icons/CheckRounded';
 import CodeIcon from '@material-ui/icons/Code';
 import DescriptionIcon from '@material-ui/icons/Description';
@@ -52,8 +53,11 @@ import StorageIcon from '@material-ui/icons/Storage';
 import MemoryIcon from '@material-ui/icons/Memory';
 import TimelineIcon from '@material-ui/icons/Timeline';
 import {
+  ApiError,
   AuthenticationError,
   AuthorizationError,
+  listProjects,
+  ProjectRecord,
   CreateWorkspaceRequest,
   createWorkspace,
 } from '../api/aegisClient';
@@ -98,6 +102,14 @@ type FlavorOption = {
   description: string;
   flavor: string;
   resources: string;
+};
+
+type ProjectOption = {
+  id: string;
+  name: string;
+  description?: string;
+  source: 'remote' | 'catalog';
+  visibility?: ProjectDefinition['visibility'];
 };
 
 // TODO: Replace static catalogs with workspace profiles served by the ÆGIS control plane API.
@@ -540,11 +552,13 @@ export const LaunchWorkspacePage: FC = () => {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [forceAdvancedOpen, setForceAdvancedOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [form, setForm] = useState({
     workloadId: randomId(),
-    projectId: projectCatalog[0]?.id ?? '',
-    queue:
-      projectCatalog[0]?.defaultQueue ?? projectCatalog[0]?.queues?.[0]?.id ?? '',
+    projectId: '',
+    queue: '',
     flavor: '',
     image: '',
     ports: '22',
@@ -574,14 +588,53 @@ export const LaunchWorkspacePage: FC = () => {
     [workspaceTypeId],
   );
 
-  const selectedProject = useMemo<ProjectDefinition | null>(
+  const projectOptions = useMemo<ProjectOption[]>(() => {
+    const deduped = new Map<string, ProjectOption>();
+    projects.forEach(project => {
+      if (deduped.has(project.id)) {
+        return;
+      }
+      deduped.set(project.id, {
+        id: project.id,
+        name: project.displayName || project.id,
+        description: project.displayName ? `ID: ${project.id}` : undefined,
+        source: 'remote',
+      });
+    });
+    projectCatalog.forEach(project => {
+      if (deduped.has(project.id)) {
+        return;
+      }
+      deduped.set(project.id, {
+        id: project.id,
+        name: project.name,
+        description: project.description,
+        source: 'catalog',
+        visibility: project.visibility,
+      });
+    });
+    return Array.from(deduped.values());
+  }, [projects]);
+
+  const projectOptionLookup = useMemo(() => {
+    const lookup = new Map<string, ProjectOption>();
+    projectOptions.forEach(option => lookup.set(option.id, option));
+    return lookup;
+  }, [projectOptions]);
+
+  const selectedCatalogProject = useMemo<ProjectDefinition | null>(
     () => projectCatalog.find(project => project.id === form.projectId) ?? null,
     [form.projectId],
   );
 
+  const selectedRemoteProject = useMemo<ProjectRecord | null>(
+    () => projects.find(project => project.id === form.projectId) ?? null,
+    [projects, form.projectId],
+  );
+
   const queueOptions = useMemo<QueueDefinition[]>(
-    () => selectedProject?.queues ?? [],
-    [selectedProject],
+    () => selectedCatalogProject?.queues ?? [],
+    [selectedCatalogProject],
   );
 
   const selectedQueue = useMemo<QueueDefinition | null>(
@@ -589,17 +642,95 @@ export const LaunchWorkspacePage: FC = () => {
     [queueOptions, form.queue],
   );
 
+  const selectedProjectName = useMemo(
+    () =>
+      selectedCatalogProject?.name ??
+      selectedRemoteProject?.displayName ??
+      selectedRemoteProject?.id ??
+      form.projectId,
+    [selectedCatalogProject, selectedRemoteProject, form.projectId],
+  );
+
+  const queueDisplayValue = useMemo(
+    () =>
+      selectedQueue?.name ||
+      form.queue ||
+      (selectedCatalogProject?.defaultQueue
+        ? `${selectedCatalogProject.defaultQueue} (default)`
+        : 'Project default'),
+    [selectedQueue, form.queue, selectedCatalogProject],
+  );
+
   useEffect(() => {
-    const project = projectCatalog.find(project => project.id === form.projectId);
-    if (!project) {
+    let active = true;
+    const loadProjects = async () => {
+      setLoadingProjects(true);
+      try {
+        const response = await listProjects(fetchApi, discoveryApi, identityApi, authApi);
+        if (!active) {
+          return;
+        }
+        const items = response.items ?? [];
+        setProjects(items);
+        if (items.length > 0) {
+          setForm(prev => {
+            if (prev.projectId) {
+              return prev;
+            }
+            return { ...prev, projectId: items[0].id };
+          });
+        }
+        setProjectError(null);
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : 'Unable to load projects from the control plane.';
+        setProjectError(message);
+      } finally {
+        if (active) {
+          setLoadingProjects(false);
+        }
+      }
+    };
+    loadProjects();
+    return () => {
+      active = false;
+    };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  useEffect(() => {
+    if (form.projectId) {
       return;
     }
-    const allowedQueueIds = project.queues.map(queue => queue.id);
-    const fallbackQueueId = project.defaultQueue || allowedQueueIds[0] || '';
+    if (projects.length === 0 && projectCatalog.length === 0) {
+      return;
+    }
+    const hasRemoteProjects = projects.length > 0;
+    const fallback = projects[0]?.id ?? projectCatalog[0]?.id ?? '';
+    const fallbackQueue = hasRemoteProjects
+      ? ''
+      : projectCatalog[0]?.defaultQueue ?? projectCatalog[0]?.queues?.[0]?.id ?? '';
+    setForm(prev => ({
+      ...prev,
+      projectId: fallback,
+      queue: prev.queue || fallbackQueue,
+    }));
+  }, [form.projectId, projects]);
+
+  useEffect(() => {
+    if (!selectedCatalogProject) {
+      return;
+    }
+    const allowedQueueIds = selectedCatalogProject.queues.map(queue => queue.id);
+    const fallbackQueueId = selectedCatalogProject.defaultQueue || allowedQueueIds[0] || '';
     if (!allowedQueueIds.includes(form.queue) && fallbackQueueId !== form.queue) {
       setForm(prev => ({ ...prev, queue: fallbackQueueId }));
     }
-  }, [form.projectId, form.queue]);
+  }, [selectedCatalogProject, form.queue]);
 
   const handleFormFieldChange =
     (field: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -652,11 +783,6 @@ export const LaunchWorkspacePage: FC = () => {
 
   const handleFlavorSelect = (flavor: FlavorOption) => {
     setForm(prev => ({ ...prev, flavor: flavor.flavor }));
-  };
-
-  const handleProjectSelect = (event: ChangeEvent<{ value: unknown }>) => {
-    const projectId = (event.target.value as string) ?? '';
-    setForm(prev => ({ ...prev, projectId }));
   };
 
   const handleQueueSelect = (event: ChangeEvent<{ value: unknown }>) => {
@@ -902,32 +1028,60 @@ export const LaunchWorkspacePage: FC = () => {
                     <Typography variant="overline" color="textSecondary">
                       Project context
                     </Typography>
-                    <FormControl variant="outlined" fullWidth required>
-                      <InputLabel id="launch-workspace-project">
-                        Project
-                      </InputLabel>
-                      <Select
-                        labelId="launch-workspace-project"
-                        label="Project"
+                    <div>
+                      <Autocomplete
+                        freeSolo
+                        fullWidth
+                        options={projectOptions.map(option => option.id)}
                         value={form.projectId}
-                        onChange={handleProjectSelect}
-                      >
-                        {projectCatalog.map(project => (
-                          <MenuItem key={project.id} value={project.id}>
+                        inputValue={form.projectId}
+                        onChange={(_, value) =>
+                          setForm(prev => ({ ...prev, projectId: (value ?? '').trim() }))
+                        }
+                        onInputChange={(_, value) =>
+                          setForm(prev => ({ ...prev, projectId: value ?? '' }))
+                        }
+                        getOptionLabel={option => {
+                          const meta = projectOptionLookup.get(option);
+                          return meta?.name ?? option;
+                        }}
+                        renderOption={option => {
+                          const meta = projectOptionLookup.get(option);
+                          return (
                             <div className={classes.selectMenuContent}>
-                              <Typography variant="subtitle1">{project.name}</Typography>
+                              <Typography variant="subtitle1">
+                                {meta?.name ?? option}
+                              </Typography>
                               <Typography variant="body2" color="textSecondary">
-                                {project.description}
+                                {meta?.description ??
+                                  (meta?.source === 'remote'
+                                    ? 'Discovered from control plane'
+                                    : '')}
                               </Typography>
                             </div>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      <FormHelperText>
-                        Projects now bootstrap automatically. Swap context to inherit the right
-                        visibility and budget envelope.
-                      </FormHelperText>
-                    </FormControl>
+                          );
+                        }}
+                        loading={loadingProjects}
+                        noOptionsText="Type a project ID from your environment"
+                        renderInput={params => (
+                          <TextField
+                            {...params}
+                            label="Project"
+                            variant="outlined"
+                            required
+                            helperText={
+                              loadingProjects
+                                ? 'Loading projects from the control plane...'
+                                : 'Pick a discovered project or type any project ID.'
+                            }
+                            error={Boolean(projectError)}
+                          />
+                        )}
+                      />
+                      {projectError && (
+                        <FormHelperText error>{projectError}</FormHelperText>
+                      )}
+                    </div>
                     <TextField
                       label="Workspace ID"
                       value={form.workloadId}
@@ -937,41 +1091,41 @@ export const LaunchWorkspacePage: FC = () => {
                       fullWidth
                       helperText="Identifier visible to mission operators"
                     />
-                    {selectedProject && (
+                    {selectedCatalogProject && (
                       <div className={classes.projectOverview}>
                         <div className={classes.projectHeader}>
                           <Typography variant="subtitle1" component="span">
-                            {selectedProject.name}
+                            {selectedCatalogProject.name}
                           </Typography>
                           <Chip
-                            label={visibilityCopy[selectedProject.visibility].label}
+                            label={visibilityCopy[selectedCatalogProject.visibility].label}
                             color={
-                              visibilityCopy[selectedProject.visibility].tone === 'default'
+                              visibilityCopy[selectedCatalogProject.visibility].tone === 'default'
                                 ? 'default'
-                                : visibilityCopy[selectedProject.visibility].tone
+                                : visibilityCopy[selectedCatalogProject.visibility].tone
                             }
                             size="small"
                           />
                         </div>
                         <Typography variant="body2" color="textSecondary">
-                          {selectedProject.description}
+                          {selectedCatalogProject.description}
                         </Typography>
                         <div className={classes.projectMeta}>
                           <div>
                             <div className={classes.projectMetaLabel}>Project lead</div>
-                            <div className={classes.projectMetaValue}>{selectedProject.lead}</div>
+                            <div className={classes.projectMetaValue}>{selectedCatalogProject.lead}</div>
                           </div>
                           <div>
                             <div className={classes.projectMetaLabel}>Monthly burn</div>
                             <div className={classes.projectMetaValue}>
-                              ${selectedProject.budget.monthlyUsed.toLocaleString('en-US')} / $
-                              {selectedProject.budget.monthlyLimit.toLocaleString('en-US')}
+                              ${selectedCatalogProject.budget.monthlyUsed.toLocaleString('en-US')} / $
+                              {selectedCatalogProject.budget.monthlyLimit.toLocaleString('en-US')}
                             </div>
                           </div>
                           <div>
                             <div className={classes.projectMetaLabel}>Default queue</div>
                             <div className={classes.projectMetaValue}>
-                              {selectedProject.defaultQueue}
+                              {selectedCatalogProject.defaultQueue}
                             </div>
                           </div>
                         </div>
@@ -988,6 +1142,29 @@ export const LaunchWorkspacePage: FC = () => {
                             Manage projects
                           </Button>
                         </div>
+                      </div>
+                    )}
+                    {!selectedCatalogProject && selectedRemoteProject && (
+                      <div className={classes.projectOverview}>
+                        <div className={classes.projectHeader}>
+                          <Typography variant="subtitle1" component="span">
+                            {selectedRemoteProject.displayName ?? selectedRemoteProject.id}
+                          </Typography>
+                          <Chip label="Control plane" size="small" />
+                        </div>
+                        <Typography variant="body2" color="textSecondary">
+                          Project ID: {selectedRemoteProject.id}
+                        </Typography>
+                        {selectedRemoteProject.ownerGroup && (
+                          <div className={classes.projectMeta}>
+                            <div>
+                              <div className={classes.projectMetaLabel}>Owner</div>
+                              <div className={classes.projectMetaValue}>
+                                {selectedRemoteProject.ownerGroup}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                     <Divider className={classes.sectionDivider} />
@@ -1068,10 +1245,20 @@ export const LaunchWorkspacePage: FC = () => {
                       </Select>
                       <FormHelperText>
                         {queueOptions.length === 0
-                          ? 'No queues are assigned to this project yet.'
+                          ? 'No queues are listed for this project. Enter one manually or leave blank for the project default.'
                           : 'Stay on the default queue or opt into another guardrail managed by this project.'}
                       </FormHelperText>
                     </FormControl>
+                    {queueOptions.length === 0 && (
+                      <TextField
+                        label="Execution queue (optional)"
+                        value={form.queue}
+                        onChange={handleFormFieldChange('queue')}
+                        variant="outlined"
+                        fullWidth
+                        helperText="Enter a queue ID from your project or leave blank to use its default."
+                      />
+                    )}
                     {selectedQueue && (
                       <div className={classes.queueSummaryCard}>
                         <div className={classes.queueSummaryHeader}>
@@ -1169,7 +1356,7 @@ export const LaunchWorkspacePage: FC = () => {
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Project</span>
                       <span className={classes.reviewValue}>
-                        {selectedProject?.name ?? (form.projectId || '—')}
+                        {selectedProjectName || '—'}
                       </span>
                     </div>
                   </Grid>
@@ -1209,10 +1396,7 @@ export const LaunchWorkspacePage: FC = () => {
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Queue</span>
                       <span className={classes.reviewValue}>
-                        {selectedQueue?.name ??
-                          (selectedProject?.defaultQueue
-                            ? `${selectedProject.defaultQueue} (default)`
-                            : 'Project default')}
+                        {queueDisplayValue}
                       </span>
                     </div>
                   </Grid>
