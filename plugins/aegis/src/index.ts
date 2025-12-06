@@ -22,6 +22,7 @@ export {
   AegisClusterProfilesAdminPage,
   AegisIaCConnectorsAdminPage,
 } from './plugin';
+export { keycloakAuthApiRef } from './api/refs';
 export type {
   AegisRole,
   ClusterActivityItem,
