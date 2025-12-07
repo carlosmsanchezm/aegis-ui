@@ -82,6 +82,18 @@ export const costAnalyticsRouteRef = createSubRouteRef({
   path: '/admin/analytics',
 });
 
+export const projectManagementRouteRef = createSubRouteRef({
+  id: 'aegis-project-management',
+  parent: rootRouteRef,
+  path: '/admin/projects',
+});
+
+export const createProjectRouteRef = createSubRouteRef({
+  id: 'aegis-create-project',
+  parent: rootRouteRef,
+  path: '/admin/projects/create',
+});
+
 export const policyManagementRouteRef = createSubRouteRef({
   id: 'aegis-policy-management',
   parent: rootRouteRef,
@@ -98,4 +110,16 @@ export const auditLogRouteRef = createSubRouteRef({
   id: 'aegis-audit-log',
   parent: rootRouteRef,
   path: '/admin/audit-logs',
+});
+
+export const clusterProfilesRouteRef = createSubRouteRef({
+  id: 'aegis-cluster-profiles',
+  parent: rootRouteRef,
+  path: '/admin/cluster-profiles',
+});
+
+export const iacConnectorsRouteRef = createSubRouteRef({
+  id: 'aegis-iac-connectors',
+  parent: rootRouteRef,
+  path: '/admin/iac-connectors',
 });

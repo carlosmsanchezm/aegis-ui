@@ -23,8 +23,12 @@ import NotificationsActiveIcon from '@material-ui/icons/NotificationsActive';
 import GavelIcon from '@material-ui/icons/Gavel';
 import PeopleOutlineIcon from '@material-ui/icons/PeopleOutline';
 import HistoryIcon from '@material-ui/icons/History';
+import LayersIcon from '@material-ui/icons/Layers';
+import LibraryBooksIcon from '@material-ui/icons/LibraryBooks';
+import LinkIcon from '@material-ui/icons/Link';
 import LogoFull from './LogoFull';
 import LogoIcon from './LogoIcon';
+import { InteractiveBackground } from '../layout/InteractiveBackground';
 import {
   Settings as SidebarSettings,
   UserSettingsSignInAvatar,
@@ -171,24 +175,29 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
 
   return (
     <div className={classes.root}>
+      <InteractiveBackground />
       <SidebarPage>
         <Sidebar>
           <SidebarLogo />
           <SidebarDivider />
 
           <NavSection label="Create" icon={<AddCircleOutlineIcon />}>
-            <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspace" />
-            <SidebarItem icon={BuildIcon} to="aegis" text="Cluster" />
+            <SidebarItem icon={BuildIcon} to="aegis/create/clusters" text="Clusters" />
+            <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspaces" />
           </NavSection>
 
           <SidebarDivider />
 
           <SidebarScrollWrapper>
             <NavSection label="Manage" icon={<DashboardIcon />}>
-              <SidebarItem icon={LaptopMacIcon} to="aegis/workloads" text="Workspaces" />
-              <SidebarItem icon={CloudQueueIcon} to="aegis/clusters" text="Clusters" />
+              <SidebarItem
+                icon={CloudQueueIcon}
+                to="aegis/clusters"
+                text="Clusters (Fleet)"
+              />
+              <SidebarItem icon={LaptopMacIcon} to="aegis/workloads" text="Workloads" />
               <SidebarItem icon={TimelineIcon} to="aegis/telemetry" text="Telemetry" />
-              <SidebarItem icon={SecurityIcon} to="aegis/posture" text="Live Posture" />
+              <SidebarItem icon={SecurityIcon} to="aegis/posture" text="Compliance posture" />
               <MyGroupsSidebarItem
                 singularTitle="My Group"
                 pluralTitle="My Groups"
@@ -244,6 +253,21 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
             <SidebarDivider />
 
             <NavSection label="Admin" icon={<SettingsIcon />}>
+              <SidebarItem
+                icon={LibraryBooksIcon}
+                to="aegis/admin/cluster-profiles"
+                text="Cluster profiles"
+              />
+              <SidebarItem
+                icon={LinkIcon}
+                to="aegis/admin/iac-connectors"
+                text="IaC connectors"
+              />
+              <SidebarItem
+                icon={LayersIcon}
+                to="aegis/admin/projects"
+                text="Projects"
+              />
               <SidebarItem
                 icon={AssessmentIcon}
                 to="aegis/admin/analytics"

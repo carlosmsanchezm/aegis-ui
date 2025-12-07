@@ -1,4 +1,9 @@
-export { AegisDashboardPage } from './AegisDashboardPage';
-export { AegisTelemetryPage } from './AegisTelemetryPage';
-export { AegisPosturePage } from './AegisPosturePage';
-export { AegisClustersPage } from './AegisClustersPage';
+export * from './AegisClusterCreatePage';
+export * from './AegisClustersPage';
+export * from './AegisDashboardPage';
+export * from './AegisPosturePage';
+export * from './AegisTelemetryPage';
+export * from './CreateProjectPage';
+export * from './ClusterProvisioningStatus';
+export * from './ClusterProvisioningDetails';
+export * from './ClusterProvisioningDetailsPage';

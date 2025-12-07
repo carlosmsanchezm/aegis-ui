@@ -1,4 +1,4 @@
-import { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Page,
@@ -28,7 +28,6 @@ import {
   Grid,
   MenuItem,
   Select,
-  SelectChangeEvent,
   TextField,
   Typography,
 } from '@material-ui/core';
@@ -42,6 +41,7 @@ import {
   parseKubernetesUrl,
   buildKubectlDescribeCommand,
 } from '../api/aegisClient';
+import { keycloakAuthApiRef } from '../api/refs';
 import { createWorkspaceRouteRef } from '../routes';
 
 const statusChip = (status: string) => {
@@ -67,6 +67,7 @@ export const WorkloadListPage: FC = () => {
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
   const navigate = useNavigate();
   const createWorkspaceLink = useRouteRef(createWorkspaceRouteRef);
@@ -92,6 +93,7 @@ export const WorkloadListPage: FC = () => {
           fetchApi,
           discoveryApi,
           identityApi,
+          authApi,
           projectId,
         );
         const mapped: WorkloadRow[] = items.map(w => ({
@@ -114,7 +116,7 @@ export const WorkloadListPage: FC = () => {
         }
       }
     },
-    [alertApi, discoveryApi, fetchApi, identityApi, projectId],
+    [alertApi, discoveryApi, fetchApi, identityApi, authApi, projectId],
   );
 
   useEffect(() => {
@@ -135,7 +137,7 @@ export const WorkloadListPage: FC = () => {
     setProjectId(event.target.value);
   };
 
-  const handleStatusFilter = (event: SelectChangeEvent<StatusFilter>) => {
+  const handleStatusFilter = (event: React.ChangeEvent<{ value: unknown }>) => {
     setStatusFilter(event.target.value as StatusFilter);
   };
 
@@ -214,7 +216,7 @@ export const WorkloadListPage: FC = () => {
             <Box display="flex" alignItems="center" gridGap={8}>
               <Typography variant="body2">{row.url}</Typography>
               {cmd ? (
-                <CopyTextButton text={cmd} tooltip="Copy kubectl describe" />
+                <CopyTextButton text={cmd} />
               ) : null}
             </Box>
           );

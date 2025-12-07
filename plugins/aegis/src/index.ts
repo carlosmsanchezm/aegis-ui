@@ -17,7 +17,30 @@ export {
   AegisPolicyManagementPage,
   AegisUserManagementPage,
   AegisAuditLogPage,
+  AegisProjectManagementPage,
+  AegisCreateProjectPage,
+  AegisClusterProfilesAdminPage,
+  AegisIaCConnectorsAdminPage,
 } from './plugin';
+export { keycloakAuthApiRef } from './api/refs';
+export type {
+  AegisRole,
+  ClusterActivityItem,
+  ClusterAddon,
+  ClusterChangeSet,
+  ClusterComplianceStatus,
+  ClusterDetail,
+  ClusterDriftStatus,
+  ClusterFleetItem,
+  ClusterProfile,
+  ClusterProfileParameter,
+  ClusterProfileStatus,
+  ClusterTimelineEvent,
+  ClusterNodePool,
+  ClusterCostInsight,
+  ComplianceLevel,
+  FedrampLevel,
+} from './components';
 export {
   rootRouteRef,
   workloadsRouteRef,
@@ -33,7 +56,11 @@ export {
   opsAlertsRouteRef,
   opsConfigRouteRef,
   costAnalyticsRouteRef,
+  projectManagementRouteRef,
+  createProjectRouteRef,
   policyManagementRouteRef,
   userManagementRouteRef,
   auditLogRouteRef,
+  clusterProfilesRouteRef,
+  iacConnectorsRouteRef,
 } from './routes';
