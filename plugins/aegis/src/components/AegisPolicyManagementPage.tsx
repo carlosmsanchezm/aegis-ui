@@ -45,6 +45,11 @@ const useStyles = makeStyles(theme => ({
     justifyContent: 'flex-end',
     gap: theme.spacing(1.5),
   },
+  requestActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+  },
 }));
 
 type PolicyRow = {
@@ -158,7 +163,7 @@ export const AegisPolicyManagementPage: FC = () => {
             <Typography variant="body2" color="textPrimary">
               {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
             </Typography>
-            <Box display="flex" gap={8}>
+            <div className={classes.requestActions}>
               <Button
                 variant="outlined"
                 color="primary"
@@ -175,7 +180,7 @@ export const AegisPolicyManagementPage: FC = () => {
               >
                 Deny
               </Button>
-            </Box>
+            </div>
           </Box>
         ),
       },

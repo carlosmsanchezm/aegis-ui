@@ -25,6 +25,15 @@ backend:
   auth:
     keys:
       - secret: ${BACKEND_SECRET}
+    externalAccess:
+      - type: jwks
+        options:
+          url: https://keycloak.aegis-platform.tech/realms/aegis/protocol/openid-connect/certs
+          issuer: https://keycloak.aegis-platform.tech/realms/aegis
+          audience: backstage
+          subjectPrefix: 'keycloak:'
+        accessRestrictions:
+          - plugin: proxy
     # Secure/HttpOnly/SameSite cookie flags are enforced at the ingress layer.
   # This is for local development only, it is not recommended to use this in production
   # The production database configuration is stored in app-config.production.yaml
@@ -47,14 +56,14 @@ integrations:
 proxy:
   endpoints:
     '/aegis':
-      target: 'http://localhost:8080'
+      target: 'https://platform-api.localtest.me'
       changeOrigin: true
-      credentials: forward
+      secure: false
       allowedHeaders:
-        - authorization
         - Authorization
-        - grpc-metadata-authorization
+        - authorization
         - Grpc-Metadata-Authorization
+        - grpc-metadata-authorization
 
 # Reference documentation http://backstage.io/docs/features/techdocs/configuration
 # Note: After experimenting with basic setup, use CI/CD to generate docs
@@ -74,8 +83,8 @@ auth:
       development:
         clientId: ${KEYCLOAK_CLIENT_ID}
         clientSecret: ${KEYCLOAK_CLIENT_SECRET}
-        issuer: ${KEYCLOAK_ISSUER}
-        metadataUrl: ${KEYCLOAK_METADATA_URL}
+        issuer: https://keycloak.aegis-platform.tech/realms/aegis
+        metadataUrl: https://keycloak.aegis-platform.tech/realms/aegis/.well-known/openid-configuration
         additionalScopes:
           - offline_access
         callbackUrl: 'http://localhost:7008/api/auth/keycloak/handler/frame'

@@ -25,10 +25,13 @@ import { entityPage } from './components/catalog/EntityPage';
 import { searchPage } from './components/search/SearchPage';
 import { Root } from './components/Root';
 import {
+  AegisClusterCreatePage,
   AegisClustersPage,
   AegisDashboardPage,
   AegisPosturePage,
   AegisTelemetryPage,
+  CreateProjectPage,
+  ClusterProvisioningDetailsPage,
 } from './components/aegis';
 import { aegisDarkTheme, aegisLightTheme } from './theme';
 
@@ -58,9 +61,12 @@ import {
   AegisAlertsDashboardPage,
   AegisClusterConfigPage,
   AegisCostAnalyticsPage,
+  AegisProjectManagementPage,
   AegisPolicyManagementPage,
   AegisUserManagementPage,
   AegisAuditLogPage,
+  AegisClusterProfilesAdminPage,
+  AegisIaCConnectorsAdminPage,
 } from '@internal/plugin-aegis';
 import { keycloakAuthApiRef } from './apis';
 
@@ -136,6 +142,8 @@ const routes = (
     <Route path="/catalog-graph" element={<CatalogGraphPage />} />
     <Route path="/notifications" element={<NotificationsPage />} />
     <Route path="/aegis" element={<AegisPage />} />
+    <Route path="/aegis/create/clusters" element={<AegisClusterCreatePage />} />
+    <Route path="/aegis/provisioning/status/:jobId" element={<ClusterProvisioningDetailsPage />} />
     <Route path="/aegis/dashboard" element={<AegisDashboardPage />} />
     <Route path="/aegis/telemetry" element={<AegisTelemetryPage />} />
     <Route path="/aegis/posture" element={<AegisPosturePage />} />
@@ -170,6 +178,16 @@ const routes = (
       element={<AegisBillingAlertsFinOpsPage />}
     />
     <Route path="/aegis/admin/analytics" element={<AegisCostAnalyticsPage />} />
+    <Route
+      path="/aegis/admin/cluster-profiles"
+      element={<AegisClusterProfilesAdminPage />}
+    />
+    <Route
+      path="/aegis/admin/iac-connectors"
+      element={<AegisIaCConnectorsAdminPage />}
+    />
+    <Route path="/aegis/admin/projects/create" element={<CreateProjectPage />} />
+    <Route path="/aegis/admin/projects" element={<AegisProjectManagementPage />} />
     <Route path="/aegis/admin/policies" element={<AegisPolicyManagementPage />} />
     <Route path="/aegis/admin/users" element={<AegisUserManagementPage />} />
     <Route path="/aegis/admin/audit-logs" element={<AegisAuditLogPage />} />

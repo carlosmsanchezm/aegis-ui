@@ -14,7 +14,7 @@ export const resolveClientIp = (req: express.Request): string => {
   if (typeof forwarded === 'string' && forwarded.trim().length > 0) {
     return forwarded.split(',')[0]!.trim();
   }
-  return req.ip;
+  return req.ip || 'unknown';
 };
 
 export const inferEventType = (path: string): string => {
@@ -68,7 +68,7 @@ export default createBackendModule({
             const durationMillis =
               Number(process.hrtime.bigint() - start) / 1_000_000;
 
-            logger.info({
+            logger.info('Auth event', {
               event: 'auth_event',
               action: eventType,
               provider,

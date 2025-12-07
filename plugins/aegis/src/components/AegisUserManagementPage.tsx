@@ -162,7 +162,7 @@ export const AegisUserManagementPage: FC = () => {
       {
         title: 'Access',
         field: 'id',
-        render: row => (
+        render: _ => (
           <Button variant="outlined" color="primary" size="small">
             Manage Access
           </Button>
