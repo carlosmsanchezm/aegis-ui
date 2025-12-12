@@ -271,6 +271,7 @@ export const ClusterProvisioningDetailsPage = () => {
     }
 
     let cancelled = false;
+
     const run = async () => {
       while (!cancelled) {
         try {
@@ -310,36 +311,36 @@ export const ClusterProvisioningDetailsPage = () => {
             return;
           }
         } catch (err: any) {
-        if (cancelled) {
-          return;
-        }
-
-        const now = new Date();
-        const timestamp = `${now.toTimeString().split(' ')[0]}.${now
-          .getMilliseconds()
-          .toString()
-          .padStart(3, '0')}`;
-        const message =
-          typeof err?.message === 'string'
-            ? err.message
-            : 'Unable to stream provisioning logs. Retrying...';
-
-        setLogs(current => {
-          const warningEntry: LogEntry = {
-            timestamp,
-            message,
-            level: 'warning',
-          };
-          const last = current[current.length - 1];
-          if (last?.message === warningEntry.message) {
-            return current;
+          if (cancelled) {
+            return;
           }
-          return [...current, warningEntry].slice(-2000);
-        });
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
+          const now = new Date();
+          const timestamp = `${now.toTimeString().split(' ')[0]}.${now
+            .getMilliseconds()
+            .toString()
+            .padStart(3, '0')}`;
+          const message =
+            typeof err?.message === 'string'
+              ? err.message
+              : 'Unable to stream provisioning logs. Retrying...';
+
+          setLogs(current => {
+            const warningEntry: LogEntry = {
+              timestamp,
+              message,
+              level: 'warning',
+            };
+            const last = current[current.length - 1];
+            if (last?.message === warningEntry.message) {
+              return current;
+            }
+            return [...current, warningEntry].slice(-2000);
+          });
+
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
-    }
     };
 
     run();
@@ -347,6 +348,28 @@ export const ClusterProvisioningDetailsPage = () => {
       cancelled = true;
     };
   }, [jobId, fetchApi, discoveryApi, identityApi, authApi]);
+
+  // Calculate duration (must be above early returns; hooks can't be conditional)
+  const duration = useMemo(() => {
+    const startedAt = provisioningMeta?.startedAt;
+    if (!startedAt) {
+      return '—';
+    }
+    const start = new Date(startedAt);
+    const end = provisioningMeta?.completedAt
+      ? new Date(provisioningMeta.completedAt)
+      : new Date();
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return '—';
+    }
+    const totalSeconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+  }, [provisioningMeta?.startedAt, provisioningMeta?.completedAt]);
 
   // Loading state
   if (loading) {
@@ -393,28 +416,6 @@ export const ClusterProvisioningDetailsPage = () => {
       </Box>
     );
   }
-
-  // Calculate duration
-  const duration = useMemo(() => {
-    const startedAt = provisioningMeta?.startedAt;
-    if (!startedAt) {
-      return '—';
-    }
-    const start = new Date(startedAt);
-    const end = provisioningMeta?.completedAt
-      ? new Date(provisioningMeta.completedAt)
-      : new Date();
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return '—';
-    }
-    const totalSeconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    if (minutes > 0) {
-      return `${minutes}m ${seconds}s`;
-    }
-    return `${seconds}s`;
-  }, [provisioningMeta?.startedAt, provisioningMeta?.completedAt]);
 
   // Map job status to ClusterProvisioningDetails status
   const getStatus = (): 'Building' | 'Ready' | 'Error' | 'Canceled' => {
