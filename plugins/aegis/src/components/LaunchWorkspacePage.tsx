@@ -57,7 +57,9 @@ import {
   AuthenticationError,
   AuthorizationError,
   listProjects,
+  listClusters,
   ProjectRecord,
+  ClusterSummary,
   CreateWorkspaceRequest,
   createWorkspace,
 } from '../api/aegisClient';
@@ -555,9 +557,13 @@ export const LaunchWorkspacePage: FC = () => {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
+  const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [loadingClusters, setLoadingClusters] = useState(false);
+  const [clusterError, setClusterError] = useState<string | null>(null);
   const [form, setForm] = useState({
     workloadId: randomId(),
     projectId: '',
+    clusterId: '',
     queue: '',
     flavor: '',
     image: '',
@@ -701,6 +707,54 @@ export const LaunchWorkspacePage: FC = () => {
       active = false;
     };
   }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  // Load clusters when project changes
+  useEffect(() => {
+    if (!form.projectId) {
+      setClusters([]);
+      setClusterError(null);
+      return;
+    }
+
+    let active = true;
+    const loadProjectClusters = async () => {
+      setLoadingClusters(true);
+      setClusterError(null);
+      try {
+        const items = await listClusters(fetchApi, discoveryApi, identityApi, authApi, {
+          projectId: form.projectId,
+        });
+        if (!active) {
+          return;
+        }
+        setClusters(items);
+        // Auto-select first cluster if none selected
+        if (items.length > 0 && !form.clusterId) {
+          setForm(prev => ({ ...prev, clusterId: items[0].id }));
+        } else if (items.length === 0) {
+          setForm(prev => ({ ...prev, clusterId: '' }));
+        }
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : 'Unable to load clusters for this project.';
+        setClusterError(message);
+        setClusters([]);
+      } finally {
+        if (active) {
+          setLoadingClusters(false);
+        }
+      }
+    };
+    loadProjectClusters();
+    return () => {
+      active = false;
+    };
+  }, [form.projectId, fetchApi, discoveryApi, identityApi, authApi]);
 
   useEffect(() => {
     if (form.projectId) {
@@ -1166,6 +1220,44 @@ export const LaunchWorkspacePage: FC = () => {
                           </div>
                         )}
                       </div>
+                    )}
+                    {/* Cluster Selection */}
+                    {form.projectId && (
+                      <FormControl fullWidth variant="outlined" style={{ marginTop: 16 }}>
+                        <InputLabel id="cluster-select-label">Target Cluster</InputLabel>
+                        <Select
+                          labelId="cluster-select-label"
+                          id="cluster-select"
+                          value={form.clusterId}
+                          onChange={(e) => setForm(prev => ({ ...prev, clusterId: e.target.value as string }))}
+                          label="Target Cluster"
+                          disabled={loadingClusters || clusters.length === 0}
+                        >
+                          {loadingClusters && (
+                            <MenuItem value="" disabled>
+                              Loading clusters...
+                            </MenuItem>
+                          )}
+                          {!loadingClusters && clusters.length === 0 && (
+                            <MenuItem value="" disabled>
+                              No clusters available for this project
+                            </MenuItem>
+                          )}
+                          {clusters.map(cluster => (
+                            <MenuItem key={cluster.id} value={cluster.id}>
+                              {cluster.name || cluster.id} ({cluster.region}) - {cluster.phase}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                        {clusterError && (
+                          <FormHelperText error>{clusterError}</FormHelperText>
+                        )}
+                        {!clusterError && clusters.length > 0 && (
+                          <FormHelperText>
+                            Select which cluster to deploy the workspace to
+                          </FormHelperText>
+                        )}
+                      </FormControl>
                     )}
                     <Divider className={classes.sectionDivider} />
                     <Typography variant="overline" color="textSecondary">

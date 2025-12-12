@@ -13,6 +13,7 @@ import {
   IdentityApi,
 } from '@backstage/core-plugin-api';
 import { SubmitWorkloadPage } from './SubmitWorkloadPage';
+import { keycloakAuthApiRef } from '../api/refs';
 
 const submittedBodies: any[] = [];
 
@@ -103,6 +104,12 @@ describe('SubmitWorkloadPage', () => {
           [fetchApiRef, fetchApi],
           [alertApiRef, alertApi],
           [identityApiRef, identityApi],
+          [
+            keycloakAuthApiRef,
+            {
+              getAccessToken: async () => 'test-token',
+            } as any,
+          ],
         ]}
       >
         <SubmitWorkloadPage />

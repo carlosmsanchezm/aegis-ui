@@ -9,7 +9,6 @@ import {
   AccordionSummary,
   AccordionDetails,
   Chip,
-  LinearProgress,
   Button,
   Tooltip,
   CircularProgress,
@@ -176,8 +175,6 @@ const useStyles = makeStyles(theme => ({
 // --- SUB-COMPONENTS ---
 
 const StatusIcon = ({ status }: { status: ProvisioningStep['status'] }) => {
-  const theme = { palette: { status: { ok: '#16A34A', running: '#38BDF8' } } }; // Quick mock for icon internal use if props missing
-
   switch (status) {
     case 'loading':
       // Use a custom spinner or Material UI CircularProgress
@@ -375,7 +372,14 @@ export const ClusterProvisioningStatus = () => {
   if (loading) {
     return (
       <div className={classes.root}>
-        <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="50vh" gap={2}>
+        <Box
+          display="flex"
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          minHeight="50vh"
+          style={{ gap: 16 }}
+        >
           <CircularProgress size={48} />
           <Typography variant="h6" color="textSecondary">
             Loading job status...
@@ -389,7 +393,14 @@ export const ClusterProvisioningStatus = () => {
   if (error || !job) {
     return (
       <div className={classes.root}>
-        <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="50vh" gap={3}>
+        <Box
+          display="flex"
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          minHeight="50vh"
+          style={{ gap: 24 }}
+        >
           <ErrorIcon style={{ fontSize: 64, color: '#EF4444' }} />
           <Typography variant="h5" style={{ fontWeight: 600 }}>
             {error || 'Job not found'}
@@ -438,7 +449,7 @@ export const ClusterProvisioningStatus = () => {
             </Typography>
           </div>
         </div>
-        <Box display="flex" gap={2}>
+        <Box display="flex" style={{ gap: 16 }}>
             <Button
               variant="outlined"
               startIcon={<FileCopyIcon />}
@@ -495,7 +506,7 @@ export const ClusterProvisioningStatus = () => {
                             </Typography>
                         </Box>
                     </div>
-                    <Box display="flex" alignItems="center" gap={2}>
+                    <Box display="flex" alignItems="center" style={{ gap: 16 }}>
                         {step.status === 'loading' && (
                              <Typography variant="caption" color="primary" style={{ fontWeight: 600 }}>
                                 Building...
