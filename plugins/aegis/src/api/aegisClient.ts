@@ -244,26 +244,18 @@ export type PrometheusMetricSeries = {
   samples?: PrometheusMetricSample[];
 };
 
-export type PrometheusGpuMetricsPayload = {
-  utilization?: PrometheusMetricSeries[];
-  memory?: PrometheusMetricSeries[];
-  missing?: string[];
-};
-
 export type MetricsQueryRequest = {
   projectId: string;
   clusterId: string;
-  query?: string;
+  query: string;
   start?: string;
   end?: string;
   stepSeconds?: number;
   rangeSeconds?: number;
-  includeGpu?: boolean;
 };
 
 export type MetricsQueryResponse = {
   series: PrometheusMetricSeries[];
-  gpu?: PrometheusGpuMetricsPayload;
 };
 
 export type LogsQueryRequest = {
