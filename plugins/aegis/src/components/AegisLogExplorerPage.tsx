@@ -15,12 +15,27 @@ import {
   ContentHeader,
   HeaderLabel,
   Page,
+  Progress,
   Table,
   TableColumn,
   StatusError,
   StatusOK,
   StatusPending,
+  WarningPanel,
 } from '@backstage/core-components';
+import {
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../api/refs';
+import {
+  ClusterSummary,
+  LogEntryDTO,
+  listClusters,
+  queryLogs,
+} from '../api/aegisClient';
 
 const useStyles = makeStyles(theme => ({
   root: {
@@ -46,63 +61,42 @@ const useStyles = makeStyles(theme => ({
   },
 }));
 
+type LogSeverity = 'INFO' | 'WARN' | 'ERROR';
+
 type LogRow = {
   timestamp: string;
-  severity: 'INFO' | 'WARN' | 'ERROR';
-  component: string;
-  workloadId?: string;
+  severity: LogSeverity;
+  namespace?: string;
+  pod?: string;
+  container?: string;
   message: string;
+  labels?: Record<string, string>;
 };
 
-const logs: LogRow[] = [
-  {
-    timestamp: '2024-03-24T14:01:12Z',
-    severity: 'ERROR',
-    component: 'sentinel-east-2/node-manager-1',
-    workloadId: 'wrk-2087a',
-    message: 'GPU heartbeat missed for 3 intervals; scheduling drain.',
-  },
-  {
-    timestamp: '2024-03-24T13:58:06Z',
-    severity: 'WARN',
-    component: 'aurora-west-1/scheduler',
-    workloadId: 'wrk-3011z',
-    message: 'Queue depth exceeded policy threshold, triggering autoscale.',
-  },
-  {
-    timestamp: '2024-03-24T13:52:44Z',
-    severity: 'INFO',
-    component: 'atlas-eu-central/ingress',
-    message: 'Successfully rotated TLS bundle for edge endpoints.',
-  },
-  {
-    timestamp: '2024-03-24T13:49:02Z',
-    severity: 'ERROR',
-    component: 'titan-apac/gpu-agent-1',
-    workloadId: 'wrk-2087a',
-    message: 'CUDA driver reset failed; node marked degraded.',
-  },
-  {
-    timestamp: '2024-03-24T13:42:19Z',
-    severity: 'INFO',
-    component: 'sentinel-east-2/node-manager-0',
-    workloadId: 'wrk-1174b',
-    message: 'Node drain completed and returned to pool.',
-  },
-  {
-    timestamp: '2024-03-24T13:39:55Z',
-    severity: 'WARN',
-    component: 'aurora-west-1/etcd',
-    message: 'Leader election latency exceeded 250ms.',
-  },
-  {
-    timestamp: '2024-03-24T13:34:27Z',
-    severity: 'INFO',
-    component: 'atlas-eu-central/ingress',
-    workloadId: 'wrk-5520q',
-    message: 'Applied rate-limiting policy for partner tenant.',
-  },
-];
+const resolveSeverity = (entry: LogEntryDTO): LogSeverity => {
+  const label = (
+    entry.labels?.level ??
+    entry.labels?.severity ??
+    entry.labels?.lvl ??
+    entry.labels?.log_level ??
+    ''
+  ).toLowerCase();
+  if (label.includes('error') || label.includes('critical') || label === 'err') {
+    return 'ERROR';
+  }
+  if (label.includes('warn')) {
+    return 'WARN';
+  }
+
+  const msg = (entry.message ?? '').toLowerCase();
+  if (msg.includes(' level=error') || msg.includes('\"level\":\"error\"') || msg.startsWith('error')) {
+    return 'ERROR';
+  }
+  if (msg.includes(' level=warn') || msg.includes('\"level\":\"warn\"') || msg.startsWith('warn')) {
+    return 'WARN';
+  }
+  return 'INFO';
+};
 
 const severityIndicator = (severity: LogRow['severity']) => {
   if (severity === 'ERROR') {
@@ -127,9 +121,30 @@ export const AegisLogExplorerPage = () => {
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const initialWorkloadFilter = searchParams.get('workloadId') ?? '';
 
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
+
+  const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [clusterId, setClusterId] = useState('');
+  const [loadingClusters, setLoadingClusters] = useState(false);
+  const [clusterError, setClusterError] = useState<string | null>(null);
+
+  const selectedCluster = useMemo(
+    () => clusters.find(cluster => cluster.id === clusterId) ?? null,
+    [clusters, clusterId],
+  );
+
   const [search, setSearch] = useState(initialWorkloadFilter);
   const [severity, setSeverity] = useState<'all' | LogRow['severity']>('all');
   const [window, setWindow] = useState<keyof typeof timeWindowMinutes>('1h');
+  const [namespace, setNamespace] = useState('');
+  const [pod, setPod] = useState('');
+  const [includeEvents, setIncludeEvents] = useState(true);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logError, setLogError] = useState<string | null>(null);
+  const [entries, setEntries] = useState<LogRow[]>([]);
 
   useEffect(() => {
     if (initialWorkloadFilter) {
@@ -137,31 +152,118 @@ export const AegisLogExplorerPage = () => {
     }
   }, [initialWorkloadFilter]);
 
-  const filteredLogs = useMemo(() => {
-    const now = Date.now();
-    const windowMinutes = timeWindowMinutes[window];
+  useEffect(() => {
+    let active = true;
+    const loadClusters = async () => {
+      setLoadingClusters(true);
+      setClusterError(null);
+      try {
+        const items = await listClusters(fetchApi, discoveryApi, identityApi, authApi);
+        if (!active) {
+          return;
+        }
+        setClusters(items);
+        if (items.length > 0) {
+          setClusterId(prev => prev || items[0].id);
+        }
+      } catch (err: any) {
+        if (active) {
+          setClusters([]);
+          setClusterError(err?.message || 'Unable to load clusters.');
+        }
+      } finally {
+        if (active) {
+          setLoadingClusters(false);
+        }
+      }
+    };
+    loadClusters();
+    return () => {
+      active = false;
+    };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
 
-    return logs.filter(log => {
-      const timestamp = new Date(log.timestamp).getTime();
-      if (Number.isFinite(windowMinutes) && windowMinutes > 0) {
-        const deltaMinutes = (now - timestamp) / 60000;
-        if (deltaMinutes > windowMinutes) {
-          return false;
+  useEffect(() => {
+    if (!selectedCluster) {
+      setEntries([]);
+      setLogError(null);
+      return;
+    }
+
+    let active = true;
+    const loadLogs = async () => {
+      setLoadingLogs(true);
+      setLogError(null);
+      try {
+        const end = new Date();
+        const windowMinutes = timeWindowMinutes[window];
+        const start = new Date(end.getTime() - windowMinutes * 60_000);
+
+        const response = await queryLogs(fetchApi, discoveryApi, identityApi, authApi, {
+          projectId: selectedCluster.projectId,
+          clusterId: selectedCluster.id,
+          namespace: namespace.trim(),
+          pod: pod.trim(),
+          substring: search.trim(),
+          start: start.toISOString(),
+          end: end.toISOString(),
+          limit: 200,
+          includeEvents,
+        });
+
+        if (!active) {
+          return;
+        }
+
+        const rows: LogRow[] = (response.entries ?? []).map(entry => ({
+          timestamp: entry.timestamp,
+          severity: resolveSeverity(entry),
+          namespace: entry.namespace,
+          pod: entry.pod,
+          container: entry.container,
+          message: entry.message,
+          labels: entry.labels,
+        }));
+        setEntries(rows);
+      } catch (err: any) {
+        if (active) {
+          setEntries([]);
+          setLogError(err?.message || 'Unable to query logs.');
+        }
+      } finally {
+        if (active) {
+          setLoadingLogs(false);
         }
       }
-      if (severity !== 'all' && log.severity !== severity) {
+    };
+
+    loadLogs();
+    const interval = setInterval(loadLogs, 15_000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [
+    selectedCluster,
+    window,
+    namespace,
+    pod,
+    search,
+    includeEvents,
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+  ]);
+
+  const filteredLogs = useMemo(() => {
+    return entries.filter(entry => {
+      if (severity !== 'all' && entry.severity !== severity) {
         return false;
-      }
-      if (search) {
-        const lower = search.toLowerCase();
-        const target = `${log.component} ${log.message} ${log.workloadId ?? ''}`.toLowerCase();
-        if (!target.includes(lower)) {
-          return false;
-        }
       }
       return true;
     });
-  }, [search, severity, window]);
+  }, [entries, severity]);
 
   const columns = useMemo<TableColumn<LogRow>[]>(
     () => [
@@ -171,12 +273,9 @@ export const AegisLogExplorerPage = () => {
         field: 'severity',
         render: row => severityIndicator(row.severity),
       },
-      { title: 'Component', field: 'component' },
-      {
-        title: 'Workload',
-        field: 'workloadId',
-        render: row => row.workloadId ?? '—',
-      },
+      { title: 'Namespace', field: 'namespace' },
+      { title: 'Pod', field: 'pod' },
+      { title: 'Container', field: 'container' },
       { title: 'Message', field: 'message' },
     ],
     [],
@@ -186,13 +285,34 @@ export const AegisLogExplorerPage = () => {
     <Page themeId="tool">
       <Content className={classes.root}>
         <ContentHeader title="Log Explorer">
-          <HeaderLabel label="Streams" value="Control plane" />
-          <HeaderLabel label="Last Sync" value="Seconds ago" />
+          <HeaderLabel label="Cluster" value={selectedCluster?.name || selectedCluster?.id || '—'} />
+          <HeaderLabel label="Time Window" value={window} />
+          <HeaderLabel label="Events" value={includeEvents ? 'On' : 'Off'} />
         </ContentHeader>
+
+        {clusterError && (
+          <WarningPanel title="Unable to load clusters">{clusterError}</WarningPanel>
+        )}
+        {loadingClusters && <Progress />}
 
         <Paper className={classes.paper}>
           <Typography variant="h6">Filters</Typography>
           <div className={classes.filterBar}>
+            <FormControl variant="outlined" fullWidth>
+              <InputLabel id="log-cluster-select-label">Cluster</InputLabel>
+              <Select
+                labelId="log-cluster-select-label"
+                value={clusterId}
+                label="Cluster"
+                onChange={event => setClusterId(event.target.value as string)}
+              >
+                {clusters.map(cluster => (
+                  <MenuItem key={cluster.id} value={cluster.id}>
+                    {cluster.projectId} · {cluster.name || cluster.id}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <TextField
               label="Search text or workload"
               variant="outlined"
@@ -200,6 +320,22 @@ export const AegisLogExplorerPage = () => {
               fullWidth
               value={search}
               onChange={event => setSearch(event.target.value)}
+            />
+            <TextField
+              label="Namespace"
+              variant="outlined"
+              size="small"
+              fullWidth
+              value={namespace}
+              onChange={event => setNamespace(event.target.value)}
+            />
+            <TextField
+              label="Pod"
+              variant="outlined"
+              size="small"
+              fullWidth
+              value={pod}
+              onChange={event => setPod(event.target.value)}
             />
             <div>
               <FormControl variant="outlined" fullWidth>
@@ -235,8 +371,25 @@ export const AegisLogExplorerPage = () => {
                 </Select>
               </FormControl>
             </div>
+            <FormControl variant="outlined" fullWidth>
+              <InputLabel id="log-events-toggle-label">Include events</InputLabel>
+              <Select
+                labelId="log-events-toggle-label"
+                value={includeEvents ? 'on' : 'off'}
+                label="Include events"
+                onChange={event => setIncludeEvents(event.target.value === 'on')}
+              >
+                <MenuItem value="on">Include Kubernetes events</MenuItem>
+                <MenuItem value="off">Logs only</MenuItem>
+              </Select>
+            </FormControl>
           </div>
         </Paper>
+
+        {logError && (
+          <WarningPanel title="Logs unavailable">{logError}</WarningPanel>
+        )}
+        {loadingLogs && <Progress />}
 
         <Paper className={classes.paper}>
           <Table

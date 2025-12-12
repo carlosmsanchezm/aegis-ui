@@ -1,17 +1,35 @@
-import { useMemo, useState } from 'react';
-import { Button, makeStyles, Paper, Typography } from '@material-ui/core';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  makeStyles,
+  Paper,
+  Typography,
+} from '@material-ui/core';
 import {
   Content,
   ContentHeader,
   HeaderLabel,
   Page,
+  Progress,
   StatusError,
   StatusOK,
   StatusPending,
   Table,
   TableColumn,
+  WarningPanel,
 } from '@backstage/core-components';
-import { alertApiRef, useApi } from '@backstage/core-plugin-api';
+import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../api/refs';
+import { AlertView, ClusterSummary, getAlerts, listClusters } from '../api/aegisClient';
 
 type AlertRow = {
   id: string;
@@ -19,7 +37,7 @@ type AlertRow = {
   severity: 'critical' | 'warning' | 'info';
   cluster: string;
   started: string;
-  status: 'active' | 'acknowledged' | 'resolved';
+  state: string;
 };
 
 const useStyles = makeStyles(theme => ({
@@ -36,10 +54,6 @@ const useStyles = makeStyles(theme => ({
     borderRadius: theme.shape.borderRadius * 2,
     padding: theme.spacing(3),
   },
-  actionBar: {
-    display: 'flex',
-    gap: theme.spacing(1),
-  },
 }));
 
 const alertStatus = (severity: AlertRow['severity']) => {
@@ -53,45 +67,139 @@ const alertStatus = (severity: AlertRow['severity']) => {
   }
 };
 
-const initialAlerts: AlertRow[] = [
-  {
-    id: 'alert-1001',
-    title: 'Failed Node: titan-apac/gpu-agent-1',
-    severity: 'critical',
-    cluster: 'Titan · ap-southeast-2',
-    started: '2024-03-24 13:48 UTC',
-    status: 'active',
-  },
-  {
-    id: 'alert-1002',
-    title: 'Quota Exhaustion: aurora-west-1 GPU pool',
-    severity: 'warning',
-    cluster: 'Aurora · us-gov-west-1',
-    started: '2024-03-24 12:17 UTC',
-    status: 'active',
-  },
-  {
-    id: 'alert-1003',
-    title: 'New IAM exception granted',
-    severity: 'info',
-    cluster: 'Sentinel · us-gov-east-2',
-    started: '2024-03-24 11:05 UTC',
-    status: 'acknowledged',
-  },
-];
+const resolveSeverity = (alert: AlertView): AlertRow['severity'] => {
+  const raw = (alert.labels?.severity ?? alert.labels?.priority ?? '').toLowerCase();
+  if (raw.includes('critical') || raw.includes('high') || raw.includes('sev1')) {
+    return 'critical';
+  }
+  if (raw.includes('warning') || raw.includes('medium') || raw.includes('sev2')) {
+    return 'warning';
+  }
+  return 'info';
+};
+
+const formatAlertTimestamp = (raw?: string): string => {
+  if (!raw) {
+    return '—';
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+  return parsed.toISOString().replace('T', ' ').replace('Z', ' UTC');
+};
 
 export const AegisAlertsDashboardPage = () => {
   const classes = useStyles();
   const alertApi = useApi(alertApiRef);
-  const [rows, setRows] = useState(initialAlerts);
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
 
-  const updateStatus = (id: string, status: AlertRow['status'], verb: string) => {
-    setRows(prev => prev.map(row => (row.id === id ? { ...row, status } : row)));
-    alertApi.post({
-      severity: 'info',
-      message: `${verb} alert ${id}`,
-    });
-  };
+  const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [clusterId, setClusterId] = useState('');
+  const [loadingClusters, setLoadingClusters] = useState(false);
+  const [clusterError, setClusterError] = useState<string | null>(null);
+
+  const selectedCluster = useMemo(
+    () => clusters.find(cluster => cluster.id === clusterId) ?? null,
+    [clusters, clusterId],
+  );
+
+  const [rows, setRows] = useState<AlertRow[]>([]);
+  const [loadingAlerts, setLoadingAlerts] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoadingClusters(true);
+      setClusterError(null);
+      try {
+        const items = await listClusters(fetchApi, discoveryApi, identityApi, authApi);
+        if (!active) {
+          return;
+        }
+        setClusters(items);
+        if (items.length > 0) {
+          setClusterId(prev => prev || items[0].id);
+        }
+      } catch (err: any) {
+        if (active) {
+          setClusters([]);
+          setClusterError(err?.message || 'Unable to load clusters.');
+        }
+      } finally {
+        if (active) {
+          setLoadingClusters(false);
+        }
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  useEffect(() => {
+    if (!selectedCluster) {
+      setRows([]);
+      setAlertsError(null);
+      return;
+    }
+
+    let active = true;
+    const loadAlerts = async () => {
+      setLoadingAlerts(true);
+      setAlertsError(null);
+      try {
+        const response = await getAlerts(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          authApi,
+          selectedCluster.projectId,
+          selectedCluster.id,
+        );
+        if (!active) {
+          return;
+        }
+        const items = response.alerts ?? [];
+        const mapped: AlertRow[] = items.map(alert => ({
+          id: alert.fingerprint || `${alert.labels?.alertname ?? 'alert'}-${alert.startsAt ?? ''}`,
+          title:
+            alert.annotations?.summary ||
+            alert.annotations?.description ||
+            alert.labels?.alertname ||
+            'Alert',
+          severity: resolveSeverity(alert),
+          cluster: selectedCluster.name || selectedCluster.id,
+          started: formatAlertTimestamp(alert.startsAt),
+          state: alert.state || 'unknown',
+        }));
+        setRows(mapped);
+      } catch (err: any) {
+        if (active) {
+          setRows([]);
+          const message = err?.message || 'Unable to load alerts.';
+          setAlertsError(message);
+          alertApi.post({ severity: 'error', message });
+        }
+      } finally {
+        if (active) {
+          setLoadingAlerts(false);
+        }
+      }
+    };
+
+    loadAlerts();
+    const interval = setInterval(loadAlerts, 30_000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [selectedCluster, fetchApi, discoveryApi, identityApi, authApi, alertApi]);
 
   const columns = useMemo<TableColumn<AlertRow>[]>(
     () => [
@@ -104,51 +212,52 @@ export const AegisAlertsDashboardPage = () => {
       { title: 'Cluster', field: 'cluster' },
       { title: 'Started', field: 'started' },
       {
-        title: 'Status',
-        field: 'status',
-        render: row => row.status,
-      },
-      {
-        title: 'Actions',
-        field: 'actions',
-        sorting: false,
-        render: row => (
-          <div className={classes.actionBar}>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => updateStatus(row.id, 'acknowledged', 'Acknowledged')}
-              disabled={row.status !== 'active'}
-            >
-              Acknowledge
-            </Button>
-            <Button
-              size="small"
-              color="primary"
-              variant="contained"
-              onClick={() => updateStatus(row.id, 'resolved', 'Resolved')}
-              disabled={row.status === 'resolved'}
-            >
-              Resolve
-            </Button>
-          </div>
-        ),
+        title: 'State',
+        field: 'state',
       },
     ],
-    [classes.actionBar],
+    [],
   );
 
   return (
     <Page themeId="tool">
       <Content className={classes.root}>
         <ContentHeader title="Alerts Dashboard">
-          <HeaderLabel label="Open" value={rows.filter(r => r.status !== 'resolved').length.toString()} />
-          <HeaderLabel label="Resolved" value={rows.filter(r => r.status === 'resolved').length.toString()} />
+          <HeaderLabel label="Cluster" value={selectedCluster?.name || selectedCluster?.id || '—'} />
+          <HeaderLabel label="Active" value={rows.length.toString()} />
         </ContentHeader>
+
+        {clusterError && (
+          <WarningPanel title="Unable to load clusters">{clusterError}</WarningPanel>
+        )}
+        {loadingClusters && <Progress />}
+
+        <Paper className={classes.paper}>
+          <FormControl variant="outlined" size="small" fullWidth>
+            <InputLabel id="alerts-cluster-select-label">Cluster</InputLabel>
+            <Select
+              labelId="alerts-cluster-select-label"
+              value={clusterId}
+              label="Cluster"
+              onChange={event => setClusterId(event.target.value as string)}
+            >
+              {clusters.map(cluster => (
+                <MenuItem key={cluster.id} value={cluster.id}>
+                  {cluster.projectId} · {cluster.name || cluster.id}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Paper>
+
+        {alertsError && (
+          <WarningPanel title="Alerts unavailable">{alertsError}</WarningPanel>
+        )}
+        {loadingAlerts && <Progress />}
 
         <Paper className={classes.paper}>
           <Typography variant="h6" gutterBottom>
-            Critical Alerts
+            Active Alerts
           </Typography>
           <Table
             options={{ paging: false, search: false, padding: 'dense' }}
