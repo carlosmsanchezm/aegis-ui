@@ -886,11 +886,13 @@ export const LaunchWorkspacePage: FC = () => {
 
     const projectId = form.projectId.trim();
     const workspaceId = form.workloadId.trim();
+    const clusterId = form.clusterId.trim();
     const queue = form.queue.trim();
 
     const payload: CreateWorkspaceRequest = {
       projectId,
       workspaceId,
+      ...(clusterId ? { clusterId } : {}),
       ...(queue ? { queue } : {}),
       workspace: {
         flavor: form.flavor.trim() || undefined,
