@@ -112,6 +112,10 @@ const cpuQuery =
 const memoryQuery =
   'sum(container_memory_working_set_bytes{container!=\"\",container!=\"POD\"})';
 const podCountQuery = 'count(kube_pod_info)';
+const gpuUtilizationQueryCandidates = [
+  'DCGM_FI_DEV_GPU_UTIL',
+  'nvidia_gpu_duty_cycle',
+];
 
 const lastSampleValue = (series?: PrometheusMetricSeries[]): number | undefined => {
   const samples = series?.[0]?.samples;
@@ -119,6 +123,38 @@ const lastSampleValue = (series?: PrometheusMetricSeries[]): number | undefined 
     return undefined;
   }
   return samples[samples.length - 1]?.value;
+};
+
+const averageLastSampleValue = (
+  series?: PrometheusMetricSeries[],
+): number | undefined => {
+  const values = (series ?? [])
+    .map(item => {
+      const samples = item.samples;
+      if (!samples || samples.length === 0) {
+        return undefined;
+      }
+      const value = samples[samples.length - 1]?.value;
+      return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+    })
+    .filter((value): value is number => typeof value === 'number');
+
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+};
+
+const normalizePercent = (value?: number): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  let normalized = value;
+  if (normalized > 0 && normalized <= 1) {
+    normalized *= 100;
+  }
+  return Math.min(100, Math.max(0, normalized));
 };
 
 const sparkHeightsFromSeries = (
@@ -236,7 +272,7 @@ export const AegisTelemetryPage = () => {
       setLoadingMetrics(true);
       setMetricsError(null);
       try {
-        const [cpuRes, memoryRes, podsRes, gpuRes] = await Promise.all([
+        const [cpuRes, memoryRes, podsRes] = await Promise.all([
           queryMetrics(fetchApi, discoveryApi, identityApi, authApi, {
             projectId: selectedCluster.projectId,
             clusterId: selectedCluster.id,
@@ -258,13 +294,6 @@ export const AegisTelemetryPage = () => {
             rangeSeconds: 15 * 60,
             stepSeconds: 60,
           }),
-          queryMetrics(fetchApi, discoveryApi, identityApi, authApi, {
-            projectId: selectedCluster.projectId,
-            clusterId: selectedCluster.id,
-            includeGpu: true,
-            rangeSeconds: 15 * 60,
-            stepSeconds: 30,
-          }),
         ]);
 
         if (!active) {
@@ -275,18 +304,25 @@ export const AegisTelemetryPage = () => {
         setMemorySeries(memoryRes.series);
         setPodSeries(podsRes.series);
 
-        const gpuSeries = gpuRes.gpu?.utilization ?? [];
-        const latestGpuValues = gpuSeries
-          .map(s => lastSampleValue([s]))
-          .filter(value => typeof value === 'number' && Number.isFinite(value)) as number[];
-        if (latestGpuValues.length > 0) {
-          const avg =
-            latestGpuValues.reduce((sum, value) => sum + value, 0) /
-            latestGpuValues.length;
-          setGpuUtilization(avg);
-        } else {
-          setGpuUtilization(undefined);
+        let gpuAvg: number | undefined;
+        for (const query of gpuUtilizationQueryCandidates) {
+          try {
+            const gpuRes = await queryMetrics(fetchApi, discoveryApi, identityApi, authApi, {
+              projectId: selectedCluster.projectId,
+              clusterId: selectedCluster.id,
+              query,
+              rangeSeconds: 15 * 60,
+              stepSeconds: 30,
+            });
+            gpuAvg = normalizePercent(averageLastSampleValue(gpuRes.series));
+            if (gpuAvg !== undefined) {
+              break;
+            }
+          } catch {
+            // Ignore GPU query failures; some clusters won't expose GPU metrics.
+          }
         }
+        setGpuUtilization(gpuAvg);
       } catch (err: any) {
         if (active) {
           setMetricsError(err?.message || 'Unable to load telemetry metrics.');
