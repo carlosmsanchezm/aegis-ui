@@ -50,6 +50,7 @@ export type SubmitWorkspaceRequest = {
   id?: string;
   projectId: string;
   queue?: string;
+  clusterId?: string;
   workspace: {
     flavor?: string;
     image?: string;
@@ -65,6 +66,7 @@ export type CreateWorkspaceRequest = {
   projectId: string;
   workspaceId?: string;
   queue?: string;
+  clusterId?: string;
   workspace: WorkspaceSpec;
 };
 
@@ -800,9 +802,18 @@ const postJson = async <TReq extends object, TRes>(
     body: JSON.stringify(body),
   });
 
+  if (response.status === 401) {
+    throw new AuthenticationError();
+  }
+  if (response.status === 403) {
+    throw new AuthorizationError();
+  }
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
+    throw new ApiError(
+      text || `Request failed with status ${response.status}`,
+      response.status,
+    );
   }
 
   return (await response.json()) as TRes;
@@ -918,10 +929,11 @@ export const submitWorkspace = async (
       ...(req.id ? { id: req.id } : {}),
       projectId: req.projectId,
       ...(req.queue ? { queue: req.queue } : {}),
+      ...(req.clusterId ? { clusterId: req.clusterId } : {}),
       workspace: {
         flavor: workspaceInput.flavor,
         image: workspaceInput.image,
-        interactive: true,
+        interactive: workspaceInput.interactive ?? true,
         command,
         ports,
         ...(env ? { env } : {}),
@@ -947,43 +959,21 @@ export const createWorkspace = async (
   authApi: OAuthApi | undefined,
   req: CreateWorkspaceRequest,
 ): Promise<CreateWorkspaceResponse> => {
-  const workspaceInput = req.workspace ?? {};
-  const command = normalizeCommand(workspaceInput.command);
-  const ports = ensureWorkspacePorts(workspaceInput.ports);
-  const env = mergeWorkspaceEnv(workspaceInput.env);
-  const maxDuration =
-    typeof workspaceInput.maxDurationSeconds === 'number' &&
-    Number.isFinite(workspaceInput.maxDurationSeconds)
-      ? Math.floor(workspaceInput.maxDurationSeconds)
-      : undefined;
-
-  const body: CreateWorkspaceRequest = {
-    projectId: req.projectId,
-    ...(req.workspaceId ? { workspaceId: req.workspaceId } : {}),
-    ...(req.queue ? { queue: req.queue } : {}),
-    workspace: {
-      ...(workspaceInput.flavor ? { flavor: workspaceInput.flavor } : {}),
-      ...(workspaceInput.image ? { image: workspaceInput.image } : {}),
-      interactive: workspaceInput.interactive ?? true,
-      ...(command.length > 0 ? { command } : {}),
-      ports,
-      ...(env ? { env } : {}),
-      ...(maxDuration ? { maxDurationSeconds: maxDuration } : {}),
-    },
-  };
-
-  return restJson<CreateWorkspaceRequest, CreateWorkspaceResponse>(
+  const workload = await submitWorkspace(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    '/api/v1/workspaces',
     {
-      method: 'POST',
-      body,
-      requireAuth: true,
+      ...(req.workspaceId ? { id: req.workspaceId } : {}),
+      projectId: req.projectId,
+      ...(req.queue ? { queue: req.queue } : {}),
+      ...(req.clusterId ? { clusterId: req.clusterId } : {}),
+      workspace: req.workspace,
     },
   );
+
+  return { workload };
 };
 
 export const createCluster = async (
