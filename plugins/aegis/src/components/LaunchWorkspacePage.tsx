@@ -728,12 +728,21 @@ export const LaunchWorkspacePage: FC = () => {
           return;
         }
         setClusters(items);
-        // Auto-select first cluster if none selected
-        if (items.length > 0 && !form.clusterId) {
-          setForm(prev => ({ ...prev, clusterId: items[0].id }));
-        } else if (items.length === 0) {
-          setForm(prev => ({ ...prev, clusterId: '' }));
-        }
+        // Ensure the selected cluster belongs to the currently selected project.
+        // If not, reset to the first available cluster (or clear when none exist).
+        setForm(prev => {
+          const selected = prev.clusterId.trim();
+          const stillValid = selected
+            ? items.some(cluster => cluster.id === selected)
+            : false;
+          if (stillValid) {
+            return prev;
+          }
+          return {
+            ...prev,
+            clusterId: items.length > 0 ? items[0].id : '',
+          };
+        });
       } catch (err) {
         if (!active) {
           return;
