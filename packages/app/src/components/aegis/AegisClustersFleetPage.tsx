@@ -583,7 +583,7 @@ const applyFilters = (clusters: ClusterDetail[], filters: ClusterFilterState) =>
     return true;
   });
 
-export const AegisClustersPage = () => {
+export const AegisClustersFleetPage = () => {
   const classes = useStyles();
   const [filters, setFilters] = useState(initialFilters);
   const [detailCluster, setDetailCluster] = useState<ClusterDetail | null>(null);
