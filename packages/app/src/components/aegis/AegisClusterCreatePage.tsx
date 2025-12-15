@@ -58,10 +58,13 @@ import {
 import { keycloakAuthApiRef } from '../../apis';
 import {
   ApiError,
+  ImportClusterMethod,
+  ImportClusterResponse,
   Job,
   ProjectRecord,
   createCluster,
   getClusterJobStatus,
+  importCluster,
   isTerminalStatus,
   listProjects,
 } from '../../../../../plugins/aegis/src/api/aegisClient';
@@ -116,6 +119,27 @@ const parseLooseYaml = (input: string): Record<string, unknown> => {
 
   return result;
 };
+
+const readFileAsBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => {
+      reject(reader.error ?? new Error('Unable to read file'));
+    };
+    reader.onload = () => {
+      if (!(reader.result instanceof ArrayBuffer)) {
+        reject(new Error('Unable to read file'));
+        return;
+      }
+      const bytes = new Uint8Array(reader.result);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 1) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      resolve(window.btoa(binary));
+    };
+    reader.readAsArrayBuffer(file);
+  });
 
 type Persona = 'platform-admin' | 'cluster-creator' | 'ml-engineer';
 
@@ -450,8 +474,23 @@ export const AegisClusterCreatePage = () => {
     `name: atlas-train-govcloud\nprofileRef: eks-train@1.5.0\nregion: us-east-1\nparameters:\n  gpu:\n    count: 0\n  nodePool:\n    spotAllowed: false\n`);
   const [yamlError, setYamlError] = useState<string | null>(null);
   const [planOutput, setPlanOutput] = useState<string>('');
-  const [importMethod, setImportMethod] = useState<'arn' | 'kubeconfig'>('arn');
+  const [importMethod, setImportMethod] =
+    useState<ImportClusterMethod>('agent_only');
   const [attachVerified, setAttachVerified] = useState(false);
+  const [importProvider, setImportProvider] = useState('local');
+  const [importRegion, setImportRegion] = useState('local');
+  const [importClusterId, setImportClusterId] = useState('dev-local');
+  const [importClusterName, setImportClusterName] = useState(
+    'Local Development Cluster',
+  );
+  const [importAssumeRoleArn, setImportAssumeRoleArn] = useState('');
+  const [importKubeconfigFile, setImportKubeconfigFile] = useState<File | null>(
+    null,
+  );
+  const [importResult, setImportResult] =
+    useState<ImportClusterResponse | null>(null);
+  const [importingCluster, setImportingCluster] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -801,8 +840,109 @@ export const AegisClusterCreatePage = () => {
     }
   };
 
-  const attachCommand =
-    'curl -fsSL https://aegis.run/install-agent | sudo PROFILE=atlas-gpu bash -s -- --verify-hash';
+  const handleImportExisting = async () => {
+    const projectId = String(formState['project'] ?? '').trim();
+    if (!projectId) {
+      alertApi.post({ severity: 'error', message: 'Project ID is required.' });
+      return;
+    }
+    if (!importClusterId.trim()) {
+      alertApi.post({ severity: 'error', message: 'Cluster ID is required.' });
+      return;
+    }
+    if (!importClusterName.trim()) {
+      alertApi.post({ severity: 'error', message: 'Cluster name is required.' });
+      return;
+    }
+    if (!importProvider.trim()) {
+      alertApi.post({ severity: 'error', message: 'Provider is required.' });
+      return;
+    }
+    if (!importRegion.trim()) {
+      alertApi.post({ severity: 'error', message: 'Region is required.' });
+      return;
+    }
+    if (importMethod === 'assume_role' && !importAssumeRoleArn.trim()) {
+      alertApi.post({
+        severity: 'error',
+        message: 'AssumeRole ARN is required for assume-role imports.',
+      });
+      return;
+    }
+    if (importMethod === 'kubeconfig' && !importKubeconfigFile) {
+      alertApi.post({
+        severity: 'error',
+        message: 'Upload a kubeconfig file for kubeconfig imports.',
+      });
+      return;
+    }
+
+    setImportingCluster(true);
+    setImportError(null);
+    setImportResult(null);
+
+    try {
+      const kubeconfig =
+        importMethod === 'kubeconfig' && importKubeconfigFile
+          ? await readFileAsBase64(importKubeconfigFile)
+          : undefined;
+      const response = await importCluster(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        authApi,
+        {
+          projectId,
+          clusterId: importClusterId.trim(),
+          provider: importProvider.trim(),
+          region: importRegion.trim(),
+          name: importClusterName.trim(),
+          labels: { environment: 'development' },
+          importMethod,
+          ...(kubeconfig ? { kubeconfig } : {}),
+          ...(importMethod === 'assume_role' && importAssumeRoleArn.trim()
+            ? { assumeRoleArn: importAssumeRoleArn.trim() }
+            : {}),
+        },
+      );
+      setImportResult(response);
+      if (response.warnings?.length) {
+        alertApi.post({
+          severity: 'warning',
+          message: response.warnings.join(' • '),
+        });
+      } else {
+        alertApi.post({
+          severity: 'success',
+          message: `Cluster ${response.clusterId} imported (${response.status}).`,
+        });
+      }
+    } catch (error) {
+      const message =
+        error instanceof ApiError ? error.message : 'Failed to import cluster.';
+      setImportError(message);
+      alertApi.post({ severity: 'error', message });
+    } finally {
+      setImportingCluster(false);
+    }
+  };
+
+  const attachCommand = useMemo(() => {
+    if (!importResult) {
+      return 'Submit an import request to generate an install command.';
+    }
+    const lines: string[] = [];
+    if (importResult.agentScriptUrl) {
+      lines.push(`curl -fsSL ${importResult.agentScriptUrl} | bash`);
+    }
+    if (importResult.installCommand) {
+      if (lines.length > 0) {
+        lines.push('# OR');
+      }
+      lines.push(importResult.installCommand);
+    }
+    return lines.join('\n');
+  }, [importResult]);
 
   const renderFromProfile = () => (
     <Box>
@@ -1266,13 +1406,109 @@ export const AegisClusterCreatePage = () => {
         Install the Aegis agent to stream posture, compliance, and cost telemetry. We
         support role-based access via AssumeRole or short-lived kubeconfig uploads.
       </Typography>
+
+      {importError && (
+        <WarningPanel severity="warning" title="Import failed">
+          {importError}
+        </WarningPanel>
+      )}
+
+      <Box
+        display="grid"
+        gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+        style={{ gap: 16 }}
+      >
+        {projects.length > 0 ? (
+          <FormControl variant="outlined" fullWidth>
+            <InputLabel id="import-project-select">Project</InputLabel>
+            <Select
+              labelId="import-project-select"
+              value={selectedProjectId}
+              onChange={event =>
+                setFormState(prev => ({
+                  ...prev,
+                  project: event.target.value as string,
+                }))
+              }
+              label="Project"
+            >
+              {projects.map(project => (
+                <MenuItem key={project.id} value={project.id}>
+                  {project.displayName || project.id}
+                </MenuItem>
+              ))}
+            </Select>
+            <FormHelperText>Owning project for RBAC and guardrails.</FormHelperText>
+          </FormControl>
+        ) : (
+          <TextField
+            label="Project ID"
+            value={selectedProjectId}
+            onChange={event =>
+              setFormState(prev => ({ ...prev, project: event.target.value }))
+            }
+            helperText={loadingProjects ? 'Loading projects…' : 'Enter project slug.'}
+          />
+        )}
+        <TextField
+          label="Cluster ID"
+          value={importClusterId}
+          onChange={event => setImportClusterId(event.target.value)}
+          helperText="Unique identifier (e.g. dev-local)."
+        />
+        <TextField
+          label="Cluster name"
+          value={importClusterName}
+          onChange={event => setImportClusterName(event.target.value)}
+        />
+        <FormControl variant="outlined" fullWidth>
+          <InputLabel id="import-provider-select">Provider</InputLabel>
+          <Select
+            labelId="import-provider-select"
+            value={importProvider}
+            onChange={event => setImportProvider(event.target.value as string)}
+            label="Provider"
+          >
+            {[
+              'local',
+              'baremetal',
+              'existing-aws',
+              'existing-gcp',
+              'existing-azure',
+              'airgapped',
+            ].map(value => (
+              <MenuItem key={value} value={value}>
+                {value}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <TextField
+          label="Region"
+          value={importRegion}
+          onChange={event => setImportRegion(event.target.value)}
+          helperText="Use local for kind/minikube."
+        />
+      </Box>
+
       <RadioGroup
         row
         value={importMethod}
-        onChange={event => setImportMethod(event.target.value as 'arn' | 'kubeconfig')}
+        onChange={event =>
+          setImportMethod(event.target.value as ImportClusterMethod)
+        }
       >
         <FormControlLabel
-          value="arn"
+          value="agent_only"
+          control={<Radio color="primary" />}
+          label={
+            <div className={classes.radioOption}>
+              <DoneIcon /> <span>Agent only</span>
+            </div>
+          }
+        />
+        <FormControlLabel
+          value="assume_role"
           control={<Radio color="primary" />}
           label={
             <div className={classes.radioOption}>
@@ -1291,6 +1527,49 @@ export const AegisClusterCreatePage = () => {
         />
       </RadioGroup>
 
+      {importMethod === 'assume_role' && (
+        <Box mt={2}>
+          <TextField
+            label="AssumeRole ARN"
+            fullWidth
+            value={importAssumeRoleArn}
+            onChange={event => setImportAssumeRoleArn(event.target.value)}
+            helperText="Required for existing-aws clusters."
+          />
+        </Box>
+      )}
+
+      {importMethod === 'kubeconfig' && (
+        <Box mt={2} display="flex" alignItems="center" style={{ gap: 12 }}>
+          <Button variant="outlined" component="label" startIcon={<CloudDownloadIcon />}>
+            Upload kubeconfig
+            <input
+              type="file"
+              hidden
+              accept=".yaml,.yml,.kubeconfig,.conf"
+              onChange={event => {
+                const file = event.target.files?.[0] ?? null;
+                setImportKubeconfigFile(file);
+              }}
+            />
+          </Button>
+          <Typography variant="body2" color="textSecondary">
+            {importKubeconfigFile ? importKubeconfigFile.name : 'No file selected'}
+          </Typography>
+        </Box>
+      )}
+
+      <Box mt={2} display="flex" justifyContent="flex-end">
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleImportExisting}
+          disabled={importingCluster || !selectedProjectId}
+        >
+          {importingCluster ? 'Importing…' : 'Import cluster'}
+        </Button>
+      </Box>
+
       <Paper className={classes.helperCard} variant="outlined">
         <Typography variant="subtitle2">Attach command</Typography>
         <Typography component="pre" className={classes.terminal}>
@@ -1307,6 +1586,15 @@ export const AegisClusterCreatePage = () => {
           label="Agent hash verified"
         />
       </Paper>
+
+      {importResult?.helmValues && (
+        <Paper className={classes.helperCard} variant="outlined">
+          <Typography variant="subtitle2">Helm values (values.yaml)</Typography>
+          <Typography component="pre" className={classes.terminal}>
+            {JSON.stringify(importResult.helmValues, null, 2)}
+          </Typography>
+        </Paper>
+      )}
 
       <Accordion defaultExpanded>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
