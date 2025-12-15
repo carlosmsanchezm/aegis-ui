@@ -46,7 +46,9 @@ import {
   ClusterDetail,
   ClusterJobCondition,
   ClusterNodePoolStatus,
+  ClusterSummary,
   getCluster,
+  listClusters,
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 
@@ -208,6 +210,49 @@ const buildFallbackCluster = (clusterId: string): ClusterDetail => ({
   ],
 });
 
+const normalizeSummaryPhase = (phase?: string): ClusterDetail['phase'] => {
+  const normalized = (phase ?? '').toLowerCase();
+  if (normalized.includes('ready')) {
+    return 'Ready';
+  }
+  if (normalized.includes('error')) {
+    return 'Error';
+  }
+  if (normalized.includes('degraded') || normalized.includes('unhealthy')) {
+    return 'Degraded';
+  }
+  if (normalized.includes('upgrad')) {
+    return 'Upgrading';
+  }
+  if (normalized.includes('scal')) {
+    return 'Scaling';
+  }
+  return 'Provisioning';
+};
+
+const buildClusterFromSummary = (summary: ClusterSummary): ClusterDetail => {
+  const createdAt =
+    summary.createdAt && !Number.isNaN(new Date(summary.createdAt).getTime())
+      ? summary.createdAt
+      : new Date().toISOString();
+
+  const lastHeartbeat =
+    summary.lastHeartbeat && !Number.isNaN(new Date(summary.lastHeartbeat).getTime())
+      ? summary.lastHeartbeat
+      : undefined;
+
+  return {
+    id: summary.id,
+    name: summary.name || summary.id,
+    projectId: summary.projectId,
+    provider: summary.provider,
+    region: summary.region,
+    phase: normalizeSummaryPhase(summary.phase),
+    createdAt,
+    ...(lastHeartbeat ? { lastSyncedAt: lastHeartbeat } : {}),
+  };
+};
+
 const NodePoolTable = ({ nodePools }: { nodePools?: ClusterNodePoolStatus[] }) => {
   if (!nodePools || nodePools.length === 0) {
     return <Typography>No node pools reported yet.</Typography>;
@@ -282,7 +327,7 @@ export const AegisClusterDetailsPage = () => {
       .then(detail => {
         setCluster(detail);
       })
-      .catch((err: unknown) => {
+      .catch(async (err: unknown) => {
         const message = err instanceof Error ? err.message.toLowerCase() : '';
         if (
           err instanceof ApiError &&
@@ -291,6 +336,23 @@ export const AegisClusterDetailsPage = () => {
             message.includes('method not allowed') ||
             message.includes('not found'))
         ) {
+          try {
+            const summaries = await listClusters(fetchApi, discoveryApi, identityApi, authApi);
+            const summary = summaries.find(item => item.id === id);
+            if (summary) {
+              setCluster(buildClusterFromSummary(summary));
+              setUsingFallback(true);
+              alertApi.post({
+                severity: 'info',
+                message:
+                  'Showing cluster summary because detailed cluster data is unavailable.',
+              });
+              return;
+            }
+          } catch {
+            // fall back to staged sample data below
+          }
+
           setCluster(buildFallbackCluster(id));
           setUsingFallback(true);
           alertApi.post({
