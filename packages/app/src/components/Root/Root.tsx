@@ -193,8 +193,9 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
               <SidebarItem
                 icon={CloudQueueIcon}
                 to="aegis/clusters"
-                text="Clusters (Fleet)"
+                text="Clusters"
               />
+              <SidebarItem icon={LayersIcon} to="aegis/clusters/fleet" text="Fleet" />
               <SidebarItem icon={LaptopMacIcon} to="aegis/workloads" text="Workloads" />
               <SidebarItem icon={TimelineIcon} to="aegis/telemetry" text="Telemetry" />
               <SidebarItem icon={SecurityIcon} to="aegis/posture" text="Compliance posture" />
