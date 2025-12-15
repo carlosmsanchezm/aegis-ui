@@ -145,6 +145,35 @@ export type CreateClusterRequest = {
   profile?: ClusterProfileSelection;
 };
 
+export type ImportClusterMethod = 'kubeconfig' | 'assume_role' | 'agent_only';
+
+export type ImportClusterRequest = {
+  projectId: string;
+  clusterId: string;
+  provider: string;
+  region: string;
+  name: string;
+  labels?: Record<string, string>;
+  importMethod: ImportClusterMethod;
+  kubeconfig?: string;
+  assumeRoleArn?: string;
+};
+
+export type ImportClusterHelmValues = {
+  k8sAgent?: {
+    env?: Record<string, string>;
+  };
+};
+
+export type ImportClusterResponse = {
+  clusterId: string;
+  status: string;
+  helmValues?: ImportClusterHelmValues;
+  installCommand?: string;
+  agentScriptUrl?: string;
+  warnings?: string[];
+};
+
 export type Job = {
   id: string;
   status: string;
@@ -1000,6 +1029,38 @@ export const createCluster = async (
     identityApi,
     authApi,
     '/api/v1/clusters',
+    {
+      method: 'POST',
+      body,
+      requireAuth: true,
+    },
+  );
+};
+
+export const importCluster = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  req: ImportClusterRequest,
+): Promise<ImportClusterResponse> => {
+  const body = {
+    projectId: req.projectId,
+    clusterId: req.clusterId,
+    provider: req.provider,
+    region: req.region,
+    name: req.name,
+    ...(req.labels ? { labels: req.labels } : {}),
+    importMethod: req.importMethod,
+    ...(req.kubeconfig ? { kubeconfig: req.kubeconfig } : {}),
+    ...(req.assumeRoleArn ? { assumeRoleArn: req.assumeRoleArn } : {}),
+  };
+  return restJson<ImportClusterRequest, ImportClusterResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/clusters/import',
     {
       method: 'POST',
       body,
