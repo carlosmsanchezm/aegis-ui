@@ -821,23 +821,35 @@ export const AegisClusterCreatePage = () => {
           authApi,
           { projectId: importSubmittedProjectId },
         );
+        if (cancelled) {
+          return;
+        }
         const cluster = clusters.find(item => item.id === importResult.clusterId);
         if (!cluster) {
           return;
         }
         const phase = (cluster.phase ?? '').toLowerCase();
         if (phase === 'ready' || Boolean(cluster.lastHeartbeat)) {
+          if (cancelled) {
+            return;
+          }
           setAgentConnectionStatus('connected');
           setAgentConnectionError(null);
           stop();
           return;
         }
         if (phase === 'unhealthy') {
+          if (cancelled) {
+            return;
+          }
           setAgentConnectionStatus('failed');
           setAgentConnectionError('Agent connected but the cluster is reporting unhealthy.');
           stop();
         }
       } catch (err) {
+        if (cancelled) {
+          return;
+        }
         const message =
           err instanceof ApiError ? err.message : 'Unable to check agent connection status.';
         setAgentConnectionStatus('failed');
