@@ -1,4 +1,5 @@
 export * from './AegisClusterCreatePage';
+export * from './AegisClusterDetailsPage';
 export * from './AegisClustersPage';
 export * from './AegisDashboardPage';
 export * from './AegisPosturePage';
