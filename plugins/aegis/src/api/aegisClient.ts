@@ -941,14 +941,17 @@ export const submitWorkspace = async (
       },
     },
   };
-  return postJson<typeof body, WorkloadDTO>(
+
+  // SubmitWorkload is exposed via the platform-api HTTP gateway at POST /api/v1/workloads.
+  // Using the REST path avoids fragile RPC-style proxy paths that can return 404 when
+  // the Backstage proxy target is the HTTP gateway (port 8080).
+  return restJson<typeof body, WorkloadDTO>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'SubmitWorkload',
-    body,
-    { requireAuth: true },
+    '/api/v1/workloads',
+    { method: 'POST', body, requireAuth: true },
   );
 };
 
