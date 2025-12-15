@@ -51,6 +51,9 @@ export interface ProvisioningStage {
 export interface ClusterProvisioningDetailsProps {
   clusterName: string;
   status: 'Building' | 'Ready' | 'Error' | 'Canceled';
+  phase?: string;
+  startedAt?: string;
+  completedAt?: string;
   duration: string;
   initiatedBy: string;
   environment: string;
@@ -291,6 +294,9 @@ const useStyles = makeStyles(theme => ({
 export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProps> = ({
   clusterName,
   status,
+  phase,
+  startedAt,
+  completedAt,
   duration,
   initiatedBy,
   environment,
@@ -364,6 +370,17 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
     }
   };
 
+  const formatTimestamp = (raw?: string): string => {
+    if (!raw) {
+      return '—';
+    }
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return raw;
+    }
+    return parsed.toISOString().replace('T', ' ').replace('Z', ' UTC');
+  };
+
   return (
     <div className={classes.root}>
       {/* Header */}
@@ -432,6 +449,24 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
                       <span style={{ color: '#EF4444', fontWeight: 500 }}>Error</span>
                     </>
                   )}
+                </span>
+              </div>
+              {phase && (
+                <div className={classes.detailRow}>
+                  <span className={classes.detailLabel}>Phase</span>
+                  <span className={classes.detailValue}>{phase}</span>
+                </div>
+              )}
+              <div className={classes.detailRow}>
+                <span className={classes.detailLabel}>Started</span>
+                <span className={classes.detailValue}>
+                  {formatTimestamp(startedAt)}
+                </span>
+              </div>
+              <div className={classes.detailRow}>
+                <span className={classes.detailLabel}>Completed</span>
+                <span className={classes.detailValue}>
+                  {formatTimestamp(completedAt)}
                 </span>
               </div>
               <div className={classes.detailRow}>

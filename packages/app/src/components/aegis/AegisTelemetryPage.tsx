@@ -1,20 +1,35 @@
+import { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Chip,
+  FormControl,
   Grid,
+  InputLabel,
   LinearProgress,
   List,
   ListItem,
   ListItemText,
   makeStyles,
+  MenuItem,
   Paper,
+  Select,
   Typography,
 } from '@material-ui/core';
 import {
   Content,
   ContentHeader,
   Page,
+  Progress,
+  WarningPanel,
 } from '@backstage/core-components';
+import { discoveryApiRef, fetchApiRef, identityApiRef, useApi } from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../../apis';
+import {
+  ClusterSummary,
+  PrometheusMetricSeries,
+  listClusters,
+  queryMetrics,
+} from '../../../../../plugins/aegis/src/api/aegisClient';
 
 const useStyles = makeStyles(theme => {
   const isDark = theme.palette.type === 'dark';
@@ -92,61 +107,355 @@ const useStyles = makeStyles(theme => {
   };
 });
 
-const analytics = [
-  {
-    label: 'GPU Utilization',
-    value: '72%',
-    trend: '+5.4%',
-    progress: 72,
-    status: 'Healthy',
-  },
-  {
-    label: 'Workspace Latency (p95)',
-    value: '142 ms',
-    trend: '-18 ms',
-    progress: 62,
-    status: 'Improving',
-  },
-  {
-    label: 'GPU Queue Depth',
-    value: '0.86',
-    trend: '-0.12',
-    progress: 44,
-    status: 'Balanced',
-  },
+const cpuQuery =
+  'sum(rate(container_cpu_usage_seconds_total{container!=\"\",container!=\"POD\"}[5m]))';
+const memoryQuery =
+  'sum(container_memory_working_set_bytes{container!=\"\",container!=\"POD\"})';
+const podCountQuery = 'count(kube_pod_info)';
+const gpuUtilizationQueryCandidates = [
+  'DCGM_FI_DEV_GPU_UTIL',
+  'nvidia_gpu_duty_cycle',
 ];
 
-const observability = [
-  {
-    name: 'aws-gov-west-2 · titan-h100',
-    summary: 'GPU saturation 68% · Pod disruption budget intact',
-    status: 'Operational',
-  },
-  {
-    name: 'azure-il6 · atlas-mi300x',
-    summary: 'Scaling event underway · 6 nodes joining in 45s',
-    status: 'Scaling',
-  },
-  {
-    name: 'gcp-us-central-secure · neptune-a100',
-    summary: 'Two nodes in maintenance window · capacity rerouted',
-    status: 'Maintaining',
-  },
-];
+const lastSampleValue = (series?: PrometheusMetricSeries[]): number | undefined => {
+  const samples = series?.[0]?.samples;
+  if (!samples || samples.length === 0) {
+    return undefined;
+  }
+  return samples[samples.length - 1]?.value;
+};
 
-const sparklineHeights = [18, 12, 28, 24, 34, 26, 30, 20, 32, 24];
+const averageLastSampleValue = (
+  series?: PrometheusMetricSeries[],
+): number | undefined => {
+  const values = (series ?? [])
+    .map(item => {
+      const samples = item.samples;
+      if (!samples || samples.length === 0) {
+        return undefined;
+      }
+      const value = samples[samples.length - 1]?.value;
+      return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+    })
+    .filter((value): value is number => typeof value === 'number');
+
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+};
+
+const normalizePercent = (value?: number): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  let normalized = value;
+  if (normalized > 0 && normalized <= 1) {
+    normalized *= 100;
+  }
+  return Math.min(100, Math.max(0, normalized));
+};
+
+const sparkHeightsFromSeries = (
+  series?: PrometheusMetricSeries[],
+  count = 10,
+  minHeight = 12,
+  maxHeight = 34,
+): number[] => {
+  const samples = series?.[0]?.samples ?? [];
+  const values = samples
+    .slice(-count)
+    .map(sample => sample?.value)
+    .filter(value => typeof value === 'number' && Number.isFinite(value)) as number[];
+  if (values.length === 0) {
+    return Array.from({ length: count }, () => minHeight);
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
+    const mid = Math.round((minHeight + maxHeight) / 2);
+    return Array.from({ length: count }, () => mid);
+  }
+  return values.map(value => {
+    const ratio = (value - min) / (max - min);
+    return Math.round(minHeight + ratio * (maxHeight - minHeight));
+  });
+};
+
+const formatNumber = (value?: number, suffix = ''): string =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? `${value.toFixed(2)}${suffix}`
+    : '—';
+
+const formatBytes = (value?: number): string => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—';
+  }
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let bytes = Math.max(0, value);
+  let unit = 0;
+  while (bytes >= 1024 && unit < units.length - 1) {
+    bytes /= 1024;
+    unit += 1;
+  }
+  return `${bytes.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+};
 
 export const AegisTelemetryPage = () => {
   const classes = useStyles();
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
+
+  const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [clusterId, setClusterId] = useState('');
+  const [loadingClusters, setLoadingClusters] = useState(false);
+  const [clusterError, setClusterError] = useState<string | null>(null);
+
+  const selectedCluster = useMemo(
+    () => clusters.find(cluster => cluster.id === clusterId) ?? null,
+    [clusters, clusterId],
+  );
+
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [cpuSeries, setCpuSeries] = useState<PrometheusMetricSeries[] | undefined>();
+  const [memorySeries, setMemorySeries] = useState<PrometheusMetricSeries[] | undefined>();
+  const [podSeries, setPodSeries] = useState<PrometheusMetricSeries[] | undefined>();
+  const [gpuUtilization, setGpuUtilization] = useState<number | undefined>();
+
+  useEffect(() => {
+    let active = true;
+    const loadClusters = async () => {
+      setLoadingClusters(true);
+      setClusterError(null);
+      try {
+        const items = await listClusters(fetchApi, discoveryApi, identityApi, authApi);
+        if (!active) {
+          return;
+        }
+        setClusters(items);
+        if (items.length > 0) {
+          setClusterId(prev => prev || items[0].id);
+        }
+      } catch (err: any) {
+        if (active) {
+          setClusterError(err?.message || 'Unable to load clusters.');
+          setClusters([]);
+        }
+      } finally {
+        if (active) {
+          setLoadingClusters(false);
+        }
+      }
+    };
+    loadClusters();
+    return () => {
+      active = false;
+    };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  useEffect(() => {
+    if (!selectedCluster) {
+      setCpuSeries(undefined);
+      setMemorySeries(undefined);
+      setPodSeries(undefined);
+      setGpuUtilization(undefined);
+      setMetricsError(null);
+      return;
+    }
+
+    let active = true;
+    const loadMetrics = async () => {
+      setLoadingMetrics(true);
+      setMetricsError(null);
+      try {
+        const [cpuRes, memoryRes, podsRes] = await Promise.all([
+          queryMetrics(fetchApi, discoveryApi, identityApi, authApi, {
+            projectId: selectedCluster.projectId,
+            clusterId: selectedCluster.id,
+            query: cpuQuery,
+            rangeSeconds: 15 * 60,
+            stepSeconds: 30,
+          }),
+          queryMetrics(fetchApi, discoveryApi, identityApi, authApi, {
+            projectId: selectedCluster.projectId,
+            clusterId: selectedCluster.id,
+            query: memoryQuery,
+            rangeSeconds: 15 * 60,
+            stepSeconds: 30,
+          }),
+          queryMetrics(fetchApi, discoveryApi, identityApi, authApi, {
+            projectId: selectedCluster.projectId,
+            clusterId: selectedCluster.id,
+            query: podCountQuery,
+            rangeSeconds: 15 * 60,
+            stepSeconds: 60,
+          }),
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setCpuSeries(cpuRes.series);
+        setMemorySeries(memoryRes.series);
+        setPodSeries(podsRes.series);
+
+        let gpuAvg: number | undefined;
+        for (const query of gpuUtilizationQueryCandidates) {
+          try {
+            const gpuRes = await queryMetrics(fetchApi, discoveryApi, identityApi, authApi, {
+              projectId: selectedCluster.projectId,
+              clusterId: selectedCluster.id,
+              query,
+              rangeSeconds: 15 * 60,
+              stepSeconds: 30,
+            });
+            gpuAvg = normalizePercent(averageLastSampleValue(gpuRes.series));
+            if (gpuAvg !== undefined) {
+              break;
+            }
+          } catch {
+            // Ignore GPU query failures; some clusters won't expose GPU metrics.
+          }
+        }
+        setGpuUtilization(gpuAvg);
+      } catch (err: any) {
+        if (active) {
+          setMetricsError(err?.message || 'Unable to load telemetry metrics.');
+          setCpuSeries(undefined);
+          setMemorySeries(undefined);
+          setPodSeries(undefined);
+          setGpuUtilization(undefined);
+        }
+      } finally {
+        if (active) {
+          setLoadingMetrics(false);
+        }
+      }
+    };
+
+    loadMetrics();
+    const interval = setInterval(loadMetrics, 30_000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [selectedCluster, fetchApi, discoveryApi, identityApi, authApi]);
+
+  const analytics = useMemo(() => {
+    const cpu = lastSampleValue(cpuSeries);
+    const memory = lastSampleValue(memorySeries);
+    const pods = lastSampleValue(podSeries);
+
+    return [
+      {
+        label: 'CPU Usage (cores)',
+        value: formatNumber(cpu, ''),
+        trend: cpu !== undefined ? 'Live' : 'No data',
+        progress: 100,
+        status: cpu !== undefined ? 'Live' : 'Unavailable',
+        sparkline: sparkHeightsFromSeries(cpuSeries),
+      },
+      {
+        label: 'Memory Working Set',
+        value: formatBytes(memory),
+        trend: memory !== undefined ? 'Live' : 'No data',
+        progress: 100,
+        status: memory !== undefined ? 'Live' : 'Unavailable',
+        sparkline: sparkHeightsFromSeries(memorySeries),
+      },
+      {
+        label: 'Pod Count',
+        value: pods !== undefined ? Math.round(pods).toString() : '—',
+        trend: pods !== undefined ? 'Live' : 'No data',
+        progress: 100,
+        status: pods !== undefined ? 'Live' : 'Unavailable',
+        sparkline: sparkHeightsFromSeries(podSeries),
+      },
+    ];
+  }, [cpuSeries, memorySeries, podSeries]);
+
+  const observability = useMemo(() => {
+    const clusterLabel = selectedCluster
+      ? `${selectedCluster.projectId} · ${selectedCluster.name || selectedCluster.id}`
+      : '—';
+
+    return [
+      {
+        name: `Selected cluster · ${clusterLabel}`,
+        summary: selectedCluster
+          ? 'Metrics, logs, alerts, and traces are queried via the control plane proxy.'
+          : 'Select a cluster to query observability endpoints.',
+        status: selectedCluster ? 'Active' : 'Idle',
+      },
+      {
+        name: 'Prometheus',
+        summary: cpuSeries ? 'Query OK' : 'Not available',
+        status: cpuSeries ? 'Operational' : 'Unavailable',
+      },
+      {
+        name: 'GPU telemetry',
+        summary:
+          typeof gpuUtilization === 'number'
+            ? `Avg utilization ${gpuUtilization.toFixed(1)}%`
+            : 'No GPU series detected',
+        status: typeof gpuUtilization === 'number' ? 'Operational' : 'Unavailable',
+      },
+    ];
+  }, [selectedCluster, cpuSeries, gpuUtilization]);
 
   return (
     <Page themeId="tool">
       <Content className={classes.pageContent}>
         <ContentHeader title="Telemetry Pulse">
-          <Chip label="Realtime" color="primary" />
-          <Chip label="Streaming from all regions" variant="outlined" />
+          <Chip label="Cluster-scoped" color="primary" />
+          <Chip label="Powered by Prometheus/Loki" variant="outlined" />
         </ContentHeader>
         <Box px={4} pb={6}>
+          {clusterError && (
+            <WarningPanel title="Unable to load clusters">
+              {clusterError}
+            </WarningPanel>
+          )}
+          {loadingClusters && <Progress />}
+
+          {!loadingClusters && clusters.length > 0 && (
+            <Box mb={3} display="flex" style={{ gap: 16 }} flexWrap="wrap">
+              <FormControl variant="outlined" size="small">
+                <InputLabel id="aegis-telemetry-cluster-select-label">
+                  Cluster
+                </InputLabel>
+                <Select
+                  labelId="aegis-telemetry-cluster-select-label"
+                  value={clusterId}
+                  onChange={event => setClusterId(event.target.value as string)}
+                  label="Cluster"
+                >
+                  {clusters.map(cluster => (
+                    <MenuItem key={cluster.id} value={cluster.id}>
+                      {cluster.projectId} · {cluster.name || cluster.id}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {selectedCluster && (
+                <>
+                  <Chip label={`Provider: ${selectedCluster.provider}`} variant="outlined" />
+                  <Chip label={`Region: ${selectedCluster.region}`} variant="outlined" />
+                </>
+              )}
+            </Box>
+          )}
+
+          {metricsError && (
+            <WarningPanel title="Telemetry unavailable">{metricsError}</WarningPanel>
+          )}
+          {loadingMetrics && <Progress />}
+
           <Grid container spacing={4}>
             {analytics.map(metric => (
               <Grid item xs={12} md={4} key={metric.label}>
@@ -159,10 +468,10 @@ export const AegisTelemetryPage = () => {
                     {metric.value}
                   </Typography>
                   <Typography variant="body2" className={classes.metricTrend}>
-                    {metric.trend} vs baseline
+                    {metric.trend}
                   </Typography>
                   <div className={classes.sparklines}>
-                    {sparklineHeights.map((height, index) => (
+                    {metric.sparkline.map((height, index) => (
                       <span
                         key={`${metric.label}-spark-${index}`}
                         className={classes.sparkBar}
@@ -182,8 +491,7 @@ export const AegisTelemetryPage = () => {
               <Paper className={classes.metricCard} elevation={0}>
                 <Typography variant="h5">Signal Stream</Typography>
                 <Typography variant="body2" className={classes.subtle}>
-                  Federated traces summarized across clouds, filtered for mission
-                  activity and GPU hotspots.
+                  Live cluster telemetry sourced from the in-cluster observability stack.
                 </Typography>
                 <List disablePadding>
                   {observability.map(item => (
@@ -202,11 +510,17 @@ export const AegisTelemetryPage = () => {
               <Paper className={classes.metricCard} elevation={0}>
                 <Typography variant="h5">Streaming Analytics</Typography>
                 <Typography variant="body2" className={classes.subtle}>
-                  Live GPU health, workspace performance, and policy events.
+                  GPU health derived from Prometheus scrapes (when available).
                 </Typography>
                 <Box mt={2}>
                   <Grid container spacing={2}>
-                    {[72, 64, 58, 76, 67, 71].map((value, index) => (
+                    {[
+                      typeof gpuUtilization === 'number'
+                        ? Math.round(gpuUtilization)
+                        : undefined,
+                    ]
+                      .filter(value => typeof value === 'number')
+                      .map((value, index) => (
                       <Grid item xs={12} md={4} key={`segment-${index}`}>
                         <Paper elevation={0} className={classes.metricCard}>
                           <Typography variant="subtitle2">
@@ -223,6 +537,13 @@ export const AegisTelemetryPage = () => {
                         </Paper>
                       </Grid>
                     ))}
+                    {typeof gpuUtilization !== 'number' && (
+                      <Grid item xs={12}>
+                        <WarningPanel title="GPU telemetry not detected">
+                          The selected cluster did not return GPU utilization metrics. This is expected for CPU-only clusters.
+                        </WarningPanel>
+                      </Grid>
+                    )}
                   </Grid>
                 </Box>
               </Paper>

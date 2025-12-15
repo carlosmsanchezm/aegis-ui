@@ -39,16 +39,13 @@ import DescriptionIcon from '@material-ui/icons/Description';
 import CodeIcon from '@material-ui/icons/Code';
 import CloudDownloadIcon from '@material-ui/icons/CloudDownload';
 import DoneIcon from '@material-ui/icons/Done';
-import HourglassEmptyIcon from '@material-ui/icons/HourglassEmpty';
 import ErrorOutlineIcon from '@material-ui/icons/ErrorOutline';
-import ReplayIcon from '@material-ui/icons/Replay';
 import LaunchIcon from '@material-ui/icons/Launch';
 import {
   Content,
   ContentHeader,
   InfoCard,
   Page,
-  Progress,
   WarningPanel,
 } from '@backstage/core-components';
 import {
@@ -68,11 +65,6 @@ import {
   isTerminalStatus,
   listProjects,
 } from '../../../../../plugins/aegis/src/api/aegisClient';
-import {
-  ClusterProvisioningDetails,
-  LogEntry,
-  ProvisioningStage,
-} from './ClusterProvisioningDetails';
 
 const parseLooseYaml = (input: string): Record<string, unknown> => {
   const result: Record<string, any> = {};
@@ -143,17 +135,17 @@ type ProfileCard = {
 
 const profileCards: ProfileCard[] = [
   {
-    id: 'eks-gpu-train',
+    id: 'eks-train',
     name: 'Atlas GPU Training',
-    version: '1.4.0',
+    version: '1.5.0',
     provider: 'aws',
-    description: 'EKS based GPU-accelerated cluster with hardened posture.',
+    description: 'EKS-based GPU-accelerated cluster with on-demand GPU scaling (Kubeflow pattern).',
     ilLevel: 'IL-5',
     fedramp: 'High',
-    gpu: 'NVIDIA H100',
-    cost: 124.8,
+    gpu: 'NVIDIA T4 (on-demand)',
+    cost: 12.5,
     useCase: 'Deep learning training & fine-tuning',
-    baseline: 320,
+    baseline: 45,
   },
   {
     id: 'eks-general',
@@ -238,12 +230,12 @@ const schemaFields: SchemaField[] = [
   },
   {
     path: 'gpu.type',
-    title: 'GPU Type',
+    title: 'GPU Type Override',
     type: 'string',
-    enum: ['H100', 'A100', 'None'],
-    defaultValue: 'H100',
+    enum: ['T4', 'A10G', 'A100', 'H100', 'None'],
+    // No defaultValue - uses profile default (T4/g4dn.xlarge for eks-train)
     roleVisibility: ['platform-admin'],
-    description: 'Platform may lock this for IL-5 workloads.',
+    description: 'Override the profile GPU type. Leave empty to use profile default. T4 is most cost-effective.',
   },
   {
     path: 'k8s.version',
@@ -421,119 +413,6 @@ const buildProfileParameters = (
   return Object.keys(params).length > 0 ? params : undefined;
 };
 
-// Synthetic data generators for Vercel-style provisioning UI
-const generateProvisioningLogs = (jobStatus?: string): LogEntry[] => {
-  const baseTime = new Date();
-  const formatTime = (offset: number) => {
-    const time = new Date(baseTime.getTime() + offset * 1000);
-    return time.toTimeString().split(' ')[0] + '.' + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  };
-
-  const logs: LogEntry[] = [
-    { timestamp: formatTime(0), message: 'Initializing Pulumi engine...', level: 'info' },
-    { timestamp: formatTime(1), message: "Loading stack 'development'...", level: 'info' },
-    { timestamp: formatTime(3), message: 'Executing command: pulumi up -y', level: 'highlight' },
-    { timestamp: formatTime(5), message: 'View Live: https://app.pulumi.com/aegis/gpu-cluster-02/dev/updates/42', level: 'info' },
-    { timestamp: formatTime(6), message: 'Updating (development):', level: 'info' },
-    { timestamp: formatTime(6.1), message: '     Type                 Name                         Status       ', level: 'info' },
-    { timestamp: formatTime(6.1), message: '     pulumi:pulumi:Stack  gpu-cluster-02-dev', level: 'info' },
-    { timestamp: formatTime(8), message: '+   ├─ aws:ec2/vpc:Vpc      aegis-dev-vpc                created', level: 'resource-create' },
-    { timestamp: formatTime(11), message: '+   ├─ aws:ec2/subnet:Subnet private-us-east-1a           created', level: 'resource-create' },
-    { timestamp: formatTime(11.1), message: '+   ├─ aws:ec2/subnet:Subnet private-us-east-1b           created', level: 'resource-create' },
-    { timestamp: formatTime(15), message: '+   ├─ aws:iam:Role         eks-cluster-role             created', level: 'resource-create' },
-    { timestamp: formatTime(20), message: "[Warning] IAM policy 'eks-cluster-role' uses deprecated managed policy. Update recommended.", level: 'warning' },
-    { timestamp: formatTime(25), message: '   ├─ aws:eks/cluster:Cluster aegis-eks-dev             creating... [5s elapsed]', level: 'info' },
-    { timestamp: formatTime(85), message: '   ├─ aws:eks/cluster:Cluster aegis-eks-dev             creating... [1m 5s elapsed]', level: 'info' },
-    { timestamp: formatTime(160), message: '[AWS CLI] Verifying control plane connectivity...', level: 'highlight' },
-    { timestamp: formatTime(480), message: '+   ├─ aws:eks/cluster:Cluster aegis-eks-dev             created', level: 'resource-create' },
-    { timestamp: formatTime(481), message: 'Configuring Node Groups (A100 Optimized - p4d.24xlarge)...', level: 'info' },
-    { timestamp: formatTime(482), message: '   ├─ aws:eks/nodeGroup:NodeGroup gpu-nodes-a100        creating...', level: 'info' },
-    { timestamp: formatTime(485), message: 'Configuring Node Groups (V100 Optimized - p3.8xlarge)...', level: 'info' },
-    { timestamp: formatTime(486), message: '   └─ aws:eks/nodeGroup:NodeGroup gpu-nodes-v100        creating...', level: 'info' },
-    { timestamp: formatTime(490), message: '~   kubernetes:core/configMap aws-auth                 updating     [diff: ~data]', level: 'resource-update' },
-    { timestamp: formatTime(495), message: 'Waiting for EC2 instances to pass health checks and join the cluster...', level: 'info' },
-    { timestamp: formatTime(755), message: '   aws:eks/nodeGroup:NodeGroup gpu-nodes-a100        creating... [4m 23s elapsed]', level: 'info' },
-  ];
-
-  if (jobStatus === 'SUCCEEDED') {
-    logs.push(
-      { timestamp: formatTime(800), message: '+   Resources: 42 created, 3 updated', level: 'resource-create' },
-      { timestamp: formatTime(801), message: 'Duration: 13m 20s', level: 'highlight' },
-      { timestamp: formatTime(802), message: 'Cluster is ready!', level: 'highlight' },
-    );
-  }
-
-  return logs;
-};
-
-const generateProvisioningStages = (jobStatus?: string): ProvisioningStage[] => {
-  const isBuilding = !jobStatus || jobStatus === 'RUNNING' || jobStatus === 'PENDING';
-
-  return [
-    {
-      id: 'networking',
-      label: 'Networking & IAM Infrastructure',
-      status: 'ready',
-      totalResources: 15,
-      readyResources: 15,
-      duration: '6m 10s',
-      resources: [
-        { name: 'VPC (aegis-dev-vpc)', id: 'vpc-0a1b2c3d4e5f67890', status: 'ready' },
-        { name: 'Private Subnets (3)', status: 'ready' },
-        { name: 'EKS IAM Role', id: 'eks-cluster-role', status: 'ready' },
-      ],
-    },
-    {
-      id: 'controlplane',
-      label: 'EKS Control Plane',
-      status: 'ready',
-      totalResources: 1,
-      readyResources: 1,
-      duration: '9m 15s',
-      resources: [
-        { name: 'EKS Cluster (aegis-eks-dev)', id: 'K8s v1.29', status: 'ready' },
-      ],
-    },
-    {
-      id: 'compute',
-      label: 'Compute Node Groups',
-      status: isBuilding ? 'creating' : 'ready',
-      totalResources: 3,
-      readyResources: isBuilding ? 0 : 3,
-      resources: [
-        { name: 'GPU Nodes A100 (gpu-nodes-a100)', id: 'p4d.24xlarge (1/5 Nodes Ready)', status: isBuilding ? 'creating' : 'ready' },
-        { name: 'GPU Nodes V100 (gpu-nodes-v100)', id: 'p3.8xlarge (0/5 Nodes Ready)', status: isBuilding ? 'creating' : 'ready' },
-        { name: 'Utility Nodes (utility-pool)', id: 'm5.large', status: isBuilding ? 'pending' : 'ready' },
-      ],
-    },
-    {
-      id: 'addons',
-      label: 'Cluster Add-ons & Configuration',
-      status: isBuilding ? 'pending' : 'ready',
-      totalResources: 5,
-      readyResources: isBuilding ? 0 : 5,
-      resources: [
-        { name: 'NVIDIA Device Plugin', status: isBuilding ? 'pending' : 'ready' },
-        { name: 'Karpenter Autoscaler', status: isBuilding ? 'pending' : 'ready' },
-        { name: 'Monitoring Stack (Prometheus)', status: isBuilding ? 'pending' : 'ready' },
-        { name: 'MLOps Tools (Kubeflow)', status: isBuilding ? 'pending' : 'ready' },
-      ],
-    },
-    {
-      id: 'validation',
-      label: 'Validation & Health Checks',
-      status: isBuilding ? 'pending' : 'ready',
-      totalResources: 3,
-      readyResources: isBuilding ? 0 : 3,
-      resources: [
-        { name: 'API Server Health Check', status: isBuilding ? 'pending' : 'ready' },
-        { name: 'Node GPU Verification (NVIDIA SMI)', status: isBuilding ? 'pending' : 'ready' },
-        { name: 'Security Policy Conformance', status: isBuilding ? 'pending' : 'ready' },
-      ],
-    },
-  ];
-};
-
 export const AegisClusterCreatePage = () => {
   const classes = useStyles();
   const navigate = useNavigate();
@@ -557,7 +436,7 @@ export const AegisClusterCreatePage = () => {
     });
     return defaults;
   });
-  const [timeline, setTimeline] = useState<TimelineStep[]>(() => buildTimeline());
+  const [, setTimeline] = useState<TimelineStep[]>(() => buildTimeline());
   const [isLaunching, setIsLaunching] = useState(false);
   const [gitMode, setGitMode] = useState<'plan' | 'apply'>('plan');
   const [gitEngine, setGitEngine] = useState<'pulumi' | 'terraform'>(
@@ -568,7 +447,7 @@ export const AegisClusterCreatePage = () => {
   const [gitPath, setGitPath] = useState('clusters/atlas');
   const [gitBranch, setGitBranch] = useState('main');
   const [yamlSpec, setYamlSpec] = useState(
-    `name: atlas-train-govcloud\nprofileRef: atlas-gpu-train@1.4.0\nregion: us-gov-west-1\nparameters:\n  gpu:\n    count: 4\n    type: H100\n  nodePool:\n    spotAllowed: false\n`);
+    `name: atlas-train-govcloud\nprofileRef: eks-train@1.5.0\nregion: us-east-1\nparameters:\n  gpu:\n    count: 0\n  nodePool:\n    spotAllowed: false\n`);
   const [yamlError, setYamlError] = useState<string | null>(null);
   const [planOutput, setPlanOutput] = useState<string>('');
   const [importMethod, setImportMethod] = useState<'arn' | 'kubeconfig'>('arn');
@@ -1202,11 +1081,26 @@ export const AegisClusterCreatePage = () => {
                   fontFamily: 'Source Code Pro, monospace',
                 }}
               >
-                {`profileRef: ${selectedProfile.id}@${selectedProfile.version}\nregion: ${formState['region']}\nparameters:\n  gpu:\n    count: ${formState['gpu.count'] ?? '—'}\n    type: ${formState['gpu.type'] ?? 'H100'}\n  nodePool:\n    spotAllowed: ${Boolean(formState['nodePool.spotAllowed'])}\n`}
+                {`profileRef: ${selectedProfile.id}@${selectedProfile.version}\nregion: ${formState['region']}\nparameters:\n  gpu:\n    count: ${formState['gpu.count'] ?? 0}\n    type: ${formState['gpu.type'] ?? '(profile default)'}\n  nodePool:\n    spotAllowed: ${Boolean(formState['nodePool.spotAllowed'])}\n`}
               </Typography>
             </InfoCard>
           </div>
           <Box display="flex" style={{ gap: 8 }}>
+            {isLaunching || (!!job && !isTerminalStatus(job.status)) ? (
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={() => {
+                  sessionStorage.removeItem(jobStorageKey);
+                  setJob(null);
+                  setJobContext(null);
+                  setIsLaunching(false);
+                  setTimeline(buildTimeline());
+                }}
+              >
+                Start New Cluster
+              </Button>
+            ) : null}
             <Button
               variant="contained"
               color="primary"
