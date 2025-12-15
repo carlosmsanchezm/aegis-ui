@@ -50,6 +50,7 @@ export type SubmitWorkspaceRequest = {
   id?: string;
   projectId: string;
   queue?: string;
+  clusterId?: string;
   workspace: {
     flavor?: string;
     image?: string;
@@ -65,6 +66,7 @@ export type CreateWorkspaceRequest = {
   projectId: string;
   workspaceId?: string;
   queue?: string;
+  clusterId?: string;
   workspace: WorkspaceSpec;
 };
 
@@ -95,6 +97,38 @@ export type ProjectRecord = {
 
 export type ListProjectsResponse = {
   items: ProjectRecord[];
+};
+
+export type ClusterMode = 'provision' | 'import';
+
+export type ClusterCostEstimate = {
+  hourly: number;
+  currency?: string;
+  description?: string;
+};
+
+export type ClusterSummary = {
+  id: string;
+  name: string;
+  projectId: string;
+  mode?: ClusterMode;
+  provider: string;
+  region: string;
+  phase: 'Provisioning' | 'Ready' | 'Error' | 'Degraded' | 'Upgrading' | 'Scaling';
+  createdAt?: string;
+  lastSyncedAt?: string;
+  costEstimate?: ClusterCostEstimate;
+  latestCondition?: ClusterJobCondition;
+};
+
+export type ListClustersOptions = {
+  projectId?: string;
+  region?: string;
+  mode?: ClusterMode;
+};
+
+export type ListClustersResponse = {
+  items: ClusterSummary[];
 };
 
 export type ClusterProfileSelection = {
@@ -200,6 +234,96 @@ export type ClusterDetail = {
   account?: string;
   assumeRoleArn?: string;
   accountId?: string;
+};
+
+export type PrometheusMetricSample = {
+  timestamp: string;
+  value: number;
+};
+
+export type PrometheusMetricSeries = {
+  labels?: Record<string, string>;
+  samples?: PrometheusMetricSample[];
+};
+
+export type MetricsQueryRequest = {
+  projectId: string;
+  clusterId: string;
+  query: string;
+  start?: string;
+  end?: string;
+  stepSeconds?: number;
+  rangeSeconds?: number;
+};
+
+export type MetricsQueryResponse = {
+  series: PrometheusMetricSeries[];
+};
+
+export type LogsQueryRequest = {
+  projectId: string;
+  clusterId: string;
+  namespace?: string;
+  pod?: string;
+  substring?: string;
+  start?: string;
+  end?: string;
+  limit?: number;
+  cursor?: string;
+  includeEvents?: boolean;
+};
+
+export type LogEntryDTO = {
+  timestamp: string;
+  namespace?: string;
+  pod?: string;
+  container?: string;
+  app?: string;
+  eventReason?: string;
+  eventType?: string;
+  message: string;
+  labels?: Record<string, string>;
+};
+
+export type LogsQueryResponse = {
+  entries: LogEntryDTO[];
+  nextCursor?: string;
+  warnings?: string[];
+};
+
+export type AlertView = {
+  state?: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+  startsAt?: string;
+  endsAt?: string;
+  fingerprint?: string;
+};
+
+export type AlertsResponse = {
+  alerts: AlertView[];
+};
+
+export type TraceLookupResponse = {
+  trace?: unknown;
+};
+
+export type ProvisioningLogView = {
+  timestamp: string;
+  phase?: string;
+  type?: string;
+  message: string;
+};
+
+export type ProvisioningLogsResponse = {
+  jobId: string;
+  projectId?: string;
+  clusterId?: string;
+  phase?: string;
+  startedAt?: string;
+  completedAt?: string;
+  logs?: ProvisioningLogView[];
+  nextCursor?: string;
 };
 
 export const DEFAULT_SSH_PORT = 22;
@@ -393,6 +517,39 @@ export const listProjects = async (
       requireAuth: true,
     },
   );
+
+export const listClusters = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  options?: ListClustersOptions,
+): Promise<ClusterSummary[]> => {
+  const params = new URLSearchParams();
+  if (options?.projectId) {
+    params.append('project_id', options.projectId);
+  }
+  if (options?.region) {
+    params.append('region', options.region);
+  }
+
+  const query = params.toString();
+  const path = query ? `/api/v1/clusters?${query}` : '/api/v1/clusters';
+
+  const response = await restJson<undefined, ListClustersResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    path,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+
+  return response?.items ?? [];
+};
 
 export type QueueInput = {
   name: string;
@@ -645,9 +802,18 @@ const postJson = async <TReq extends object, TRes>(
     body: JSON.stringify(body),
   });
 
+  if (response.status === 401) {
+    throw new AuthenticationError();
+  }
+  if (response.status === 403) {
+    throw new AuthorizationError();
+  }
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
+    throw new ApiError(
+      text || `Request failed with status ${response.status}`,
+      response.status,
+    );
   }
 
   return (await response.json()) as TRes;
@@ -660,14 +826,13 @@ export const listWorkloads = async (
   authApi: OAuthApi | undefined,
   projectId: string,
 ): Promise<WorkloadDTO[]> => {
-  const res = await postJson<{ projectId: string }, ListWorkloadsResponse>(
+  const res = await restJson<undefined, ListWorkloadsResponse>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'ListWorkloads',
-    { projectId },
-    { requireAuth: true },
+    `/api/v1/projects/${encodeURIComponent(projectId)}/workloads`,
+    { method: 'GET', requireAuth: true },
   );
   return res.items ?? [];
 };
@@ -679,14 +844,13 @@ export const getWorkload = async (
   authApi: OAuthApi | undefined,
   id: string,
 ): Promise<WorkloadDTO> =>
-  postJson<{ id: string }, WorkloadDTO>(
+  restJson<undefined, WorkloadDTO>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'GetWorkload',
-    { id },
-    { requireAuth: true },
+    `/api/v1/workloads/${encodeURIComponent(id)}`,
+    { method: 'GET', requireAuth: true },
   );
 
 export const createConnectionSession = async (
@@ -697,14 +861,17 @@ export const createConnectionSession = async (
   workloadId: string,
   client: 'cli' | 'ssh' | 'vscode' = 'cli',
 ): Promise<ConnectionSession> =>
-  postJson<{ workloadId: string; client: string }, ConnectionSession>(
+  restJson<{ workload_id: string; client: string }, ConnectionSession>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'CreateConnectionSession',
-    { workloadId, client },
-    { requireAuth: true },
+    '/api/v1/connection_sessions',
+    {
+      method: 'POST',
+      body: { workload_id: workloadId, client },
+      requireAuth: true,
+    },
   );
 
 export const renewConnectionSession = async (
@@ -714,14 +881,13 @@ export const renewConnectionSession = async (
   authApi: OAuthApi | undefined,
   sessionId: string,
 ): Promise<ConnectionSession> =>
-  postJson<{ sessionId: string }, ConnectionSession>(
+  restJson<undefined, ConnectionSession>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'RenewConnectionSession',
-    { sessionId },
-    { requireAuth: true },
+    `/api/v1/connection_sessions/${encodeURIComponent(sessionId)}/renew`,
+    { method: 'POST', requireAuth: true },
   );
 
 export const revokeConnectionSession = async (
@@ -731,14 +897,13 @@ export const revokeConnectionSession = async (
   authApi: OAuthApi | undefined,
   sessionId: string,
 ): Promise<void> => {
-  await postJson<{ sessionId: string }, unknown>(
+  await restJson<undefined, unknown>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'RevokeConnectionSession',
-    { sessionId },
-    { requireAuth: true },
+    `/api/v1/connection_sessions/${encodeURIComponent(sessionId)}/revoke`,
+    { method: 'POST', requireAuth: true },
   );
 };
 
@@ -764,10 +929,11 @@ export const submitWorkspace = async (
       ...(req.id ? { id: req.id } : {}),
       projectId: req.projectId,
       ...(req.queue ? { queue: req.queue } : {}),
+      ...(req.clusterId ? { clusterId: req.clusterId } : {}),
       workspace: {
         flavor: workspaceInput.flavor,
         image: workspaceInput.image,
-        interactive: true,
+        interactive: workspaceInput.interactive ?? true,
         command,
         ports,
         ...(env ? { env } : {}),
@@ -775,14 +941,17 @@ export const submitWorkspace = async (
       },
     },
   };
-  return postJson<typeof body, WorkloadDTO>(
+
+  // SubmitWorkload is exposed via the platform-api HTTP gateway at POST /api/v1/workloads.
+  // Using the REST path avoids fragile RPC-style proxy paths that can return 404 when
+  // the Backstage proxy target is the HTTP gateway (port 8080).
+  return restJson<typeof body, WorkloadDTO>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'SubmitWorkload',
-    body,
-    { requireAuth: true },
+    '/api/v1/workloads',
+    { method: 'POST', body, requireAuth: true },
   );
 };
 
@@ -793,43 +962,21 @@ export const createWorkspace = async (
   authApi: OAuthApi | undefined,
   req: CreateWorkspaceRequest,
 ): Promise<CreateWorkspaceResponse> => {
-  const workspaceInput = req.workspace ?? {};
-  const command = normalizeCommand(workspaceInput.command);
-  const ports = ensureWorkspacePorts(workspaceInput.ports);
-  const env = mergeWorkspaceEnv(workspaceInput.env);
-  const maxDuration =
-    typeof workspaceInput.maxDurationSeconds === 'number' &&
-    Number.isFinite(workspaceInput.maxDurationSeconds)
-      ? Math.floor(workspaceInput.maxDurationSeconds)
-      : undefined;
-
-  const body: CreateWorkspaceRequest = {
-    projectId: req.projectId,
-    ...(req.workspaceId ? { workspaceId: req.workspaceId } : {}),
-    ...(req.queue ? { queue: req.queue } : {}),
-    workspace: {
-      ...(workspaceInput.flavor ? { flavor: workspaceInput.flavor } : {}),
-      ...(workspaceInput.image ? { image: workspaceInput.image } : {}),
-      interactive: workspaceInput.interactive ?? true,
-      ...(command.length > 0 ? { command } : {}),
-      ports,
-      ...(env ? { env } : {}),
-      ...(maxDuration ? { maxDurationSeconds: maxDuration } : {}),
-    },
-  };
-
-  return restJson<CreateWorkspaceRequest, CreateWorkspaceResponse>(
+  const workload = await submitWorkspace(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    '/api/v1/workspaces',
     {
-      method: 'POST',
-      body,
-      requireAuth: true,
+      ...(req.workspaceId ? { id: req.workspaceId } : {}),
+      projectId: req.projectId,
+      ...(req.queue ? { queue: req.queue } : {}),
+      ...(req.clusterId ? { clusterId: req.clusterId } : {}),
+      workspace: req.workspace,
     },
   );
+
+  return { workload };
 };
 
 export const createCluster = async (
@@ -896,6 +1043,172 @@ export const getCluster = async (
     'GetCluster',
     { clusterId },
     { requireAuth: true },
+  );
+};
+
+export const queryMetrics = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  req: MetricsQueryRequest,
+): Promise<MetricsQueryResponse> => {
+  return restJson<MetricsQueryRequest, MetricsQueryResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/metrics/query',
+    {
+      method: 'POST',
+      body: req,
+      requireAuth: true,
+    },
+  );
+};
+
+export const queryLogs = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  req: LogsQueryRequest,
+): Promise<LogsQueryResponse> => {
+  return restJson<LogsQueryRequest, LogsQueryResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/logs/query',
+    {
+      method: 'POST',
+      body: req,
+      requireAuth: true,
+    },
+  );
+};
+
+export const getAlerts = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  projectId: string,
+  clusterId: string,
+): Promise<AlertsResponse> => {
+  const params = new URLSearchParams({
+    projectId,
+    clusterId,
+  });
+
+  return restJson<undefined, AlertsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/alerts?${params.toString()}`,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+};
+
+export const getTrace = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  projectId: string,
+  clusterId: string,
+  traceId: string,
+): Promise<TraceLookupResponse> => {
+  const params = new URLSearchParams({
+    projectId,
+    clusterId,
+  });
+
+  return restJson<undefined, TraceLookupResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/traces/${encodeURIComponent(traceId)}?${params.toString()}`,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+};
+
+export const getProvisioningLogs = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  jobId: string,
+  options?: { since?: string; limit?: number; stream?: boolean },
+): Promise<ProvisioningLogsResponse> => {
+  const params = new URLSearchParams();
+  if (options?.since) {
+    params.set('since', options.since);
+  }
+  if (typeof options?.limit === 'number' && Number.isFinite(options.limit)) {
+    params.set('limit', String(Math.max(1, Math.floor(options.limit))));
+  }
+  if (options?.stream) {
+    params.set('stream', 'true');
+  }
+
+  const query = params.toString();
+  const path = query
+    ? `/api/v1/provisioning/jobs/${encodeURIComponent(jobId)}/logs?${query}`
+    : `/api/v1/provisioning/jobs/${encodeURIComponent(jobId)}/logs`;
+
+  return restJson<undefined, ProvisioningLogsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    path,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
+  );
+};
+
+export const streamProvisioningLogs = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  jobId: string,
+  options?: { since?: string; limit?: number },
+): Promise<ProvisioningLogsResponse> => {
+  const params = new URLSearchParams();
+  if (options?.since) {
+    params.set('since', options.since);
+  }
+  if (typeof options?.limit === 'number' && Number.isFinite(options.limit)) {
+    params.set('limit', String(Math.max(1, Math.floor(options.limit))));
+  }
+
+  const query = params.toString();
+  const path = query
+    ? `/api/v1/provisioning/jobs/${encodeURIComponent(jobId)}/logs/stream?${query}`
+    : `/api/v1/provisioning/jobs/${encodeURIComponent(jobId)}/logs/stream`;
+
+  return restJson<undefined, ProvisioningLogsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    path,
+    {
+      method: 'GET',
+      requireAuth: true,
+    },
   );
 };
 

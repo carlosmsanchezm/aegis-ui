@@ -13,12 +13,13 @@ import {
   IdentityApi,
 } from '@backstage/core-plugin-api';
 import { SubmitWorkloadPage } from './SubmitWorkloadPage';
+import { keycloakAuthApiRef } from '../api/refs';
 
 const submittedBodies: any[] = [];
 
 const server = setupServer(
   rest.post(
-    'http://example.test/aegis/aegis.v1.AegisPlatform/SubmitWorkload',
+    'http://example.test/aegis/api/v1/workloads',
     async (req, res, ctx) => {
       submittedBodies.push(await req.json());
       return res(
@@ -30,8 +31,8 @@ const server = setupServer(
       );
     },
   ),
-  rest.post(
-    'http://example.test/aegis/aegis.v1.AegisPlatform/GetWorkload',
+  rest.get(
+    'http://example.test/aegis/api/v1/workloads/w-ui-123',
     async (_req, res, ctx) =>
       res(
         ctx.json({
@@ -103,6 +104,12 @@ describe('SubmitWorkloadPage', () => {
           [fetchApiRef, fetchApi],
           [alertApiRef, alertApi],
           [identityApiRef, identityApi],
+          [
+            keycloakAuthApiRef,
+            {
+              getAccessToken: async () => 'test-token',
+            } as any,
+          ],
         ]}
       >
         <SubmitWorkloadPage />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, CircularProgress, Typography, Button } from '@material-ui/core';
 import ErrorIcon from '@material-ui/icons/Error';
@@ -9,6 +9,8 @@ import {
   Job,
   getClusterJobStatus,
   isTerminalStatus,
+  streamProvisioningLogs,
+  ProvisioningLogView,
 } from '../../../../../plugins/aegis/src/api/aegisClient';
 import {
   ClusterProvisioningDetails,
@@ -138,13 +140,41 @@ export const ClusterProvisioningDetailsPage = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const lastJobRef = useRef<Job | null>(null);
+  const [initiatedBy, setInitiatedBy] = useState<string>('—');
+  const [provisioningMeta, setProvisioningMeta] = useState<{
+    projectId?: string;
+    clusterId?: string;
+    phase?: string;
+    startedAt?: string;
+    completedAt?: string;
+  }>({});
+  const logCursorRef = useRef<string>('');
 
   // Reset log stream when switching jobs
   useEffect(() => {
     setLogs([]);
-    lastJobRef.current = null;
+    logCursorRef.current = '';
+    setProvisioningMeta({});
   }, [jobId]);
+
+  useEffect(() => {
+    let active = true;
+    identityApi
+      .getBackstageIdentity()
+      .then(identity => {
+        if (active) {
+          setInitiatedBy(identity?.userEntityRef ?? '—');
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setInitiatedBy('—');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [identityApi]);
 
   // Fetch job data
   useEffect(() => {
@@ -199,78 +229,159 @@ export const ClusterProvisioningDetailsPage = () => {
     return () => clearInterval(intervalId);
   }, [job, jobId, fetchApi, discoveryApi, identityApi, authApi]);
 
-  // Build a minimal live log stream from backend job status/progress
+  const mapProvisioningLogLevel = (entry: ProvisioningLogView): LogEntry['level'] => {
+    const raw = `${entry.type ?? ''} ${entry.message ?? ''}`.toLowerCase();
+    if (raw.includes('error') || raw.includes('failed') || raw.includes('fatal')) {
+      return 'error';
+    }
+    if (raw.includes('warn')) {
+      return 'warning';
+    }
+    if (raw.includes('debug')) {
+      return 'debug';
+    }
+    if (raw.includes('create')) {
+      return 'resource-create';
+    }
+    if (raw.includes('update') || raw.includes('refresh')) {
+      return 'resource-update';
+    }
+    return 'info';
+  };
+
+  const formatLogTimestamp = (raw: string): string => {
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return raw;
+    }
+    const iso = parsed.toISOString();
+    return `${iso.slice(11, 23)}Z`;
+  };
+
+  const mapProvisioningLog = (entry: ProvisioningLogView): LogEntry => ({
+    timestamp: formatLogTimestamp(entry.timestamp),
+    message: entry.message,
+    level: mapProvisioningLogLevel(entry),
+  });
+
+  // Stream provisioning logs from backend (long-poll)
   useEffect(() => {
-    if (!job) {
+    if (!jobId) {
       return;
     }
 
-    const prev = lastJobRef.current;
-    const now = new Date();
-    const timestamp = `${now.toTimeString().split(' ')[0]}.${now
-      .getMilliseconds()
-      .toString()
-      .padStart(3, '0')}`;
+    let cancelled = false;
 
-    const newEntries: LogEntry[] = [];
-    const statusLabel = job.status || 'unknown';
-    const progressLabel =
-      typeof job.progress === 'number' && !Number.isNaN(job.progress)
-        ? `${job.progress}%`
-        : '—';
+    const run = async () => {
+      while (!cancelled) {
+        try {
+          const response = await streamProvisioningLogs(
+            fetchApi,
+            discoveryApi,
+            identityApi,
+            authApi,
+            jobId,
+            { since: logCursorRef.current, limit: 200 },
+          );
+          if (cancelled) {
+            return;
+          }
 
-    if (!prev) {
-      newEntries.push({
-        timestamp,
-        message: `Job ${job.id} status: ${statusLabel} (${progressLabel})`,
-        level: 'highlight',
-      });
-      if (job.error) {
-        newEntries.push({
-          timestamp,
-          message: job.error,
-          level: 'error',
-        });
+          setProvisioningMeta({
+            projectId: response.projectId,
+            clusterId: response.clusterId,
+            phase: response.phase,
+            startedAt: response.startedAt,
+            completedAt: response.completedAt,
+          });
+
+          if (response.logs && response.logs.length > 0) {
+            const mapped = response.logs.map(mapProvisioningLog);
+            setLogs(current => {
+              const merged = [...current, ...mapped];
+              return merged.slice(-2000);
+            });
+          }
+
+          if (response.nextCursor) {
+            logCursorRef.current = response.nextCursor;
+          }
+
+          if (response.completedAt) {
+            return;
+          }
+        } catch (err: any) {
+          if (cancelled) {
+            return;
+          }
+
+          const now = new Date();
+          const timestamp = `${now.toTimeString().split(' ')[0]}.${now
+            .getMilliseconds()
+            .toString()
+            .padStart(3, '0')}`;
+          const message =
+            typeof err?.message === 'string'
+              ? err.message
+              : 'Unable to stream provisioning logs. Retrying...';
+
+          setLogs(current => {
+            const warningEntry: LogEntry = {
+              timestamp,
+              message,
+              level: 'warning',
+            };
+            const last = current[current.length - 1];
+            if (last?.message === warningEntry.message) {
+              return current;
+            }
+            return [...current, warningEntry].slice(-2000);
+          });
+
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
-    } else {
-      if (job.status !== prev.status) {
-        const upper = (job.status || '').toUpperCase();
-        newEntries.push({
-          timestamp,
-          message: `Status ${prev.status || 'unknown'} → ${job.status || 'unknown'}`,
-          level: upper === 'FAILED' ? 'error' : upper === 'SUCCEEDED' ? 'resource-create' : 'highlight',
-        });
-      }
-      if (typeof job.progress === 'number' && job.progress !== prev.progress) {
-        newEntries.push({
-          timestamp,
-          message: `Progress updated: ${job.progress}%`,
-          level: 'info',
-        });
-      }
-      if (job.error && job.error !== prev.error) {
-        newEntries.push({
-          timestamp,
-          message: job.error,
-          level: 'error',
-        });
-      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, fetchApi, discoveryApi, identityApi, authApi]);
+
+  // Calculate duration (must be above early returns; hooks can't be conditional)
+  const duration = useMemo(() => {
+    const startedAt = provisioningMeta?.startedAt;
+    if (!startedAt) {
+      return '—';
     }
-
-    if (newEntries.length > 0) {
-      setLogs(current => {
-        const merged = [...current, ...newEntries];
-        return merged.slice(-200);
-      });
+    const start = new Date(startedAt);
+    const end = provisioningMeta?.completedAt
+      ? new Date(provisioningMeta.completedAt)
+      : new Date();
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return '—';
     }
-
-    lastJobRef.current = job;
-  }, [job]);
+    const totalSeconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+  }, [provisioningMeta?.startedAt, provisioningMeta?.completedAt]);
 
   // Loading state
   if (loading) {
     return (
-      <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="100vh" gap={2}>
+      <Box
+        display="flex"
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        minHeight="100vh"
+        style={{ gap: 16 }}
+      >
         <CircularProgress size={48} />
         <Typography variant="h6" color="textSecondary">
           Loading job status...
@@ -282,7 +393,14 @@ export const ClusterProvisioningDetailsPage = () => {
   // Error state
   if (error || !job) {
     return (
-      <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="100vh" gap={3}>
+      <Box
+        display="flex"
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        minHeight="100vh"
+        style={{ gap: 24 }}
+      >
         <ErrorIcon style={{ fontSize: 64, color: '#EF4444' }} />
         <Typography variant="h5" style={{ fontWeight: 600 }}>
           {error || 'Job not found'}
@@ -299,11 +417,12 @@ export const ClusterProvisioningDetailsPage = () => {
     );
   }
 
-  // Calculate duration
-  const duration = '0m 0s'; // TODO: Calculate from job timestamps when available
-
   // Map job status to ClusterProvisioningDetails status
   const getStatus = (): 'Building' | 'Ready' | 'Error' | 'Canceled' => {
+    const phase = provisioningMeta?.phase?.toLowerCase();
+    if (phase === 'ready') return 'Ready';
+    if (phase === 'error') return 'Error';
+
     const status = job.status?.toUpperCase();
     if (status === 'SUCCEEDED') return 'Ready';
     if (status === 'FAILED') return 'Error';
@@ -327,15 +446,18 @@ export const ClusterProvisioningDetailsPage = () => {
 
   return (
     <ClusterProvisioningDetails
-      clusterName={jobId || 'unknown-cluster'}
+      clusterName={provisioningMeta?.clusterId || jobId || 'unknown-cluster'}
       status={getStatus()}
       duration={duration}
-      initiatedBy="user@aegis.com"
+      phase={provisioningMeta?.phase}
+      startedAt={provisioningMeta?.startedAt}
+      completedAt={provisioningMeta?.completedAt}
+      initiatedBy={initiatedBy}
       environment="Development"
       region="AWS (us-east-1)"
-      commitHash="f8a9c2d"
-      commitMessage="chore: cluster provisioning"
-      branch="main"
+      commitHash="—"
+      commitMessage="—"
+      branch="—"
       k8sVersion="1.29"
       primaryGpuNodes="p4d.24xlarge (8x A100 GPUs)"
       secondaryGpuNodes="p3.8xlarge (4x V100 GPUs)"
