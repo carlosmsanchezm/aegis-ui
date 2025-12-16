@@ -829,7 +829,7 @@ export const AegisClusterCreatePage = () => {
           return;
         }
         const phase = (cluster.phase ?? '').toLowerCase();
-        if (phase === 'ready' || Boolean(cluster.lastHeartbeat)) {
+        if (phase.includes('ready') || Boolean(cluster.lastHeartbeat)) {
           if (cancelled) {
             return;
           }
@@ -838,12 +838,23 @@ export const AegisClusterCreatePage = () => {
           stop();
           return;
         }
-        if (phase === 'unhealthy') {
+        if (phase.includes('unhealthy')) {
           if (cancelled) {
             return;
           }
           setAgentConnectionStatus('failed');
           setAgentConnectionError('Agent connected but the cluster is reporting unhealthy.');
+          stop();
+          return;
+        }
+        if (phase.includes('error') || phase.includes('degraded')) {
+          if (cancelled) {
+            return;
+          }
+          setAgentConnectionStatus('failed');
+          setAgentConnectionError(
+            `Cluster is reporting ${cluster.phase || 'an error'} while waiting for agent connection.`,
+          );
           stop();
         }
       } catch (err) {
