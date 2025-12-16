@@ -114,8 +114,17 @@ export type ClusterSummary = {
   mode?: ClusterMode;
   provider: string;
   region: string;
-  phase: 'Provisioning' | 'Ready' | 'Error' | 'Degraded' | 'Upgrading' | 'Scaling';
+  phase:
+    | 'Provisioning'
+    | 'Ready'
+    | 'Pending'
+    | 'Unhealthy'
+    | 'Error'
+    | 'Degraded'
+    | 'Upgrading'
+    | 'Scaling';
   createdAt?: string;
+  lastHeartbeat?: string;
   lastSyncedAt?: string;
   costEstimate?: ClusterCostEstimate;
   latestCondition?: ClusterJobCondition;
@@ -147,10 +156,18 @@ export type CreateClusterRequest = {
 
 export type ImportClusterMethod = 'kubeconfig' | 'assume_role' | 'agent_only';
 
+export type ImportClusterProvider =
+  | 'local'
+  | 'baremetal'
+  | 'existing-aws'
+  | 'existing-gcp'
+  | 'existing-azure'
+  | 'airgapped';
+
 export type ImportClusterRequest = {
   projectId: string;
   clusterId: string;
-  provider: string;
+  provider: ImportClusterProvider;
   region: string;
   name: string;
   labels?: Record<string, string>;
@@ -165,9 +182,11 @@ export type ImportClusterHelmValues = {
   };
 };
 
+export type ImportClusterStatus = 'pending_agent' | 'registering' | 'active';
+
 export type ImportClusterResponse = {
   clusterId: string;
-  status: string;
+  status: ImportClusterStatus;
   helmValues?: ImportClusterHelmValues;
   installCommand?: string;
   agentScriptUrl?: string;
