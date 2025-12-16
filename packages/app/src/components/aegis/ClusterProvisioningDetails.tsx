@@ -157,6 +157,7 @@ const useStyles = makeStyles(theme => ({
     border: '1px solid #333333',
     maxHeight: 600,
     overflowY: 'auto',
+    overflowX: 'hidden',
     marginTop: theme.spacing(2),
     '&::-webkit-scrollbar': {
       width: 8,
@@ -174,6 +175,9 @@ const useStyles = makeStyles(theme => ({
     lineHeight: 1.6,
     paddingLeft: theme.spacing(1),
     borderLeft: '2px solid transparent',
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word',
+    whiteSpace: 'pre-wrap',
     '&:hover': {
       backgroundColor: '#1a1a1a',
       borderLeft: '2px solid #8B5CF6',
@@ -282,6 +286,9 @@ const useStyles = makeStyles(theme => ({
     fontWeight: 500,
     textAlign: 'right',
     maxWidth: '65%',
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word',
+    whiteSpace: 'pre-wrap',
   },
   logPlaceholder: {
     color: '#9CA3AF',
@@ -319,13 +326,49 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
   const classes = useStyles();
   const [expandedStage, setExpandedStage] = useState<string | false>('compute');
   const logConsoleRef = useRef<HTMLDivElement>(null);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const lastScrollTime = useRef<number>(0);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Auto-scroll logs to bottom
-  useEffect(() => {
+  // Track if user has scrolled up (away from bottom) with debouncing
+  const handleScroll = () => {
     if (logConsoleRef.current) {
-      logConsoleRef.current.scrollTop = logConsoleRef.current.scrollHeight;
+      const { scrollTop, scrollHeight, clientHeight } = logConsoleRef.current;
+      // Consider "at bottom" if within 100px of the bottom
+      const atBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+      // Only update state if it changed to prevent re-renders
+      if (atBottom && userScrolledUp) {
+        setUserScrolledUp(false);
+      } else if (!atBottom && !userScrolledUp) {
+        setUserScrolledUp(true);
+      }
     }
-  }, [logs]);
+  };
+
+  // Smart auto-scroll: only scroll if user hasn't scrolled up, with throttling
+  useEffect(() => {
+    const now = Date.now();
+    // Throttle auto-scrolls to max once per 500ms to prevent jumpiness
+    if (logConsoleRef.current && !userScrolledUp && now - lastScrollTime.current > 500) {
+      // Clear any pending scroll
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      // Delay scroll slightly to let DOM settle
+      scrollTimeoutRef.current = setTimeout(() => {
+        if (logConsoleRef.current && !userScrolledUp) {
+          logConsoleRef.current.scrollTop = logConsoleRef.current.scrollHeight;
+          lastScrollTime.current = Date.now();
+        }
+      }, 100);
+    }
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, [logs, userScrolledUp]);
 
   const getLogStyle = (level: LogLevel) => {
     switch (level) {
@@ -536,36 +579,38 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
             </div>
           </Paper>
 
-          {/* Cluster Configuration */}
-          <Paper className={classes.card} elevation={0}>
-            <Typography className={classes.cardTitle}>Cluster Configuration</Typography>
-            <div>
-              <div className={classes.detailRow}>
-                <span className={classes.detailLabel}>Kubernetes Version</span>
-                <span className={classes.detailValue}>{k8sVersion}</span>
-              </div>
-              <div className={classes.detailRow}>
-                <span className={classes.detailLabel}>Primary GPU Nodes</span>
-                <span className={classes.detailValue}>{primaryGpuNodes}</span>
-              </div>
-              {secondaryGpuNodes && (
+          {/* Cluster Configuration - only show when we have real data */}
+          {(k8sVersion !== '—' || primaryGpuNodes !== '—' || totalNodeCount > 0) && (
+            <Paper className={classes.card} elevation={0}>
+              <Typography className={classes.cardTitle}>Cluster Configuration</Typography>
+              <div>
                 <div className={classes.detailRow}>
-                  <span className={classes.detailLabel}>Secondary GPU Nodes</span>
-                  <span className={classes.detailValue}>{secondaryGpuNodes}</span>
+                  <span className={classes.detailLabel}>Kubernetes Version</span>
+                  <span className={classes.detailValue}>{k8sVersion}</span>
                 </div>
-              )}
-              <div className={classes.detailRow}>
-                <span className={classes.detailLabel}>Total Node Count (Min)</span>
-                <span className={classes.detailValue}>{totalNodeCount}</span>
+                <div className={classes.detailRow}>
+                  <span className={classes.detailLabel}>Primary GPU Nodes</span>
+                  <span className={classes.detailValue}>{primaryGpuNodes}</span>
+                </div>
+                {secondaryGpuNodes && secondaryGpuNodes !== '—' && (
+                  <div className={classes.detailRow}>
+                    <span className={classes.detailLabel}>Secondary GPU Nodes</span>
+                    <span className={classes.detailValue}>{secondaryGpuNodes}</span>
+                  </div>
+                )}
+                <div className={classes.detailRow}>
+                  <span className={classes.detailLabel}>Total Node Count (Min)</span>
+                  <span className={classes.detailValue}>{totalNodeCount}</span>
+                </div>
+                <div className={classes.detailRow}>
+                  <span className={classes.detailLabel}>Autoscaling</span>
+                  <span style={{ color: autoscaling ? '#10B981' : '#9CA3AF', fontWeight: 500 }}>
+                    {autoscaling ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
               </div>
-              <div className={classes.detailRow}>
-                <span className={classes.detailLabel}>Autoscaling</span>
-                <span style={{ color: autoscaling ? '#10B981' : '#9CA3AF', fontWeight: 500 }}>
-                  {autoscaling ? 'Enabled (Karpenter)' : 'Disabled'}
-                </span>
-              </div>
-            </div>
-          </Paper>
+            </Paper>
+          )}
         </div>
 
         {/* Main Content - Logs and Resources */}
@@ -588,7 +633,7 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
                 </Typography>
               </div>
             </div>
-            <div className={classes.logConsole} ref={logConsoleRef}>
+            <div className={classes.logConsole} ref={logConsoleRef} onScroll={handleScroll}>
               {logs.length === 0 ? (
                 <Typography variant="caption" className={classes.logPlaceholder}>
                   Awaiting live updates from the control plane. Status and errors will appear here as they arrive.

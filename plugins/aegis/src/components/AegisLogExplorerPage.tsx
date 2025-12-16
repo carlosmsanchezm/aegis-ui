@@ -59,6 +59,90 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'column',
     gap: theme.spacing(3),
   },
+  // Terminal-style log viewer styles
+  terminalContainer: {
+    background: '#1a1a2e',
+    borderRadius: theme.shape.borderRadius,
+    padding: theme.spacing(2),
+    maxHeight: '70vh',
+    overflowY: 'auto',
+    fontFamily: '"JetBrains Mono", "Fira Code", "Source Code Pro", Consolas, monospace',
+    fontSize: '13px',
+    lineHeight: 1.6,
+  },
+  logLine: {
+    display: 'flex',
+    gap: theme.spacing(1.5),
+    padding: '4px 8px',
+    borderRadius: '4px',
+    '&:hover': {
+      background: 'rgba(255,255,255,0.05)',
+    },
+  },
+  logTimestamp: {
+    color: '#6c7a89',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+    minWidth: '180px',
+  },
+  logSeverityInfo: {
+    color: '#4ade80',
+    fontWeight: 500,
+    minWidth: '50px',
+  },
+  logSeverityWarn: {
+    color: '#fbbf24',
+    fontWeight: 500,
+    minWidth: '50px',
+  },
+  logSeverityError: {
+    color: '#f87171',
+    fontWeight: 500,
+    minWidth: '50px',
+  },
+  logMeta: {
+    color: '#818cf8',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
+  logMessage: {
+    color: '#e2e8f0',
+    wordBreak: 'break-word',
+    flex: 1,
+    whiteSpace: 'pre-wrap',
+  },
+  viewToggle: {
+    display: 'flex',
+    gap: theme.spacing(1),
+    alignItems: 'center',
+    marginBottom: theme.spacing(2),
+  },
+  toggleButton: {
+    padding: '6px 12px',
+    borderRadius: '6px',
+    border: '1px solid rgba(255,255,255,0.1)',
+    background: 'transparent',
+    color: theme.palette.text.secondary,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    '&:hover': {
+      background: 'rgba(255,255,255,0.05)',
+    },
+  },
+  toggleButtonActive: {
+    background: 'var(--aegis-primary, #6366f1)',
+    color: '#fff',
+    borderColor: 'transparent',
+    '&:hover': {
+      background: 'var(--aegis-primary-dark, #4f46e5)',
+    },
+  },
+  terminalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing(2),
+  },
 }));
 
 type LogSeverity = 'INFO' | 'WARN' | 'ERROR';
@@ -145,6 +229,7 @@ export const AegisLogExplorerPage = () => {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
   const [entries, setEntries] = useState<LogRow[]>([]);
+  const [viewMode, setViewMode] = useState<'terminal' | 'table'>('terminal');
 
   useEffect(() => {
     if (initialWorkloadFilter) {
@@ -281,6 +366,56 @@ export const AegisLogExplorerPage = () => {
     [],
   );
 
+  // Format timestamp for terminal view (more readable)
+  const formatTimestamp = (ts: string) => {
+    try {
+      const date = new Date(ts);
+      return date.toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        fractionalSecondDigits: 3,
+      });
+    } catch {
+      return ts;
+    }
+  };
+
+  // Terminal view component
+  const TerminalView = () => (
+    <div className={classes.terminalContainer}>
+      {filteredLogs.length === 0 ? (
+        <div style={{ color: '#6c7a89', padding: '20px', textAlign: 'center' }}>
+          No logs found for the selected filters
+        </div>
+      ) : (
+        filteredLogs.map((log, index) => (
+          <div key={`${log.timestamp}-${index}`} className={classes.logLine}>
+            <span className={classes.logTimestamp}>{formatTimestamp(log.timestamp)}</span>
+            <span
+              className={
+                log.severity === 'ERROR'
+                  ? classes.logSeverityError
+                  : log.severity === 'WARN'
+                  ? classes.logSeverityWarn
+                  : classes.logSeverityInfo
+              }
+            >
+              {log.severity}
+            </span>
+            {(log.namespace || log.pod) && (
+              <span className={classes.logMeta}>
+                [{log.namespace || '-'}/{log.pod || '-'}]
+              </span>
+            )}
+            <span className={classes.logMessage}>{log.message}</span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+
   return (
     <Page themeId="tool">
       <Content className={classes.root}>
@@ -392,12 +527,37 @@ export const AegisLogExplorerPage = () => {
         {loadingLogs && <Progress />}
 
         <Paper className={classes.paper}>
-          <Table
-            options={{ paging: false, search: false, padding: 'dense' }}
-            title={`Live log stream (${filteredLogs.length} entries)`}
-            columns={columns}
-            data={filteredLogs}
-          />
+          <div className={classes.terminalHeader}>
+            <Typography variant="h6">
+              Live log stream ({filteredLogs.length} entries)
+            </Typography>
+            <div className={classes.viewToggle}>
+              <button
+                type="button"
+                className={`${classes.toggleButton} ${viewMode === 'terminal' ? classes.toggleButtonActive : ''}`}
+                onClick={() => setViewMode('terminal')}
+              >
+                Terminal
+              </button>
+              <button
+                type="button"
+                className={`${classes.toggleButton} ${viewMode === 'table' ? classes.toggleButtonActive : ''}`}
+                onClick={() => setViewMode('table')}
+              >
+                Table
+              </button>
+            </div>
+          </div>
+
+          {viewMode === 'terminal' ? (
+            <TerminalView />
+          ) : (
+            <Table
+              options={{ paging: false, search: false, padding: 'dense' }}
+              columns={columns}
+              data={filteredLogs}
+            />
+          )}
         </Paper>
       </Content>
     </Page>
