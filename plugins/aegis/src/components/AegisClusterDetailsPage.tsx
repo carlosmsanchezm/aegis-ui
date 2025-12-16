@@ -337,11 +337,16 @@ export const AegisClusterDetailsPage = () => {
             message.includes('not found'))
         ) {
           try {
-            const summaries = await listClusters(fetchApi, discoveryApi, identityApi, authApi);
+            const summaries = await listClusters(
+              fetchApi,
+              discoveryApi,
+              identityApi,
+              authApi,
+            );
             const summary = summaries.find(item => item.id === id);
             if (summary) {
               setCluster(buildClusterFromSummary(summary));
-              setUsingFallback(true);
+              setUsingFallback(false);
               alertApi.post({
                 severity: 'info',
                 message:
@@ -349,8 +354,18 @@ export const AegisClusterDetailsPage = () => {
               });
               return;
             }
-          } catch {
-            // fall back to staged sample data below
+
+            setCluster(null);
+            setUsingFallback(false);
+            setError(`Cluster "${id}" was not found (or you do not have access).`);
+            return;
+          } catch (listErr: unknown) {
+            if (listErr instanceof ApiError && (listErr.status === 401 || listErr.status === 403)) {
+              setCluster(null);
+              setUsingFallback(false);
+              setError(listErr.message);
+              return;
+            }
           }
 
           setCluster(buildFallbackCluster(id));
@@ -361,6 +376,8 @@ export const AegisClusterDetailsPage = () => {
           });
           return;
         }
+        setCluster(null);
+        setUsingFallback(false);
         setError(err instanceof Error ? err.message : 'Unable to load cluster details.');
       })
       .finally(() => setLoading(false));
