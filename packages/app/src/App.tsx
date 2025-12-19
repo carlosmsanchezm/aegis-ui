@@ -36,10 +36,7 @@ import {
 } from './components/aegis';
 import { aegisDarkTheme, aegisLightTheme } from './theme';
 
-import {
-  AlertDisplay,
-  OAuthRequestDialog,
-} from '@backstage/core-components';
+import { AlertDisplay, OAuthRequestDialog } from '@backstage/core-components';
 import { createApp } from '@backstage/app-defaults';
 import { AppRouter, FlatRoutes } from '@backstage/core-app-api';
 import { CatalogGraphPage } from '@backstage/plugin-catalog-graph';
@@ -69,6 +66,7 @@ import {
   AegisIaCConnectorsAdminPage,
 } from '@internal/plugin-aegis';
 import { keycloakAuthApiRef } from './apis';
+import { AegisSignInPage } from './components/auth/AegisSignInPage';
 
 export const keycloakSignInProvider = {
   id: 'keycloak',
@@ -98,11 +96,13 @@ const app = createApp({
     });
   },
   components: {
-    // Force Keycloak SSO with automatic redirect to eliminate guest fallback paths.
-    // Temporarily disabled for local development without Keycloak
-    // SignInPage: props => (
-    //   <SignInPage {...props} auto provider={keycloakSignInProvider} />
-    // ),
+    SignInPage: props => (
+      <AegisSignInPage
+        {...props}
+        providers={[keycloakSignInProvider]}
+        auto
+      />
+    ),
   },
 });
 
