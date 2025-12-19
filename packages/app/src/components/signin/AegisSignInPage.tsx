@@ -1,17 +1,8 @@
 import { useEffect, useState } from 'react';
-import {
-  Button,
-  Divider,
-  Grid,
-  Paper,
-  TextField,
-  Typography,
-} from '@material-ui/core';
+import { Button } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
-import VpnKeyIcon from '@material-ui/icons/VpnKey';
 import {
   BackstageIdentityResponse,
-  configApiRef,
   SignInPageProps,
   useApi,
   useAnalytics,
@@ -19,203 +10,181 @@ import {
 import { UserIdentity } from '@backstage/core-components';
 import { keycloakAuthApiRef } from '../../apis';
 
-const useStyles = makeStyles(theme => {
-  const glowPrimary = theme.palette.primary.main;
-  const glowSecondary = theme.palette.secondary.main;
-
-  return {
-    root: {
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: theme.spacing(6, 3),
-      position: 'relative',
-      overflow: 'hidden',
-    },
-    glow: {
-      position: 'absolute',
-      width: 420,
-      height: 420,
-      borderRadius: '50%',
-      filter: 'blur(80px)',
-      opacity: 0.35,
-      background: `radial-gradient(circle, ${glowPrimary} 0%, transparent 70%)`,
-      top: '-10%',
-      left: '-10%',
-      animation: '$pulse 12s ease-in-out infinite',
-      pointerEvents: 'none',
-    },
-    glowSecondary: {
-      position: 'absolute',
-      width: 520,
-      height: 520,
-      borderRadius: '50%',
-      filter: 'blur(90px)',
-      opacity: 0.25,
-      background: `radial-gradient(circle, ${glowSecondary} 0%, transparent 70%)`,
-      bottom: '-20%',
-      right: '-15%',
-      animation: '$pulse 14s ease-in-out infinite',
-      pointerEvents: 'none',
-    },
-    content: {
-      position: 'relative',
-      zIndex: 1,
-      width: '100%',
-      maxWidth: 1020,
-      display: 'grid',
-      gridTemplateColumns: 'minmax(0, 420px) minmax(0, 1fr)',
-      gap: theme.spacing(6),
-      alignItems: 'center',
-      [theme.breakpoints.down('sm')]: {
-        gridTemplateColumns: '1fr',
-      },
-    },
-    card: {
-      background: 'var(--aegis-card-surface)',
-      border: '1px solid var(--aegis-card-border)',
-      boxShadow: 'var(--aegis-card-shadow)',
-      borderRadius: theme.spacing(2),
-      padding: theme.spacing(4),
-      backdropFilter: 'blur(6px)',
-    },
-    cardHeader: {
-      marginBottom: theme.spacing(2),
-    },
-    fields: {
-      display: 'grid',
-      gap: theme.spacing(2),
-      marginTop: theme.spacing(3),
-    },
-    signInButton: {
-      marginTop: theme.spacing(2),
-    },
-    helperText: {
-      marginTop: theme.spacing(2),
-      color: theme.palette.text.secondary,
-    },
-    divider: {
-      margin: theme.spacing(3, 0),
-    },
-    benefitList: {
-      marginTop: theme.spacing(2),
-      display: 'grid',
-      gap: theme.spacing(1),
-    },
-    benefitItem: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: theme.spacing(1.5),
-      color: theme.palette.text.secondary,
-    },
-    badge: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: theme.spacing(1),
-      padding: theme.spacing(0.5, 1.5),
-      borderRadius: 999,
-      background: 'var(--aegis-muted)',
-      color: theme.palette.text.secondary,
-      fontWeight: 600,
-      fontSize: '0.75rem',
-      letterSpacing: '0.02em',
-      textTransform: 'uppercase',
-    },
-    globeWrap: {
-      position: 'relative',
-      width: 360,
-      height: 360,
-      margin: '0 auto',
-      [theme.breakpoints.down('sm')]: {
-        width: 280,
-        height: 280,
-      },
-    },
-    globe: {
-      position: 'absolute',
-      inset: 0,
-      borderRadius: '50%',
-      background: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.18), transparent 55%), radial-gradient(circle at 70% 70%, ${theme.palette.primary.main}55, transparent 60%), radial-gradient(circle at 50% 50%, ${theme.palette.secondary.main}44, transparent 65%), ${theme.palette.background.paper}`,
-      border: `1px solid ${theme.palette.divider}`,
-      boxShadow: `0 35px 80px rgba(0,0,0,0.35), 0 0 60px ${theme.palette.primary.main}33`,
-      overflow: 'hidden',
-      animation: '$float 10s ease-in-out infinite',
-    },
-    globeRings: {
-      position: 'absolute',
-      inset: '10% 5%',
-      borderRadius: '50%',
-      border: `1px solid ${theme.palette.primary.main}33`,
-      animation: '$spin 20s linear infinite',
-      '&::before, &::after': {
-        content: '""',
+const AegisLogo = () => (
+  <div style={{ position: 'relative', width: 160, margin: '0 auto' }}>
+    {/* Backlight glow */}
+    <div
+      style={{
         position: 'absolute',
-        inset: '10% 15%',
-        borderRadius: '50%',
-        border: `1px solid ${theme.palette.secondary.main}33`,
-      },
-      '&::after': {
-        inset: '25% 30%',
-        border: `1px dashed ${theme.palette.primary.main}55`,
-      },
-    },
-    globeGrid: {
-      position: 'absolute',
-      inset: 0,
-      backgroundImage:
-        'repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0, rgba(255,255,255,0.05) 2px, transparent 2px, transparent 16px), repeating-linear-gradient(0deg, rgba(255,255,255,0.04) 0, rgba(255,255,255,0.04) 2px, transparent 2px, transparent 14px)',
-      opacity: 0.55,
-      mixBlendMode: 'screen',
-      animation: '$drift 18s linear infinite',
-    },
-    orbit: {
-      position: 'absolute',
-      width: 12,
-      height: 12,
-      borderRadius: '50%',
-      background: theme.palette.secondary.light,
-      top: '12%',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      boxShadow: `0 0 18px ${theme.palette.secondary.main}`,
-      animation: '$orbit 12s linear infinite',
-    },
-    tagline: {
-      marginTop: theme.spacing(2),
-      color: theme.palette.text.secondary,
-    },
-    '@keyframes float': {
-      '0%': { transform: 'translateY(0px)' },
-      '50%': { transform: 'translateY(-12px)' },
-      '100%': { transform: 'translateY(0px)' },
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 200,
+        height: 200,
+        background: 'radial-gradient(ellipse at center, rgba(139, 92, 246, 0.4) 0%, rgba(34, 211, 238, 0.2) 40%, transparent 70%)',
+        filter: 'blur(30px)',
+        pointerEvents: 'none',
+      }}
+    />
+    {/* Logo SVG */}
+    <svg
+      viewBox="0 0 200 180"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ width: 160, height: 'auto', display: 'block', position: 'relative' }}
+    >
+      {/* ÆGIS Text */}
+      <text
+        x="100"
+        y="35"
+        textAnchor="middle"
+        fill="#FFFFFF"
+        fontSize="32"
+        fontWeight="700"
+        fontFamily="'Inter', sans-serif"
+        letterSpacing="-1"
+      >
+        ÆGIS
+      </text>
+
+      {/* Triangle connecting lines - shortened to stop at circle edges */}
+      <g stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round">
+        {/* Top line: from edge of left circle to edge of right circle */}
+        <line x1="64" y1="75" x2="136" y2="75" />
+        {/* Right line: from edge of right circle to edge of bottom circle */}
+        <line x1="143" y1="87" x2="107" y2="148" />
+        {/* Left line: from edge of bottom circle to edge of left circle */}
+        <line x1="93" y1="148" x2="57" y2="87" />
+      </g>
+
+      {/* Node circles - transparent with white stroke */}
+      <g fill="none" stroke="#FFFFFF" strokeWidth="5">
+        <circle cx="50" cy="75" r="14" />
+        <circle cx="150" cy="75" r="14" />
+        <circle cx="100" cy="160" r="14" />
+      </g>
+
+      {/* Center dot */}
+      <circle cx="100" cy="103" r="8" fill="#FFFFFF" />
+    </svg>
+  </div>
+);
+
+const useStyles = makeStyles(theme => ({
+  '@global': {
+    '@keyframes pulse': {
+      '0%, 100%': { opacity: 0.4, transform: 'scale(1)' },
+      '50%': { opacity: 0.6, transform: 'scale(1.05)' },
     },
     '@keyframes spin': {
       '0%': { transform: 'rotate(0deg)' },
       '100%': { transform: 'rotate(360deg)' },
     },
-    '@keyframes drift': {
-      '0%': { transform: 'translateX(0%)' },
-      '100%': { transform: 'translateX(-20%)' },
+  },
+  root: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: theme.spacing(3),
+    position: 'relative',
+    overflow: 'hidden',
+    background: '#0a0a0b',
+  },
+  meshBackground: {
+    position: 'absolute',
+    inset: 0,
+    background: `
+      radial-gradient(ellipse 80% 50% at 20% 40%, rgba(139, 92, 246, 0.15), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 60%, rgba(34, 211, 238, 0.12), transparent),
+      radial-gradient(ellipse 50% 30% at 50% 20%, rgba(139, 92, 246, 0.08), transparent)
+    `,
+    animation: '$pulse 8s ease-in-out infinite',
+  },
+  gridPattern: {
+    position: 'absolute',
+    inset: 0,
+    backgroundImage: `
+      linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px)
+    `,
+    backgroundSize: '60px 60px',
+    maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 70%)',
+  },
+  cardWrapper: {
+    position: 'relative',
+    zIndex: 1,
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 24,
+    padding: 2,
+    background: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      top: '-50%',
+      left: '-50%',
+      width: '200%',
+      height: '200%',
+      background: 'conic-gradient(from 0deg, transparent 0deg 340deg, #8B5CF6 340deg 350deg, #22D3EE 350deg 360deg)',
+      animation: '$spin 4s linear infinite',
     },
-    '@keyframes orbit': {
-      '0%': { transform: 'translate(-50%, 0) rotate(0deg) translateX(150px)' },
-      '100%': {
-        transform: 'translate(-50%, 0) rotate(360deg) translateX(150px)',
-      },
+  },
+  card: {
+    position: 'relative',
+    width: '100%',
+    background: 'rgba(21, 21, 23, 0.95)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: 22,
+    padding: theme.spacing(5),
+    boxShadow: '0 25px 80px rgba(0, 0, 0, 0.5)',
+  },
+  logoSection: {
+    textAlign: 'center',
+    marginBottom: theme.spacing(4),
+  },
+  signInButton: {
+    width: '100%',
+    padding: theme.spacing(1.75, 3),
+    fontSize: '1rem',
+    fontWeight: 600,
+    borderRadius: 14,
+    textTransform: 'none',
+    background: 'linear-gradient(135deg, #8B5CF6, #22D3EE)',
+    color: '#0B0B10',
+    boxShadow: '0 4px 20px rgba(139, 92, 246, 0.3)',
+    transition: 'all 0.2s ease',
+    '&:hover': {
+      background: 'linear-gradient(135deg, #A78BFA, #38E8FF)',
+      boxShadow: '0 6px 30px rgba(139, 92, 246, 0.4)',
+      transform: 'translateY(-1px)',
     },
-    '@keyframes pulse': {
-      '0%': { transform: 'scale(1)', opacity: 0.2 },
-      '50%': { transform: 'scale(1.1)', opacity: 0.4 },
-      '100%': { transform: 'scale(1)', opacity: 0.2 },
-    },
-  };
-});
+  },
+  error: {
+    marginTop: theme.spacing(2),
+    padding: theme.spacing(1.5, 2),
+    borderRadius: 10,
+    background: 'rgba(239, 68, 68, 0.1)',
+    border: '1px solid rgba(239, 68, 68, 0.2)',
+    color: '#FCA5A5',
+    fontSize: '0.875rem',
+    textAlign: 'center',
+  },
+  loading: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '100vh',
+    background: '#0a0a0b',
+    color: '#6B7280',
+    fontSize: '0.9rem',
+  },
+}));
 
 export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
   const classes = useStyles();
   const authApi = useApi(keycloakAuthApiRef);
-  const configApi = useApi(configApiRef);
   const analytics = useAnalytics();
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
@@ -227,7 +196,7 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
         instantPopup: true,
       });
       if (!identityResponse) {
-        throw new Error('Keycloak sign-in is not available.');
+        throw new Error('Authentication failed. Please try again.');
       }
       const profile = await authApi.getProfile();
       onSignInSuccess(
@@ -249,9 +218,7 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
       try {
         const identityResponse: BackstageIdentityResponse | undefined =
           await authApi.getBackstageIdentity({ optional: true });
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
         if (identityResponse) {
           const profile = await authApi.getProfile();
           onSignInSuccess(
@@ -264,120 +231,45 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
           return;
         }
       } catch (err) {
-        if (mounted) {
-          setError(err as Error);
-        }
+        if (mounted) setError(err as Error);
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     };
-
     checkExisting();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [authApi, onSignInSuccess]);
 
   if (loading) {
-    return null;
+    return <div className={classes.loading}>Initializing...</div>;
   }
 
   return (
     <div className={classes.root}>
-      <div className={classes.glow} />
-      <div className={classes.glowSecondary} />
-      <div className={classes.content}>
-        <Paper className={classes.card} elevation={0}>
-          <div className={classes.cardHeader}>
-            <span className={classes.badge}>Secure access</span>
-            <Typography variant="h4" component="h1" gutterBottom>
-              Welcome to {configApi.getString('app.title')}
-            </Typography>
-            <Typography variant="body1" className={classes.tagline}>
-              Sign in with your organization&apos;s identity provider. Aegis is
-              built to plug into any OIDC-ready SSO flow.
-            </Typography>
+      <div className={classes.meshBackground} />
+      <div className={classes.gridPattern} />
+
+      <div className={classes.cardWrapper}>
+        <div className={classes.card}>
+          <div className={classes.logoSection}>
+            <AegisLogo />
           </div>
-          <form
-            onSubmit={event => {
-              event.preventDefault();
-              handleSignIn();
-            }}
+
+          <Button
+            variant="contained"
+            className={classes.signInButton}
+            onClick={handleSignIn}
+            disableElevation
           >
-            <div className={classes.fields}>
-              <TextField
-                label="Username"
-                variant="outlined"
-                fullWidth
-                autoComplete="username"
-              />
-              <TextField
-                label="Password"
-                variant="outlined"
-                type="password"
-                fullWidth
-                autoComplete="current-password"
-              />
-            </div>
-            <Button
-              type="submit"
-              variant="contained"
-              color="primary"
-              fullWidth
-              size="large"
-              className={classes.signInButton}
-              startIcon={<VpnKeyIcon />}
-            >
-              Sign in to Aegis
-            </Button>
-          </form>
-          <Typography variant="body2" className={classes.helperText}>
-            Credentials are validated by your configured IdP (Keycloak, Okta,
-            Azure AD, or any OIDC provider).
-          </Typography>
-          {error ? (
-            <Typography variant="body2" color="error" className={classes.helperText}>
+            Sign in with SSO
+          </Button>
+
+          {error && (
+            <div className={classes.error}>
               {error.message}
-            </Typography>
-          ) : null}
-          <Divider className={classes.divider} />
-          <Typography variant="subtitle1">Security signals you can trust</Typography>
-          <div className={classes.benefitList}>
-            <div className={classes.benefitItem}>
-              <span>●</span>
-              <Typography variant="body2">Unified access across clusters and clouds.</Typography>
             </div>
-            <div className={classes.benefitItem}>
-              <span>●</span>
-              <Typography variant="body2">Policy enforcement from first login.</Typography>
-            </div>
-            <div className={classes.benefitItem}>
-              <span>●</span>
-              <Typography variant="body2">Just-in-time access for sensitive actions.</Typography>
-            </div>
-          </div>
-        </Paper>
-        <Grid container spacing={4} alignItems="center">
-          <Grid item xs={12}>
-            <Typography variant="h2">Aegis Identity Mesh</Typography>
-            <Typography variant="body1" className={classes.tagline}>
-              A crisp, animated identity globe keeps the experience modern while
-              your team authenticates. It mirrors the Aegis brand palette and
-              stays lightweight on performance.
-            </Typography>
-          </Grid>
-          <Grid item xs={12}>
-            <div className={classes.globeWrap}>
-              <div className={classes.globe}>
-                <div className={classes.globeGrid} />
-                <div className={classes.globeRings} />
-                <div className={classes.orbit} />
-              </div>
-            </div>
-          </Grid>
-        </Grid>
+          )}
+        </div>
       </div>
     </div>
   );
