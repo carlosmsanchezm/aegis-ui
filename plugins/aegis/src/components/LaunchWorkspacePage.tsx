@@ -18,6 +18,9 @@ import {
 } from '@backstage/core-plugin-api';
 import { useNavigate } from 'react-router-dom';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
   Card,
@@ -31,6 +34,7 @@ import {
   FormHelperText,
   Grid,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -49,6 +53,11 @@ import CheckRoundedIcon from '@material-ui/icons/CheckRounded';
 import CodeIcon from '@material-ui/icons/Code';
 import DescriptionIcon from '@material-ui/icons/Description';
 import DeveloperModeIcon from '@material-ui/icons/DeveloperMode';
+import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
+import LaunchIcon from '@material-ui/icons/Launch';
+import CheckCircleIcon from '@material-ui/icons/CheckCircle';
+import ErrorOutlineIcon from '@material-ui/icons/ErrorOutline';
+import RadioButtonUncheckedIcon from '@material-ui/icons/RadioButtonUnchecked';
 import StorageIcon from '@material-ui/icons/Storage';
 import MemoryIcon from '@material-ui/icons/Memory';
 import TimelineIcon from '@material-ui/icons/Timeline';
@@ -241,6 +250,180 @@ const flavorCatalog: FlavorOption[] = [
     description: '1× NVIDIA A10, 8 vCPU, 64 GiB RAM — larger GPU workloads.',
     flavor: 'gpu-large',
     resources: '1× A10 • 8 vCPU • 64 GiB RAM',
+  },
+];
+
+type ProvisioningLogLine = {
+  timestamp: string;
+  level: 'info' | 'warning' | 'error' | 'debug';
+  message: string;
+};
+
+type ProvisioningStep = {
+  id: string;
+  label: string;
+  description: string;
+  status: 'idle' | 'loading' | 'success' | 'error';
+  duration?: string;
+  logs: ProvisioningLogLine[];
+};
+
+type ProvisioningMetric = {
+  label: string;
+  value: string;
+  delta: string;
+  progress: number;
+};
+
+type ProvisioningInsight = {
+  title: string;
+  description: string;
+  tone: 'default' | 'primary' | 'secondary';
+  badge: string;
+};
+
+const workspaceProvisioningMetrics: ProvisioningMetric[] = [
+  {
+    label: 'GPU node group readiness',
+    value: '4 / 8 nodes',
+    delta: 'Autoscaling target: 8 nodes',
+    progress: 50,
+  },
+  {
+    label: 'GPU utilization headroom',
+    value: '42%',
+    delta: 'Target under 70%',
+    progress: 42,
+  },
+  {
+    label: 'Workspace pods scheduled',
+    value: '7 / 12 pods',
+    delta: 'Pending: 5 pods',
+    progress: 58,
+  },
+  {
+    label: 'EBS throughput',
+    value: '1.9 TiB / 3.2 TiB',
+    delta: 'Provisioned for training cache',
+    progress: 60,
+  },
+];
+
+const workspaceProvisioningInsights: ProvisioningInsight[] = [
+  {
+    title: 'Autoscaling signals',
+    description: 'Cluster autoscaler is requesting 4 g5.4xlarge nodes.',
+    tone: 'primary',
+    badge: 'Scaling',
+  },
+  {
+    title: 'GPU driver bootstrap',
+    description: 'NVIDIA device plugin DaemonSet is rolling out.',
+    tone: 'secondary',
+    badge: 'Installing',
+  },
+  {
+    title: 'Network policy guardrails',
+    description: 'Zero-trust network policies enforced in kube-system.',
+    tone: 'default',
+    badge: 'Enforced',
+  },
+  {
+    title: 'Workspace control plane',
+    description: 'Ingress controller provisioning external endpoint.',
+    tone: 'primary',
+    badge: 'Provisioning',
+  },
+];
+
+const workspaceProvisioningSteps: ProvisioningStep[] = [
+  {
+    id: 'bootstrap',
+    label: 'EKS control plane bootstrap',
+    description: 'Control plane, VPC endpoints, and IAM roles created.',
+    status: 'success',
+    duration: '4m 12s',
+    logs: [
+      {
+        timestamp: '15:18:02',
+        level: 'info',
+        message: 'eks:Cluster (aegis-workspace-eks): active',
+      },
+      {
+        timestamp: '15:18:12',
+        level: 'info',
+        message: 'iam:Role (workspace-node-role): created',
+      },
+      {
+        timestamp: '15:18:24',
+        level: 'debug',
+        message: 'vpc:Endpoint (logs, sts, ecr): ready',
+      },
+    ],
+  },
+  {
+    id: 'nodegroup',
+    label: 'GPU node group autoscaling',
+    description: 'Autoscaling group is scaling up GPU instances.',
+    status: 'loading',
+    logs: [
+      {
+        timestamp: '15:19:10',
+        level: 'info',
+        message: 'autoscaling:Group (gpu-node-group): desired capacity set to 8.',
+      },
+      {
+        timestamp: '15:19:18',
+        level: 'warning',
+        message: 'Spot capacity limited, falling back to on-demand g5.4xlarge.',
+      },
+      {
+        timestamp: '15:19:32',
+        level: 'info',
+        message: 'Node i-0ab12cd3ef added to EKS node group.',
+      },
+    ],
+  },
+  {
+    id: 'gpu-drivers',
+    label: 'GPU runtime & drivers',
+    description: 'NVIDIA drivers, DCGM, and device plugins configured.',
+    status: 'loading',
+    logs: [
+      {
+        timestamp: '15:20:01',
+        level: 'info',
+        message: 'helm:Release (nvidia-device-plugin): installing…',
+      },
+      {
+        timestamp: '15:20:14',
+        level: 'info',
+        message: 'daemonset/nvidia-device-plugin: 3/8 nodes ready.',
+      },
+      {
+        timestamp: '15:20:24',
+        level: 'debug',
+        message: 'dcgm-exporter: GPU metrics streaming to CloudWatch.',
+      },
+    ],
+  },
+  {
+    id: 'workspace-services',
+    label: 'Workspace services',
+    description: 'Workspace router and notebook images pulled.',
+    status: 'idle',
+    logs: [
+      {
+        timestamp: '15:20:38',
+        level: 'info',
+        message: 'deploy/workspace-router: waiting for ingress endpoint.',
+      },
+      {
+        timestamp: '15:20:52',
+        level: 'info',
+        message: 'job/workspace-image-preload: pending GPU node readiness.',
+      },
+    ],
   },
 ];
 
@@ -493,6 +676,206 @@ const useStyles = makeStyles((theme: Theme) => {
       backgroundColor: alpha(theme.palette.primary.main, 0.18),
       color: theme.palette.primary.main,
     },
+    provisioningShell: {
+      backgroundColor: surface,
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      boxShadow: 'var(--aegis-card-shadow)',
+      padding: theme.spacing(4),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(3),
+    },
+    provisioningHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: theme.spacing(2),
+      flexWrap: 'wrap',
+    },
+    provisioningStatus: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: theme.spacing(1),
+      padding: theme.spacing(0.75, 2),
+      borderRadius: 999,
+      backgroundColor: alpha(theme.palette.primary.main, 0.15),
+      color: theme.palette.primary.main,
+      fontWeight: 600,
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+      fontSize: '0.7rem',
+    },
+    statusDot: {
+      width: 8,
+      height: 8,
+      borderRadius: '50%',
+      backgroundColor: theme.palette.primary.main,
+      boxShadow: `0 0 10px ${alpha(theme.palette.primary.main, 0.7)}`,
+      animation: '$pulse 2.2s ease-in-out infinite',
+    },
+    '@keyframes pulse': {
+      '0%': { boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0.6)}` },
+      '70%': { boxShadow: `0 0 0 10px ${alpha(theme.palette.primary.main, 0)}` },
+      '100%': { boxShadow: `0 0 0 0 ${alpha(theme.palette.primary.main, 0)}` },
+    },
+    '@keyframes spin': {
+      to: { transform: 'rotate(360deg)' },
+    },
+    provisioningSummary: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: theme.spacing(2),
+    },
+    summaryLabel: {
+      textTransform: 'uppercase',
+      fontSize: '0.7rem',
+      letterSpacing: '0.08em',
+      color: theme.palette.text.secondary,
+      marginBottom: theme.spacing(0.5),
+    },
+    summaryValue: {
+      fontWeight: 600,
+      wordBreak: 'break-word',
+    },
+    provisioningMetricsGrid: {
+      marginTop: theme.spacing(1),
+    },
+    provisioningMetricCard: {
+      padding: theme.spacing(2.5),
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      backgroundColor: isDark ? alpha('#0F172A', 0.7) : '#FFFFFF',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+      height: '100%',
+    },
+    provisioningMetricLabel: {
+      textTransform: 'uppercase',
+      fontSize: '0.7rem',
+      letterSpacing: '0.08em',
+      color: theme.palette.text.secondary,
+    },
+    provisioningMetricValue: {
+      fontWeight: 600,
+      fontSize: '1.4rem',
+    },
+    provisioningMetricDelta: {
+      color: theme.palette.text.secondary,
+      fontSize: '0.85rem',
+    },
+    provisioningMetricProgress: {
+      height: 8,
+      borderRadius: 999,
+      backgroundColor: alpha(theme.palette.primary.main, 0.1),
+      '& .MuiLinearProgress-barColorPrimary': {
+        borderRadius: 999,
+        background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+      },
+    },
+    provisioningColumns: {
+      marginTop: theme.spacing(2),
+    },
+    provisioningCard: {
+      backgroundColor: surface,
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      padding: theme.spacing(3),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(2),
+      height: '100%',
+    },
+    provisioningAccordion: {
+      background: 'transparent',
+      boxShadow: 'none',
+      '&:before': { display: 'none' },
+      borderBottom: `1px solid ${alpha(theme.palette.text.primary, 0.08)}`,
+    },
+    provisioningAccordionSummary: {
+      padding: 0,
+      '& .MuiAccordionSummary-content': {
+        margin: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: theme.spacing(2),
+      },
+    },
+    provisioningStepLabel: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: theme.spacing(1.5),
+    },
+    provisioningStepMeta: {
+      color: theme.palette.text.secondary,
+      fontSize: '0.85rem',
+    },
+    provisioningTerminal: {
+      backgroundColor: '#050505',
+      fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
+      fontSize: '0.85rem',
+      padding: theme.spacing(2),
+      borderRadius: theme.shape.borderRadius,
+      color: '#EDEDED',
+      maxHeight: 260,
+      overflowY: 'auto',
+      border: `1px solid ${alpha(theme.palette.text.primary, 0.1)}`,
+    },
+    provisioningLogLine: {
+      display: 'block',
+      lineHeight: 1.6,
+      borderLeft: '2px solid transparent',
+      paddingLeft: theme.spacing(1),
+      '&:hover': {
+        background: alpha(theme.palette.primary.main, 0.08),
+        borderLeft: `2px solid ${theme.palette.primary.main}`,
+      },
+    },
+    logTimestamp: {
+      color: theme.palette.text.secondary,
+      marginRight: theme.spacing(1.5),
+      userSelect: 'none',
+    },
+    logInfo: { color: '#A5B4FC' },
+    logWarning: { color: '#FCD34D' },
+    logError: { color: '#F87171' },
+    logDebug: { color: theme.palette.text.secondary },
+    insightRow: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+    },
+    insightCard: {
+      padding: theme.spacing(2),
+      borderRadius: theme.shape.borderRadius,
+      border: `1px solid ${borderColor}`,
+      backgroundColor: isDark ? alpha('#0F172A', 0.6) : '#FFFFFF',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(0.75),
+    },
+    insightHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: theme.spacing(1),
+    },
+    insightBadge: {
+      textTransform: 'uppercase',
+      fontSize: '0.65rem',
+      letterSpacing: '0.08em',
+      fontWeight: 600,
+    },
+    actionButtons: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: theme.spacing(2),
+      marginTop: theme.spacing(2),
+      flexWrap: 'wrap',
+    },
   };
 });
 
@@ -509,6 +892,48 @@ const StepIconComponent = (props: StepIconProps) => {
       {completed ? <CheckRoundedIcon fontSize="small" /> : icon}
     </div>
   );
+};
+
+type ProvisioningContext = {
+  workspaceId: string;
+  projectId: string;
+  clusterId: string;
+  queue: string;
+  flavor: string;
+  image: string;
+  region: string;
+  nodeGroup: string;
+  instanceType: string;
+  gpuType: string;
+};
+
+const ProvisioningStatusIcon = ({ status }: { status: ProvisioningStep['status'] }) => {
+  switch (status) {
+    case 'loading':
+      return (
+        <div
+          style={{
+            width: 18,
+            height: 18,
+            border: '2px solid rgba(139, 92, 246, 0.2)',
+            borderTop: '2px solid #8B5CF6',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+          }}
+        />
+      );
+    case 'success':
+      return <CheckCircleIcon style={{ color: '#10B981', fontSize: 20 }} />;
+    case 'error':
+      return <ErrorOutlineIcon style={{ color: '#EF4444', fontSize: 20 }} />;
+    default:
+      return (
+        <RadioButtonUncheckedIcon
+          color="disabled"
+          style={{ fontSize: 20 }}
+        />
+      );
+  }
 };
 
 const randomId = () => {
@@ -554,6 +979,12 @@ export const LaunchWorkspacePage: FC = () => {
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [forceAdvancedOpen, setForceAdvancedOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [provisioningActive, setProvisioningActive] = useState(false);
+  const [provisioningContext, setProvisioningContext] =
+    useState<ProvisioningContext | null>(null);
+  const [expandedStep, setExpandedStep] = useState<string | false>(
+    workspaceProvisioningSteps[0]?.id ?? false,
+  );
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -631,6 +1062,11 @@ export const LaunchWorkspacePage: FC = () => {
   const selectedCatalogProject = useMemo<ProjectDefinition | null>(
     () => projectCatalog.find(project => project.id === form.projectId) ?? null,
     [form.projectId],
+  );
+
+  const selectedCluster = useMemo(
+    () => clusters.find(cluster => cluster.id === form.clusterId) ?? null,
+    [clusters, form.clusterId],
   );
 
   const selectedRemoteProject = useMemo<ProjectRecord | null>(
@@ -860,6 +1296,18 @@ export const LaunchWorkspacePage: FC = () => {
     setAdvancedOpen(event.target.checked);
   };
 
+  const handleProvisioningStepToggle =
+    (stepId: string) => (_: unknown, isExpanded: boolean) => {
+      setExpandedStep(isExpanded ? stepId : false);
+    };
+
+  const handleCreateAnotherWorkspace = () => {
+    setProvisioningActive(false);
+    setProvisioningContext(null);
+    setActiveStep(0);
+    setError(null);
+  };
+
   const goNextStep = () => {
     setActiveStep(prev => Math.min(prev + 1, steps.length - 1));
   };
@@ -883,6 +1331,19 @@ export const LaunchWorkspacePage: FC = () => {
     !form.flavor.trim() ||
     !form.image.trim() ||
     !form.workloadId.trim();
+
+  const logClassForLevel = (level: ProvisioningLogLine['level']) => {
+    switch (level) {
+      case 'warning':
+        return classes.logWarning;
+      case 'error':
+        return classes.logError;
+      case 'debug':
+        return classes.logDebug;
+      default:
+        return classes.logInfo;
+    }
+  };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -927,9 +1388,20 @@ export const LaunchWorkspacePage: FC = () => {
         message: `Submitted interactive workspace ${createdId}`,
         severity: 'success',
       });
-      if (workloadsLink) {
-        navigate(workloadsLink());
-      }
+      setProvisioningContext({
+        workspaceId: createdId,
+        projectId,
+        clusterId: clusterId || selectedCluster?.id || 'auto-select',
+        queue: queue || queueDisplayValue,
+        flavor: form.flavor.trim(),
+        image: form.image.trim(),
+        region: selectedCluster?.region ?? 'us-east-1',
+        nodeGroup: 'aegis-gpu-autoscale',
+        instanceType: 'g5.4xlarge',
+        gpuType: 'NVIDIA A10G',
+      });
+      setProvisioningActive(true);
+      setExpandedStep(workspaceProvisioningSteps[0]?.id ?? false);
     } catch (e: unknown) {
       let msg = 'Failed to submit workspace.';
       let severity: 'error' | 'warning' = 'error';
@@ -1063,6 +1535,216 @@ export const LaunchWorkspacePage: FC = () => {
       })}
     </Grid>
   );
+
+  if (provisioningActive && provisioningContext) {
+    return (
+      <Page themeId="tool">
+        <Content className={classes.content}>
+          <ContentHeader title="Workspace provisioning">
+            <Typography variant="body1" className={classes.hero}>
+              Your ÆGIS workspace is bootstrapping on AWS EKS with GPU autoscaling,
+              driver installation, and secure ingress configuration. Observability
+              remains live while capacity scales.
+            </Typography>
+          </ContentHeader>
+          <Paper elevation={0} className={classes.provisioningShell}>
+            <div className={classes.provisioningHeader}>
+              <div>
+                <Typography variant="h4">
+                  Provisioning {provisioningContext.workspaceId}
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  EKS GPU node group is scaling to meet workspace demand.
+                </Typography>
+              </div>
+              <div className={classes.provisioningStatus}>
+                <span className={classes.statusDot} />
+                In progress
+              </div>
+            </div>
+            <Divider className={classes.sectionDivider} />
+            <div className={classes.provisioningSummary}>
+              <div>
+                <div className={classes.summaryLabel}>Project</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.projectId}
+                </div>
+              </div>
+              <div>
+                <div className={classes.summaryLabel}>Cluster</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.clusterId}
+                </div>
+              </div>
+              <div>
+                <div className={classes.summaryLabel}>Region</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.region}
+                </div>
+              </div>
+              <div>
+                <div className={classes.summaryLabel}>Node group</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.nodeGroup}
+                </div>
+              </div>
+              <div>
+                <div className={classes.summaryLabel}>Instance type</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.instanceType}
+                </div>
+              </div>
+              <div>
+                <div className={classes.summaryLabel}>GPU class</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.gpuType}
+                </div>
+              </div>
+              <div>
+                <div className={classes.summaryLabel}>Queue</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.queue || 'Project default'}
+                </div>
+              </div>
+              <div>
+                <div className={classes.summaryLabel}>Workspace flavor</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.flavor}
+                </div>
+              </div>
+              <div>
+                <div className={classes.summaryLabel}>Image</div>
+                <div className={classes.summaryValue}>
+                  {provisioningContext.image}
+                </div>
+              </div>
+            </div>
+          </Paper>
+
+          <Grid container spacing={3} className={classes.provisioningMetricsGrid}>
+            {workspaceProvisioningMetrics.map(metric => (
+              <Grid item xs={12} md={6} key={metric.label}>
+                <Paper elevation={0} className={classes.provisioningMetricCard}>
+                  <div>
+                    <Typography className={classes.provisioningMetricLabel}>
+                      {metric.label}
+                    </Typography>
+                    <Typography className={classes.provisioningMetricValue}>
+                      {metric.value}
+                    </Typography>
+                    <Typography className={classes.provisioningMetricDelta}>
+                      {metric.delta}
+                    </Typography>
+                  </div>
+                  <LinearProgress
+                    variant="determinate"
+                    value={metric.progress}
+                    className={classes.provisioningMetricProgress}
+                  />
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+
+          <Grid container spacing={3} className={classes.provisioningColumns}>
+            <Grid item xs={12} md={7}>
+              <Paper elevation={0} className={classes.provisioningCard}>
+                <Typography variant="h6">Provisioning timeline</Typography>
+                {workspaceProvisioningSteps.map(step => (
+                  <Accordion
+                    key={step.id}
+                    elevation={0}
+                    className={classes.provisioningAccordion}
+                    expanded={expandedStep === step.id}
+                    onChange={handleProvisioningStepToggle(step.id)}
+                  >
+                    <AccordionSummary
+                      expandIcon={<ExpandMoreIcon />}
+                      className={classes.provisioningAccordionSummary}
+                    >
+                      <div className={classes.provisioningStepLabel}>
+                        <ProvisioningStatusIcon status={step.status} />
+                        <div>
+                          <Typography variant="subtitle1">
+                            {step.label}
+                          </Typography>
+                          <Typography
+                            className={classes.provisioningStepMeta}
+                          >
+                            {step.description}
+                          </Typography>
+                        </div>
+                      </div>
+                      <Typography variant="caption" color="textSecondary">
+                        {step.duration ?? 'In progress'}
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <div className={classes.provisioningTerminal}>
+                        {step.logs.map(log => (
+                          <span
+                            key={`${step.id}-${log.timestamp}-${log.message}`}
+                            className={`${classes.provisioningLogLine} ${logClassForLevel(
+                              log.level,
+                            )}`}
+                          >
+                            <span className={classes.logTimestamp}>
+                              {log.timestamp}
+                            </span>
+                            {log.message}
+                          </span>
+                        ))}
+                      </div>
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+              </Paper>
+            </Grid>
+            <Grid item xs={12} md={5}>
+              <Paper elevation={0} className={classes.provisioningCard}>
+                <Typography variant="h6">Provisioning insights</Typography>
+                <div className={classes.insightRow}>
+                  {workspaceProvisioningInsights.map(insight => (
+                    <div className={classes.insightCard} key={insight.title}>
+                      <div className={classes.insightHeader}>
+                        <Typography variant="subtitle1">
+                          {insight.title}
+                        </Typography>
+                        <Chip
+                          label={insight.badge}
+                          color={insight.tone}
+                          size="small"
+                          className={classes.insightBadge}
+                        />
+                      </div>
+                      <Typography variant="body2" color="textSecondary">
+                        {insight.description}
+                      </Typography>
+                    </div>
+                  ))}
+                </div>
+              </Paper>
+            </Grid>
+          </Grid>
+
+          <div className={classes.actionButtons}>
+            <Button variant="outlined" onClick={handleCreateAnotherWorkspace}>
+              Create another workspace
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<LaunchIcon />}
+              onClick={() => workloadsLink && navigate(workloadsLink())}
+              disabled={!workloadsLink}
+            >
+              View workloads
+            </Button>
+          </div>
+        </Content>
+      </Page>
+    );
+  }
 
   return (
     <Page themeId="tool">
