@@ -366,19 +366,22 @@ export const AegisOpsMetricsPage = () => {
               title: 'CPU Usage (cores)',
               subtitle: 'Rolling 5m rate across cluster',
               metric: formatNumber(cpu),
-              trend: cpu !== undefined ? 'Prometheus query_range' : 'No data',
+              status: cpu !== undefined ? 'Live from Prometheus' : 'No data available',
+              hasData: cpu !== undefined,
             },
             {
               title: 'Memory Working Set',
-              subtitle: 'Container working set bytes',
+              subtitle: 'Total container memory in use',
               metric: formatBytes(memory),
-              trend: memory !== undefined ? 'Prometheus query_range' : 'No data',
+              status: memory !== undefined ? 'Live from Prometheus' : 'No data available',
+              hasData: memory !== undefined,
             },
             {
               title: 'Pod Count',
-              subtitle: 'kube-state-metrics count(kube_pod_info)',
+              subtitle: 'Total pods across all namespaces',
               metric: pods !== undefined ? Math.round(pods).toString() : '—',
-              trend: pods !== undefined ? 'Prometheus query_range' : 'No data',
+              status: pods !== undefined ? 'Live from kube-state-metrics' : 'No data available',
+              hasData: pods !== undefined,
             },
           ].map(card => (
             <Grid item xs={12} md={4} key={card.title}>
@@ -390,8 +393,11 @@ export const AegisOpsMetricsPage = () => {
                   {card.subtitle}
                 </Typography>
                 <Typography variant="h4">{card.metric}</Typography>
-                <Typography variant="body2" color="primary">
-                  {card.trend}
+                <Typography
+                  variant="caption"
+                  style={{ color: card.hasData ? '#22c55e' : '#94a3b8' }}
+                >
+                  {card.status}
                 </Typography>
               </Paper>
             </Grid>
