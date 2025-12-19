@@ -116,6 +116,9 @@ const useNavSectionStyles = makeStyles(theme => ({
   section: {
     margin: theme.spacing(0.5, 0, 3),
   },
+  sectionCollapsed: {
+    margin: theme.spacing(0.5, 0, 1.5),
+  },
   header: {
     margin: theme.spacing(0, 2, 1),
     fontSize: theme.typography.pxToRem(12.5),
@@ -130,6 +133,10 @@ const useNavSectionStyles = makeStyles(theme => ({
     flexDirection: 'column',
     gap: theme.spacing(0.75),
     padding: theme.spacing(0, 1),
+  },
+  itemsCollapsed: {
+    alignItems: 'center',
+    padding: theme.spacing(0, 0.5),
   },
 }));
 
@@ -159,12 +166,15 @@ type NavSectionProps = {
 
 const NavSection = ({ label, icon, children }: NavSectionProps) => {
   const classes = useNavSectionStyles();
+  const { isOpen } = useSidebarOpenState();
 
   return (
     <SidebarGroup label={label} icon={icon} value={label}>
-      <div className={classes.section}>
-        <div className={classes.header}>{label}</div>
-        <div className={classes.items}>{children}</div>
+      <div className={isOpen ? classes.section : classes.sectionCollapsed}>
+        {isOpen && <div className={classes.header}>{label}</div>}
+        <div className={`${classes.items} ${!isOpen ? classes.itemsCollapsed : ''}`}>
+          {children}
+        </div>
       </div>
     </SidebarGroup>
   );

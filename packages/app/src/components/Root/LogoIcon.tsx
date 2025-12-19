@@ -12,8 +12,8 @@ const LogoIcon = () => {
   const theme = useTheme();
   const paletteMode = (theme.palette as any)?.mode ?? theme.palette.type;
   const isDark = paletteMode === 'dark';
-  const stroke = isDark ? theme.palette.primary.light : theme.palette.primary.dark;
-  const fill = isDark ? theme.palette.primary.light : theme.palette.primary.main;
+  const stroke = isDark ? '#FFFFFF' : '#1a1a1a';
+  const fill = isDark ? '#FFFFFF' : '#1a1a1a';
 
   return (
     <svg
@@ -23,16 +23,25 @@ const LogoIcon = () => {
       aria-hidden
       focusable="false"
     >
-      <path
-        d="M20 5.5l12.5 21.65H7.5L20 5.5z"
-        fill="none"
-        stroke={stroke}
-        strokeWidth={2.4}
-        strokeLinejoin="round"
-      />
-      <circle cx={20} cy={16.2} r={2.6} fill={fill} />
-      <circle cx={11.2} cy={29.8} r={2.8} fill="none" stroke={stroke} strokeWidth={2.4} />
-      <circle cx={28.8} cy={29.8} r={2.8} fill="none" stroke={stroke} strokeWidth={2.4} />
+      {/* Triangle connecting lines - stop at circle edges */}
+      <g stroke={stroke} strokeWidth={2.2} strokeLinecap="round">
+        {/* Top line */}
+        <line x1="9" y1="10" x2="31" y2="10" />
+        {/* Right to bottom */}
+        <line x1="33" y1="13" x2="22" y2="32" />
+        {/* Bottom to left */}
+        <line x1="18" y1="32" x2="7" y2="13" />
+      </g>
+
+      {/* Node circles */}
+      <g fill="none" stroke={stroke} strokeWidth={2.2}>
+        <circle cx="6" cy="10" r="4" />
+        <circle cx="34" cy="10" r="4" />
+        <circle cx="20" cy="35" r="4" />
+      </g>
+
+      {/* Center dot */}
+      <circle cx="20" cy="18" r="3" fill={fill} />
     </svg>
   );
 };
