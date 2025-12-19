@@ -66,6 +66,7 @@ import {
 import { keycloakAuthApiRef } from '../api/refs';
 import { parseEnvInput, parsePortsInput } from './workspaceFormUtils';
 import { projectManagementRouteRef, workloadsRouteRef } from '../routes';
+import { WorkspaceProvisioningStatus } from './WorkspaceProvisioningStatus';
 import {
   ProjectDefinition,
   QueueDefinition,
@@ -572,6 +573,16 @@ export const LaunchWorkspacePage: FC = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showProvisioning, setShowProvisioning] = useState(false);
+  const [provisioningData, setProvisioningData] = useState({
+    workspaceId: '',
+    projectName: '',
+    clusterName: '',
+    workspaceType: '',
+    flavor: '',
+    image: '',
+    queue: '',
+  });
 
   const templatesForType = useMemo(() => {
     if (!workspaceTypeId) {
@@ -923,13 +934,22 @@ export const LaunchWorkspacePage: FC = () => {
         payload,
       );
       const createdId = response?.workload?.id ?? workspaceId;
+      const selectedCluster =
+        clusters.find(cluster => cluster.id === clusterId) ?? clusters[0];
+      setProvisioningData({
+        workspaceId: createdId,
+        projectName: selectedProjectName || projectId,
+        clusterName: selectedCluster?.name ?? selectedCluster?.id ?? 'Auto-selected',
+        workspaceType: selectedWorkspaceType?.title ?? workspaceTypeId ?? 'Workspace',
+        flavor: form.flavor,
+        image: form.image,
+        queue: form.queue || queueDisplayValue,
+      });
       alertApi.post({
         message: `Submitted interactive workspace ${createdId}`,
         severity: 'success',
       });
-      if (workloadsLink) {
-        navigate(workloadsLink());
-      }
+      setShowProvisioning(true);
     } catch (e: unknown) {
       let msg = 'Failed to submit workspace.';
       let severity: 'error' | 'warning' = 'error';
@@ -1063,6 +1083,31 @@ export const LaunchWorkspacePage: FC = () => {
       })}
     </Grid>
   );
+
+  if (showProvisioning) {
+    return (
+      <Page themeId="tool">
+        <Content>
+          <ContentHeader title="Workspace Provisioning" />
+          <WorkspaceProvisioningStatus
+            workspaceId={provisioningData.workspaceId}
+            projectName={provisioningData.projectName}
+            clusterName={provisioningData.clusterName}
+            workspaceType={provisioningData.workspaceType}
+            flavor={provisioningData.flavor}
+            image={provisioningData.image}
+            queue={provisioningData.queue}
+            onBackToCreate={() => setShowProvisioning(false)}
+            onViewWorkloads={() => {
+              if (workloadsLink) {
+                navigate(workloadsLink());
+              }
+            }}
+          />
+        </Content>
+      </Page>
+    );
+  }
 
   return (
     <Page themeId="tool">
