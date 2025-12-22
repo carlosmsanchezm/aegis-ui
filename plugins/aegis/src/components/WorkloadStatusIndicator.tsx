@@ -31,8 +31,8 @@ const useStyles = makeStyles(theme => ({
   ready: {
     background: 'rgba(34, 197, 94, 0.12)',
     color: theme.palette.success.main,
-    boxShadow: `0 0 12px rgba(34, 197, 94, 0.35)`,
-    animation: '$pulse 2.4s ease-in-out infinite',
+    boxShadow: `0 0 12px rgba(34, 197, 94, 0.4)`,
+    animation: '$pulse 3s ease-in-out infinite',
   },
   provisioning: {
     background: 'rgba(139, 92, 246, 0.16)',
@@ -54,9 +54,8 @@ const useStyles = makeStyles(theme => ({
     to: { transform: 'rotate(360deg)' },
   },
   '@keyframes pulse': {
-    '0%': { boxShadow: '0 0 0 rgba(34, 197, 94, 0.4)' },
-    '70%': { boxShadow: '0 0 18px rgba(34, 197, 94, 0.55)' },
-    '100%': { boxShadow: '0 0 0 rgba(34, 197, 94, 0.35)' },
+    '0%, 100%': { boxShadow: '0 0 8px rgba(34, 197, 94, 0.3)' },
+    '50%': { boxShadow: '0 0 20px rgba(34, 197, 94, 0.6)' },
   },
 }));
 
