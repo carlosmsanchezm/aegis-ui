@@ -140,12 +140,17 @@ const useStyles = makeStyles(theme => ({
     marginTop: theme.spacing(1),
     '& .MuiLinearProgress-root': {
       height: 6,
-      borderRadius: 999,
+      borderRadius: 3,
       backgroundColor: alpha(theme.palette.primary.main, 0.15),
+      overflow: 'hidden',
     },
-    '& .MuiLinearProgress-bar': {
-      borderRadius: 999,
-      background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.primary.light})`,
+    '& .MuiLinearProgress-bar1Indeterminate': {
+      borderRadius: 3,
+      background: theme.palette.primary.main,
+    },
+    '& .MuiLinearProgress-bar2Indeterminate': {
+      borderRadius: 3,
+      background: theme.palette.primary.light,
     },
   },
   errorBox: {
