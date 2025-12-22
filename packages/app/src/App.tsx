@@ -69,6 +69,7 @@ import {
   AegisIaCConnectorsAdminPage,
 } from '@internal/plugin-aegis';
 import { keycloakAuthApiRef } from './apis';
+import { AegisSignInPage } from './components/signin/AegisSignInPage';
 
 export const keycloakSignInProvider = {
   id: 'keycloak',
@@ -98,11 +99,7 @@ const app = createApp({
     });
   },
   components: {
-    // Force Keycloak SSO with automatic redirect to eliminate guest fallback paths.
-    // Temporarily disabled for local development without Keycloak
-    // SignInPage: props => (
-    //   <SignInPage {...props} auto provider={keycloakSignInProvider} />
-    // ),
+    SignInPage: props => <AegisSignInPage {...props} />,
   },
 });
 
