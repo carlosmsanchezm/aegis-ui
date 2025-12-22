@@ -3,18 +3,20 @@ import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
   Page,
   Content,
-  ContentHeader,
   Progress,
   WarningPanel,
-  InfoCard,
   StructuredMetadataTable,
-  StatusOK,
-  StatusWarning,
-  StatusError,
-  StatusPending,
   CopyTextButton,
 } from '@backstage/core-components';
-import { Box, Button, Paper, Typography, makeStyles } from '@material-ui/core';
+import {
+  Box,
+  Breadcrumbs,
+  Button,
+  Grid,
+  Paper,
+  Typography,
+  makeStyles,
+} from '@material-ui/core';
 import {
   alertApiRef,
   discoveryApiRef,
@@ -23,6 +25,7 @@ import {
   useApi,
 } from '@backstage/core-plugin-api';
 import ArrowBackIcon from '@material-ui/icons/ArrowBack';
+import { alpha } from '@material-ui/core/styles/colorManipulator';
 import {
   WorkloadDTO,
   ConnectionSession,
@@ -31,14 +34,118 @@ import {
   renewConnectionSession,
   revokeConnectionSession,
   getFlavor,
-  mapDisplayStatus,
   parseKubernetesUrl,
   buildKubectlDescribeCommand,
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { ConnectModal } from './ConnectModal';
+import {
+  WorkloadStatusIndicator,
+  isRunningStatus,
+} from './WorkloadStatusIndicator';
 
 const useStyles = makeStyles(theme => ({
+  header: {
+    background: 'var(--aegis-card-surface)',
+    border: '1px solid var(--aegis-card-border)',
+    borderRadius: theme.shape.borderRadius * 2,
+    padding: theme.spacing(3),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2),
+    marginBottom: theme.spacing(3),
+    boxShadow: 'var(--aegis-card-shadow)',
+  },
+  headerTop: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: theme.spacing(2),
+  },
+  breadcrumbs: {
+    color: theme.palette.text.secondary,
+    fontSize: theme.typography.pxToRem(14),
+  },
+  headerMeta: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1),
+  },
+  headerTitle: {
+    fontWeight: 700,
+    fontSize: theme.typography.pxToRem(28),
+  },
+  headerActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  primaryCta: {
+    boxShadow: '0 0 16px rgba(124, 58, 237, 0.4)',
+    backgroundColor: theme.palette.primary.main,
+    color: theme.palette.primary.contrastText,
+    '&:hover': {
+      backgroundColor: theme.palette.primary.dark,
+      boxShadow: '0 0 24px rgba(124, 58, 237, 0.5)',
+    },
+  },
+  card: {
+    backgroundColor: 'var(--aegis-card-surface)',
+    border: '1px solid var(--aegis-card-border)',
+    boxShadow: 'var(--aegis-card-shadow)',
+    borderRadius: theme.shape.borderRadius * 2,
+    padding: theme.spacing(3),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(2),
+  },
+  cardTitle: {
+    fontWeight: 600,
+    fontSize: theme.typography.pxToRem(16),
+  },
+  sectionStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(1.5),
+  },
+  statCard: {
+    backgroundColor: 'var(--aegis-card-surface)',
+    border: '1px solid var(--aegis-card-border)',
+    boxShadow: 'var(--aegis-card-shadow)',
+    borderRadius: theme.shape.borderRadius * 1.5,
+    padding: theme.spacing(2.5),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing(0.5),
+    minHeight: 110,
+  },
+  statLabel: {
+    fontSize: theme.typography.pxToRem(12),
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    fontWeight: 600,
+    color: theme.palette.text.secondary,
+  },
+  statValue: {
+    fontSize: theme.typography.pxToRem(20),
+    fontWeight: 700,
+  },
+  mono: {
+    fontFamily:
+      '"SFMono-Regular", "Roboto Mono", "Liberation Mono", Consolas, Menlo, monospace',
+  },
+  muted: {
+    color: theme.palette.text.secondary,
+  },
+  copyRow: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: theme.spacing(1),
+  },
   costPaper: {
     backgroundColor: 'var(--aegis-card-surface)',
     border: '1px solid var(--aegis-card-border)',
@@ -62,7 +169,8 @@ const useStyles = makeStyles(theme => ({
   costMetricCard: {
     padding: theme.spacing(2),
     borderRadius: theme.shape.borderRadius * 1.5,
-    border: `1px dashed ${theme.palette.divider}`,
+    border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+    backgroundColor: alpha(theme.palette.background.paper, 0.5),
     display: 'flex',
     flexDirection: 'column',
     gap: theme.spacing(1),
@@ -78,22 +186,28 @@ const useStyles = makeStyles(theme => ({
     fontSize: theme.typography.pxToRem(22),
     fontWeight: 700,
   },
+  costMetricValueEmphasis: {
+    fontSize: theme.typography.pxToRem(26),
+    fontWeight: 700,
+  },
+  costMetricValueWarning: {
+    color: theme.palette.warning.main,
+  },
+  troubleshootingLink: {
+    color: theme.palette.primary.main,
+    fontWeight: 600,
+    textDecoration: 'none',
+    '&:hover': {
+      textDecoration: 'underline',
+    },
+  },
+  statusRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    marginTop: theme.spacing(0.5),
+  },
 }));
-
-const statusChip = (status: string) => {
-  const mapped = mapDisplayStatus(status);
-  switch (mapped.color) {
-    case 'ok':
-      return <StatusOK>{mapped.label}</StatusOK>;
-    case 'error':
-      return <StatusError>{mapped.label}</StatusError>;
-    case 'progress':
-      return <StatusPending>{mapped.label}</StatusPending>;
-    case 'warning':
-    default:
-      return <StatusWarning>{mapped.label}</StatusWarning>;
-  }
-};
 
 const getStoredFlag = (key: string): boolean => {
   if (typeof window === 'undefined') {
@@ -120,6 +234,75 @@ const setStoredFlag = (key: string, value: boolean) => {
 const HELPER_FLAG = 'aegis.helper.installed';
 const SYSTEM_ACK_FLAG = 'aegis.system.use.ack';
 const RULES_ACK_FLAG = 'aegis.rules.of.behavior.ack';
+const DEFAULT_EMPTY = '—';
+
+const DEMO_WORKLOADS: Record<string, WorkloadDTO> = {
+  'ws-pytorch-training-01': {
+    id: 'ws-pytorch-training-01',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-east-1',
+    status: 'RUNNING',
+    uiStatus: 'RUNNING',
+    url: 'k8s://aegis-workspaces/pod/ws-pytorch-training-01',
+    workspace: {
+      flavor: 'gpu-large',
+      image: 'ghcr.io/aegis/workspace-jupyter-pytorch:latest',
+      interactive: true,
+    },
+  },
+  'ws-data-science-02': {
+    id: 'ws-data-science-02',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-east-1',
+    status: 'PROVISIONING',
+    uiStatus: 'PROVISIONING',
+    url: 'k8s://aegis-workspaces/pod/ws-data-science-02',
+    workspace: {
+      flavor: 'gpu-standard',
+      image: 'ghcr.io/aegis/workspace-vscode:latest',
+      interactive: true,
+    },
+  },
+  'ws-model-inference-03': {
+    id: 'ws-model-inference-03',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-west-2',
+    status: 'RUNNING',
+    uiStatus: 'RUNNING',
+    url: 'k8s://aegis-workspaces/pod/ws-model-inference-03',
+    workspace: {
+      flavor: 'gpu-large',
+      image: 'ghcr.io/aegis/workspace-inference:latest',
+      interactive: true,
+      command: ['python', 'serve.py', '--model', 'llama-2-7b'],
+    },
+  },
+  'ws-failed-job-04': {
+    id: 'ws-failed-job-04',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-east-1',
+    status: 'FAILED',
+    uiStatus: 'FAILED',
+    message: 'GPU node pool exhausted. No available capacity in us-east-1a.',
+    workspace: {
+      flavor: 'gpu-standard',
+      image: 'ghcr.io/aegis/workspace-jupyter:latest',
+      interactive: true,
+    },
+  },
+  'ws-completed-05': {
+    id: 'ws-completed-05',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-east-1',
+    status: 'SUCCEEDED',
+    uiStatus: 'SUCCEEDED',
+    workspace: {
+      flavor: 'cpu-large',
+      image: 'ghcr.io/aegis/workspace-cli:latest',
+      interactive: true,
+    },
+  },
+};
 
 export const WorkloadDetailsPage: FC = () => {
   const classes = useStyles();
@@ -156,6 +339,13 @@ export const WorkloadDetailsPage: FC = () => {
       setError('Missing workload id');
       return;
     }
+
+    // Check for demo data first
+    if (DEMO_WORKLOADS[id]) {
+      setWorkload(DEMO_WORKLOADS[id]);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -346,10 +536,20 @@ export const WorkloadDetailsPage: FC = () => {
 
   const loc = parseKubernetesUrl(workload?.url);
   const kubectlCmd = buildKubectlDescribeCommand(loc);
+  const sshCommand = useMemo(() => {
+    if (!session) {
+      return '';
+    }
+    const user =
+      session.sshUser && session.sshUser.trim() !== ''
+        ? session.sshUser
+        : 'aegis';
+    return `ssh ${user}@${session.sshHostAlias} -o ProxyCommand="aegis-connect --proxy=${session.proxyUrl} --token=${session.token}"`;
+  }, [session]);
 
   const rawStatus = workload?.uiStatus ?? workload?.status ?? '';
   const canConnect = Boolean(workload?.workspace?.interactive);
-  const isRunning = rawStatus === 'RUNNING' || workload?.status === 'RUNNING';
+  const isRunning = isRunningStatus(rawStatus);
   const connectButtonDisabled = sessionLoading || !isRunning;
 
   const metadata = useMemo(
@@ -368,31 +568,107 @@ export const WorkloadDetailsPage: FC = () => {
     [rawStatus, workload],
   );
 
+  const statCards = [
+    {
+      label: 'Flavor',
+      value: workload ? getFlavor(workload) : DEFAULT_EMPTY,
+    },
+    {
+      label: 'Project ID',
+      value: workload?.projectId ?? DEFAULT_EMPTY,
+      mono: true,
+    },
+    {
+      label: 'Region / Cluster',
+      value: workload?.clusterId ?? workload?.queue ?? DEFAULT_EMPTY,
+    },
+    {
+      label: 'Daily Cost',
+      value: '$186 / day',
+    },
+  ];
+
+  const specCommand =
+    workload?.workspace?.command?.join(' ') ??
+    workload?.training?.command?.join(' ') ??
+    DEFAULT_EMPTY;
+  const specImage =
+    workload?.workspace?.image ?? workload?.training?.image ?? DEFAULT_EMPTY;
+
   return (
     <Page themeId="tool">
       <Content>
-        <ContentHeader title="Workload Details">
-          <Typography variant="body1" color="textSecondary">
-            {id ?? '—'}
-          </Typography>
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={() => navigate(`/aegis/operations/logs${id ? `?workloadId=${encodeURIComponent(id)}` : ''}`)}
-          >
-            View Related Logs
-          </Button>
-        </ContentHeader>
-        <ContentHeader title="Overview">
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<ArrowBackIcon />}
-            onClick={() => navigate('/aegis/workloads')}
-          >
-            Back to list
-          </Button>
-        </ContentHeader>
+        <Box className={classes.header}>
+          <Box className={classes.headerTop}>
+            <Box className={classes.headerMeta}>
+              <Breadcrumbs className={classes.breadcrumbs}>
+                <RouterLink
+                  to="/aegis/workloads"
+                  className={classes.breadcrumbs}
+                  style={{ textDecoration: 'none', color: 'inherit' }}
+                >
+                  Workloads
+                </RouterLink>
+                <Typography color="textPrimary">
+                  {id ?? DEFAULT_EMPTY}
+                </Typography>
+              </Breadcrumbs>
+              <Typography variant="h4" className={classes.headerTitle}>
+                Workload Details
+              </Typography>
+              <Box className={classes.statusRow}>
+                {workload && (
+                  <WorkloadStatusIndicator
+                    status={workload.status ?? workload.uiStatus}
+                  />
+                )}
+                {workload?.message && (
+                  <Typography variant="body2" className={classes.muted}>
+                    {workload.message}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+            <Box className={classes.headerActions}>
+              {canConnect && (
+                <Button
+                  variant="contained"
+                  className={classes.primaryCta}
+                  disabled={connectButtonDisabled}
+                  onClick={handleConnect}
+                >
+                  {sessionLoading ? 'Preparing session…' : 'Connect'}
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() =>
+                  navigate(
+                    `/aegis/operations/logs${
+                      id ? `?workloadId=${encodeURIComponent(id)}` : ''
+                    }`,
+                  )
+                }
+              >
+                View Related Logs
+              </Button>
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<ArrowBackIcon />}
+                onClick={() => navigate('/aegis/workloads')}
+              >
+                Back to list
+              </Button>
+            </Box>
+          </Box>
+          {!isRunning && canConnect && (
+            <Typography variant="caption" className={classes.muted}>
+              Workspace must be running before connecting.
+            </Typography>
+          )}
+        </Box>
 
         {loading && <Progress />}
 
@@ -403,130 +679,209 @@ export const WorkloadDetailsPage: FC = () => {
         )}
 
         {workload && (
-          <Box display="flex" flexDirection="column" gridGap={16}>
-            <InfoCard title="Status">
-              <Box display="flex" flexDirection="column" gridGap={12}>
-                <Box display="flex" alignItems="center" gridGap={16}>
-                  {statusChip(rawStatus)}
-                  {workload.message && (
-                    <Typography variant="body2" color="textSecondary">
-                      {workload.message}
+          <Box display="flex" flexDirection="column" gridGap={24}>
+            <Grid container spacing={3}>
+              {statCards.map(card => (
+                <Grid item xs={12} sm={6} md={3} key={card.label}>
+                  <Paper elevation={0} className={classes.statCard}>
+                    <Typography className={classes.statLabel}>
+                      {card.label}
                     </Typography>
-                  )}
-                </Box>
-                {canConnect && (
-                  <Box>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      disabled={connectButtonDisabled}
-                      onClick={handleConnect}
+                    <Typography
+                      className={`${classes.statValue} ${
+                        card.mono ? classes.mono : ''
+                      }`}
                     >
-                      {sessionLoading ? 'Preparing session…' : 'Connect'}
-                    </Button>
-                    {!isRunning && (
-                      <Typography
-                        variant="caption"
-                        color="textSecondary"
-                        display="block"
-                      >
-                        Workspace must be running before connecting.
+                      {card.value}
+                    </Typography>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={8}>
+                <Box display="flex" flexDirection="column" gridGap={24}>
+                  {(workload.workspace || workload.training) && (
+                    <Paper elevation={0} className={classes.card}>
+                      <Typography className={classes.cardTitle}>
+                        Specification Details
                       </Typography>
-                    )}
-                  </Box>
-                )}
-              </Box>
-            </InfoCard>
+                      <StructuredMetadataTable
+                        metadata={{
+                          Type: workload.workspace ? 'Workspace' : 'Training',
+                          Image: specImage,
+                          Command: specCommand,
+                        }}
+                        dense
+                      />
+                    </Paper>
+                  )}
 
-            <InfoCard title="Metadata">
-              <StructuredMetadataTable metadata={metadata} />
-            </InfoCard>
+                  <Paper elevation={0} className={classes.card}>
+                    <Typography className={classes.cardTitle}>
+                      Kubernetes Object
+                    </Typography>
+                    <Box className={classes.sectionStack}>
+                      <StructuredMetadataTable
+                        metadata={{
+                          Namespace: loc?.namespace ?? DEFAULT_EMPTY,
+                          Kind: loc?.kind ?? DEFAULT_EMPTY,
+                          Name: loc?.name ?? DEFAULT_EMPTY,
+                          URL: workload?.url ?? DEFAULT_EMPTY,
+                        }}
+                        dense
+                      />
+                      {loc && (
+                        <Typography variant="body2">
+                          View object in{' '}
+                          <RouterLink
+                            to={`/kubernetes/overview?namespace=${loc.namespace}`}
+                          >
+                            Kubernetes Explorer
+                          </RouterLink>
+                        </Typography>
+                      )}
+                    </Box>
+                  </Paper>
 
-            {kubectlCmd && (
-              <InfoCard title="Debug commands">
-                <Box display="flex" alignItems="center" gridGap={8}>
-                  <Typography variant="body2">{kubectlCmd}</Typography>
-                  <CopyTextButton
-                    text={kubectlCmd}
-                  />
+                  <Paper elevation={0} className={classes.card}>
+                    <Typography className={classes.cardTitle}>
+                      Commands &amp; Access
+                    </Typography>
+                    <Box className={classes.sectionStack}>
+                      <Box>
+                        <Typography
+                          variant="subtitle2"
+                          className={classes.muted}
+                          style={{ marginBottom: 4 }}
+                        >
+                          Kubectl Describe
+                        </Typography>
+                        <Box className={classes.copyRow}>
+                          <Typography variant="body2" className={classes.mono}>
+                            {kubectlCmd || DEFAULT_EMPTY}
+                          </Typography>
+                          {kubectlCmd && <CopyTextButton text={kubectlCmd} />}
+                        </Box>
+                      </Box>
+                      <Box>
+                        <Typography
+                          variant="subtitle2"
+                          className={classes.muted}
+                          style={{ marginBottom: 4 }}
+                        >
+                          SSH Connection
+                        </Typography>
+                        <Box className={classes.copyRow}>
+                          <Typography variant="body2" className={classes.mono}>
+                            {sshCommand || DEFAULT_EMPTY}
+                          </Typography>
+                          {sshCommand && <CopyTextButton text={sshCommand} />}
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Paper>
                 </Box>
-              </InfoCard>
-            )}
+              </Grid>
 
-            {(workload.workspace || workload.training) && (
-              <InfoCard title="Specification">
-                <StructuredMetadataTable
-                  metadata={{
-                    Type: workload.workspace ? 'Workspace' : 'Training',
-                    Image:
-                      workload.workspace?.image ??
-                      workload.training?.image ??
-                      '—',
-                    Command:
-                      workload.workspace?.command?.join(' ') ??
-                      workload.training?.command?.join(' ') ??
-                      '—',
-                  }}
-                />
-              </InfoCard>
-            )}
+              <Grid item xs={12} md={4}>
+                <Box display="flex" flexDirection="column" gridGap={24}>
+                  <Paper elevation={0} className={classes.card}>
+                    <Typography className={classes.cardTitle}>
+                      Metadata
+                    </Typography>
+                    <StructuredMetadataTable metadata={metadata} dense />
+                  </Paper>
 
-            {loc && (
-              <Typography variant="body2">
-                View Kubernetes object{' '}
-                <RouterLink
-                  to={`/kubernetes/overview?namespace=${loc.namespace}`}
-                >
-                  {loc.kind} {loc.name}
-                </RouterLink>
-              </Typography>
-            )}
+                  <Paper elevation={0} className={classes.costPaper}>
+                    <div className={classes.costHeader}>
+                      <Typography className={classes.cardTitle}>
+                        Cost Analysis
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary">
+                        Synthetic estimates for this workload based on GPU
+                        tenancy and storage utilization in the current billing
+                        cycle.
+                      </Typography>
+                    </div>
+                    <div className={classes.costMetrics}>
+                      {[
+                        {
+                          label: 'Total Cost to Date',
+                          value: '$24,680',
+                          helper: 'Includes compute, storage, and network egress',
+                        },
+                        {
+                          label: 'Estimated Run Rate',
+                          value: '$186 / day',
+                          helper: 'Projected using trailing 7-day utilization',
+                        },
+                        {
+                          label: 'Budget Utilization',
+                          value: '72% of $34,000 cap',
+                          helper: 'Alerts fire at 85% threshold',
+                          tone: 'warning',
+                        },
+                        {
+                          label: 'Last Invoice Amount',
+                          value: '$6,240',
+                          helper: 'Billed on Apr 30, 2024',
+                        },
+                      ].map(metric => (
+                        <Box
+                          key={metric.label}
+                          className={classes.costMetricCard}
+                        >
+                          <Typography className={classes.costMetricLabel}>
+                            {metric.label}
+                          </Typography>
+                          <Typography
+                            className={`${classes.costMetricValueEmphasis} ${
+                              metric.tone === 'warning'
+                                ? classes.costMetricValueWarning
+                                : ''
+                            }`}
+                          >
+                            {metric.value}
+                          </Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            {metric.helper}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </div>
+                  </Paper>
 
-            <Paper elevation={0} className={classes.costPaper}>
-              <div className={classes.costHeader}>
-                <Typography variant="h6">Cost Analysis</Typography>
-                <Typography variant="body2" color="textSecondary">
-                  Synthetic estimates for this workload based on GPU tenancy and
-                  storage utilization in the current billing cycle.
-                </Typography>
-              </div>
-              <div className={classes.costMetrics}>
-                {[
-                  {
-                    label: 'Total Cost to Date',
-                    value: '$24,680',
-                    helper: 'Includes compute, storage, and network egress',
-                  },
-                  {
-                    label: 'Estimated Run Rate',
-                    value: '$186 / day',
-                    helper: 'Projected using trailing 7-day utilization',
-                  },
-                  {
-                    label: 'Budget Utilization',
-                    value: '72% of $34,000 cap',
-                    helper: 'Alerts fire at 85% threshold',
-                  },
-                  {
-                    label: 'Last Invoice Amount',
-                    value: '$6,240',
-                    helper: 'Billed on Apr 30, 2024',
-                  },
-                ].map(metric => (
-                  <Box key={metric.label} className={classes.costMetricCard}>
-                    <Typography className={classes.costMetricLabel}>
-                      {metric.label}
+                  <Paper elevation={0} className={classes.card}>
+                    <Typography className={classes.cardTitle}>
+                      Troubleshooting
                     </Typography>
-                    <Typography className={classes.costMetricValue}>
-                      {metric.value}
-                    </Typography>
-                    <Typography variant="body2" color="textSecondary">
-                      {metric.helper}
-                    </Typography>
-                  </Box>
-                ))}
-              </div>
-            </Paper>
+                    <Box className={classes.sectionStack}>
+                      <Typography variant="body2" className={classes.muted}>
+                        Quick links for diagnosing issues with this workload.
+                      </Typography>
+                      <Box display="flex" flexDirection="column" gridGap={8}>
+                        <RouterLink
+                          to={`/aegis/operations/logs${
+                            id ? `?workloadId=${encodeURIComponent(id)}` : ''
+                          }`}
+                          className={classes.troubleshootingLink}
+                        >
+                          View related logs
+                        </RouterLink>
+                        <RouterLink
+                          to="/aegis/workloads"
+                          className={classes.troubleshootingLink}
+                        >
+                          Return to workload list
+                        </RouterLink>
+                      </Box>
+                    </Box>
+                  </Paper>
+                </Box>
+              </Grid>
+            </Grid>
           </Box>
         )}
       </Content>

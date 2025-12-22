@@ -1,4 +1,4 @@
-import React, { FC, useMemo, useState } from 'react';
+import { FC, useMemo, useState, memo } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   Box,
@@ -6,6 +6,7 @@ import {
   Chip,
   Collapse,
   IconButton,
+  LinearProgress,
   Menu,
   MenuItem,
   Tooltip,
@@ -16,7 +17,7 @@ import { alpha } from '@material-ui/core/styles/colorManipulator';
 import CodeIcon from '@material-ui/icons/Code';
 import MoreVertIcon from '@material-ui/icons/MoreVert';
 import StorageIcon from '@material-ui/icons/Storage';
-import TerminalIcon from '@material-ui/icons/Terminal';
+import TerminalIcon from '@material-ui/icons/DeveloperMode';
 import MemoryIcon from '@material-ui/icons/Memory';
 import LaunchIcon from '@material-ui/icons/Launch';
 import ErrorOutlineIcon from '@material-ui/icons/ErrorOutline';
@@ -76,9 +77,7 @@ const useStyles = makeStyles(theme => ({
       position: 'absolute',
       inset: 0,
       background:
-        'linear-gradient(120deg, rgba(139,92,246,0.15), rgba(124,58,237,0.06), rgba(34,211,238,0.05))',
-      opacity: 0.9,
-      animation: '$sheen 6s ease-in-out infinite',
+        'radial-gradient(ellipse at top right, rgba(139,92,246,0.15), rgba(124,58,237,0.06) 50%, transparent 70%)',
       pointerEvents: 'none',
     },
   },
@@ -137,19 +136,27 @@ const useStyles = makeStyles(theme => ({
     background: alpha(theme.palette.primary.main, 0.08),
     color: theme.palette.text.secondary,
   },
-  progressTrack: {
-    marginTop: theme.spacing(1),
-    height: 6,
-    borderRadius: 999,
-    background: alpha(theme.palette.primary.main, 0.2),
-    overflow: 'hidden',
+  '@keyframes fullSweep': {
+    '0%': { left: '-40%' },
+    '100%': { left: '100%' },
   },
-  progressBar: {
-    width: '45%',
-    height: '100%',
-    borderRadius: 999,
-    background: theme.palette.primary.main,
-    animation: '$progressSlide 1.8s ease-in-out infinite',
+  progressWrapper: {
+    marginTop: theme.spacing(1),
+    '& .MuiLinearProgress-root': {
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: alpha(theme.palette.primary.main, 0.15),
+      overflow: 'hidden',
+    },
+    '& .MuiLinearProgress-bar1Indeterminate': {
+      width: '40%',
+      borderRadius: 3,
+      background: theme.palette.primary.main,
+      animation: '$fullSweep 1.5s linear infinite',
+    },
+    '& .MuiLinearProgress-bar2Indeterminate': {
+      display: 'none',
+    },
   },
   errorBox: {
     padding: theme.spacing(1.5),
@@ -166,8 +173,10 @@ const useStyles = makeStyles(theme => ({
   connectButton: {
     background: theme.palette.primary.main,
     color: theme.palette.primary.contrastText,
+    boxShadow: `0 0 16px ${alpha(theme.palette.primary.main, 0.4)}`,
     '&:hover': {
       background: theme.palette.primary.dark,
+      boxShadow: `0 0 24px ${alpha(theme.palette.primary.main, 0.5)}`,
     },
   },
   description: {
@@ -185,16 +194,6 @@ const useStyles = makeStyles(theme => ({
   },
   errorToggle: {
     marginTop: theme.spacing(1),
-  },
-  '@keyframes sheen': {
-    '0%': { transform: 'translateX(-20%)' },
-    '50%': { transform: 'translateX(0%)' },
-    '100%': { transform: 'translateX(20%)' },
-  },
-  '@keyframes progressSlide': {
-    '0%': { transform: 'translateX(-50%)' },
-    '50%': { transform: 'translateX(120%)' },
-    '100%': { transform: 'translateX(-50%)' },
   },
 }));
 
@@ -268,7 +267,21 @@ const formatElapsed = (value?: string): string => {
   return `${days}d ago`;
 };
 
-export const WorkloadCard: FC<WorkloadCardProps> = ({
+const ProvisioningMessage = memo(() => {
+  const classes = useStyles();
+  return (
+    <Box className={classes.message}>
+      <Typography variant="body2">
+        Starting your GPU workspace. Provisioning typically completes in 3-6 minutes.
+      </Typography>
+      <Box className={classes.progressWrapper}>
+        <LinearProgress />
+      </Box>
+    </Box>
+  );
+});
+
+export const WorkloadCard: FC<WorkloadCardProps> = memo(({
   workload,
   highlight = false,
 }) => {
@@ -446,14 +459,7 @@ export const WorkloadCard: FC<WorkloadCardProps> = ({
       </Box>
 
       {statusTone === 'provisioning' ? (
-        <Box className={classes.message}>
-          <Typography variant="body2">
-            Starting your GPU workspace. Provisioning typically completes in 3-6 minutes.
-          </Typography>
-          <Box className={classes.progressTrack}>
-            <Box className={classes.progressBar} />
-          </Box>
-        </Box>
+        <ProvisioningMessage />
       ) : null}
 
       {isFailed && workload.message ? (
@@ -478,14 +484,15 @@ export const WorkloadCard: FC<WorkloadCardProps> = ({
 
       <Box className={classes.actionRow}>
         {isRunning && vscodeUri ? (
-          <Tooltip title="Opens VS Code locally via the vscode:// URI scheme.">
+          <Tooltip title="Open VS Code locally using a secure remote SSH connection">
             <Button
               variant="contained"
               className={classes.connectButton}
               component="a"
               href={vscodeUri}
+              startIcon={<LaunchIcon />}
             >
-              Connect to VS Code
+              Connect
             </Button>
           </Tooltip>
         ) : null}
@@ -500,4 +507,9 @@ export const WorkloadCard: FC<WorkloadCardProps> = ({
       </Box>
     </Box>
   );
-};
+}, (prev, next) => {
+  return (
+    prev.highlight === next.highlight &&
+    JSON.stringify(prev.workload) === JSON.stringify(next.workload)
+  );
+});
