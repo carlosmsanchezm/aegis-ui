@@ -16,7 +16,7 @@ import { alpha } from '@material-ui/core/styles/colorManipulator';
 import CodeIcon from '@material-ui/icons/Code';
 import MoreVertIcon from '@material-ui/icons/MoreVert';
 import StorageIcon from '@material-ui/icons/Storage';
-import TerminalIcon from '@material-ui/icons/Terminal';
+import TerminalIcon from '@material-ui/icons/DeveloperMode';
 import MemoryIcon from '@material-ui/icons/Memory';
 import LaunchIcon from '@material-ui/icons/Launch';
 import ErrorOutlineIcon from '@material-ui/icons/ErrorOutline';

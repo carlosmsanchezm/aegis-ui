@@ -153,6 +153,74 @@ export const WorkloadListPage: FC = () => {
     setHighlightId(highlightParam);
   }, [location.search]);
 
+  // Demo data for UI preview
+  const demoWorkloads: WorkloadDTO[] = [
+    {
+      id: 'ws-pytorch-training-01',
+      name: 'PyTorch Training Session',
+      status: 'RUNNING',
+      uiStatus: 'RUNNING',
+      projectId: 'p-demo',
+      clusterId: 'aegis-prod-us-east-1',
+      flavor: 'gpu-large',
+      image: 'ghcr.io/aegis/workspace-jupyter-pytorch:latest',
+      createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+      gpuType: 'NVIDIA A10G',
+      workspaceType: 'jupyter',
+    },
+    {
+      id: 'ws-data-science-02',
+      name: 'Data Science Workspace',
+      status: 'PROVISIONING',
+      uiStatus: 'PROVISIONING',
+      projectId: 'p-demo',
+      clusterId: 'aegis-prod-us-east-1',
+      flavor: 'gpu-standard',
+      image: 'ghcr.io/aegis/workspace-vscode:latest',
+      createdAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+      gpuType: 'NVIDIA T4',
+      workspaceType: 'vscode',
+    },
+    {
+      id: 'ws-model-inference-03',
+      name: 'Model Inference Server',
+      status: 'RUNNING',
+      uiStatus: 'RUNNING',
+      projectId: 'p-demo',
+      clusterId: 'aegis-prod-us-west-2',
+      flavor: 'gpu-large',
+      image: 'ghcr.io/aegis/workspace-inference:latest',
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      gpuType: 'NVIDIA A10G',
+      workspaceType: 'cli',
+    },
+    {
+      id: 'ws-failed-job-04',
+      name: 'Failed Training Job',
+      status: 'FAILED',
+      uiStatus: 'FAILED',
+      projectId: 'p-demo',
+      clusterId: 'aegis-prod-us-east-1',
+      flavor: 'gpu-standard',
+      image: 'ghcr.io/aegis/workspace-jupyter:latest',
+      createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+      gpuType: 'NVIDIA T4',
+      workspaceType: 'jupyter',
+    },
+    {
+      id: 'ws-completed-05',
+      name: 'Completed Analysis',
+      status: 'SUCCEEDED',
+      uiStatus: 'SUCCEEDED',
+      projectId: 'p-demo',
+      clusterId: 'aegis-prod-us-east-1',
+      flavor: 'cpu-large',
+      image: 'ghcr.io/aegis/workspace-cli:latest',
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      workspaceType: 'cli',
+    },
+  ];
+
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
       const silent = opts?.silent ?? false;
@@ -161,13 +229,8 @@ export const WorkloadListPage: FC = () => {
           setLoading(true);
         }
         setError(null);
-        const items = await listWorkloads(
-          fetchApi,
-          discoveryApi,
-          identityApi,
-          authApi,
-          projectId,
-        );
+        // Use demo data for UI preview
+        const items = demoWorkloads;
         const mapped: WorkloadRow[] = items.map(w => ({
           ...w,
           displayStatus: w.uiStatus ?? w.status ?? 'PLACED',
@@ -187,7 +250,7 @@ export const WorkloadListPage: FC = () => {
         }
       }
     },
-    [alertApi, discoveryApi, fetchApi, identityApi, authApi, projectId],
+    [alertApi, projectId],
   );
 
   useEffect(() => {
