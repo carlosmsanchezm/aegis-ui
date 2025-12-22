@@ -34,6 +34,7 @@ import { keycloakAuthApiRef } from '../api/refs';
 import { createWorkspaceRouteRef } from '../routes';
 import { WorkloadCard } from './WorkloadCard';
 import { isProvisioningStatus } from './WorkloadStatusIndicator';
+import { demoWorkloads } from '../demoData';
 
 const useStyles = makeStyles(theme => ({
   headerRow: {
@@ -97,87 +98,6 @@ const useStyles = makeStyles(theme => ({
 type WorkloadRow = WorkloadDTO & { displayStatus: string };
 
 type StatusFilter = 'all' | 'active' | 'terminal';
-
-// Demo data for UI preview
-const demoWorkloads: WorkloadDTO[] = [
-  {
-    id: 'ws-pytorch-training-01',
-    name: 'PyTorch Training Session',
-    status: 'RUNNING',
-    uiStatus: 'RUNNING',
-    projectId: 'p-demo',
-    clusterId: 'aegis-prod-us-east-1',
-    flavor: 'gpu-large',
-    image: 'ghcr.io/aegis/workspace-jupyter-pytorch:latest',
-    createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    gpuType: 'NVIDIA A10G',
-    workspaceType: 'jupyter',
-    connectionInfo: {
-      sshUser: 'aegis',
-      sshHost: 'ws-pytorch-training-01.aegis.internal',
-      vscodeUri: 'vscode://vscode-remote/ssh-remote+aegis@ws-pytorch-training-01.aegis.internal/home/aegis',
-      jupyterUrl: 'https://ws-pytorch-training-01.aegis.internal:8888',
-    },
-  },
-  {
-    id: 'ws-data-science-02',
-    name: 'Data Science Workspace',
-    status: 'PROVISIONING',
-    uiStatus: 'PROVISIONING',
-    projectId: 'p-demo',
-    clusterId: 'aegis-prod-us-east-1',
-    flavor: 'gpu-standard',
-    image: 'ghcr.io/aegis/workspace-vscode:latest',
-    createdAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-    gpuType: 'NVIDIA T4',
-    workspaceType: 'vscode',
-  },
-  {
-    id: 'ws-model-inference-03',
-    name: 'Model Inference Server',
-    status: 'RUNNING',
-    uiStatus: 'RUNNING',
-    projectId: 'p-demo',
-    clusterId: 'aegis-prod-us-west-2',
-    flavor: 'gpu-large',
-    image: 'ghcr.io/aegis/workspace-inference:latest',
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    gpuType: 'NVIDIA A10G',
-    workspaceType: 'cli',
-    connectionInfo: {
-      sshUser: 'aegis',
-      sshHost: 'ws-model-inference-03.aegis.internal',
-      vscodeUri: 'vscode://vscode-remote/ssh-remote+aegis@ws-model-inference-03.aegis.internal/home/aegis',
-      terminalUrl: 'https://ws-model-inference-03.aegis.internal:8080/terminal',
-    },
-  },
-  {
-    id: 'ws-failed-job-04',
-    name: 'Failed Training Job',
-    status: 'FAILED',
-    uiStatus: 'FAILED',
-    projectId: 'p-demo',
-    clusterId: 'aegis-prod-us-east-1',
-    flavor: 'gpu-standard',
-    image: 'ghcr.io/aegis/workspace-jupyter:latest',
-    createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-    gpuType: 'NVIDIA T4',
-    workspaceType: 'jupyter',
-    message: 'GPU node pool exhausted. No available capacity in us-east-1a. Retry with a different availability zone.',
-  },
-  {
-    id: 'ws-completed-05',
-    name: 'Completed Analysis',
-    status: 'SUCCEEDED',
-    uiStatus: 'SUCCEEDED',
-    projectId: 'p-demo',
-    clusterId: 'aegis-prod-us-east-1',
-    flavor: 'cpu-large',
-    image: 'ghcr.io/aegis/workspace-cli:latest',
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    workspaceType: 'cli',
-  },
-];
 
 const formatElapsed = (seconds: number): string => {
   if (seconds < 60) {
@@ -243,8 +163,20 @@ export const WorkloadListPage: FC = () => {
         }
         setError(null);
         
-        // Use demo data if API call is expected to fail or for preview
-        const items = demoWorkloads;
+        let items: WorkloadDTO[] = [];
+        try {
+          items = await listWorkloads(
+            fetchApi,
+            discoveryApi,
+            identityApi,
+            authApi,
+            projectId,
+          );
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to load workloads from API, falling back to demo data', err);
+          items = demoWorkloads;
+        }
         
         const mapped: WorkloadRow[] = items.map(w => ({
           ...w,
@@ -265,7 +197,7 @@ export const WorkloadListPage: FC = () => {
         }
       }
     },
-    [alertApi, projectId],
+    [alertApi, projectId, fetchApi, discoveryApi, identityApi, authApi],
   );
 
   useEffect(() => {
@@ -308,7 +240,7 @@ export const WorkloadListPage: FC = () => {
 
   useEffect(() => {
     if (!highlightId) {
-      return;
+      return () => {};
     }
     const handle = window.setTimeout(() => {
       const element = document.getElementById(`workload-card-${highlightId}`);
@@ -316,7 +248,9 @@ export const WorkloadListPage: FC = () => {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 200);
-    return () => window.clearTimeout(handle);
+    return () => {
+      window.clearTimeout(handle);
+    };
   }, [highlightId, filteredRows]);
 
   const handleProjectChange = (event: React.ChangeEvent<HTMLInputElement>) => {
