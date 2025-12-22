@@ -9,6 +9,7 @@ import {
 } from '@backstage/core-plugin-api';
 import { UserIdentity } from '@backstage/core-components';
 import { keycloakAuthApiRef } from '../../apis';
+import { InteractiveBackground } from '../layout/InteractiveBackground';
 
 const AegisLogo = () => (
   <div style={{ position: 'relative', width: 160, margin: '0 auto' }}>
@@ -89,17 +90,11 @@ const useStyles = makeStyles(theme => ({
     padding: theme.spacing(3),
     position: 'relative',
     overflow: 'hidden',
-    background: '#0a0a0b',
+    background: 'transparent', // Let InteractiveBackground show through
   },
   meshBackground: {
-    position: 'absolute',
-    inset: 0,
-    background: `
-      radial-gradient(ellipse 80% 50% at 20% 40%, rgba(139, 92, 246, 0.15), transparent),
-      radial-gradient(ellipse 60% 40% at 80% 60%, rgba(34, 211, 238, 0.12), transparent),
-      radial-gradient(ellipse 50% 30% at 50% 20%, rgba(139, 92, 246, 0.08), transparent)
-    `,
-    animation: '$pulse 8s ease-in-out infinite',
+    // Disabled - using InteractiveBackground instead
+    display: 'none',
   },
   gridPattern: {
     position: 'absolute',
@@ -110,6 +105,7 @@ const useStyles = makeStyles(theme => ({
     `,
     backgroundSize: '60px 60px',
     maskImage: 'radial-gradient(ellipse at center, black 30%, transparent 70%)',
+    pointerEvents: 'none',
   },
   cardWrapper: {
     position: 'relative',
@@ -176,7 +172,7 @@ const useStyles = makeStyles(theme => ({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '100vh',
-    background: '#0a0a0b',
+    background: 'transparent',
     color: '#6B7280',
     fontSize: '0.9rem',
   },
@@ -241,11 +237,17 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
   }, [authApi, onSignInSuccess]);
 
   if (loading) {
-    return <div className={classes.loading}>Initializing...</div>;
+    return (
+      <div className={classes.loading}>
+        <InteractiveBackground />
+        Initializing...
+      </div>
+    );
   }
 
   return (
     <div className={classes.root}>
+      <InteractiveBackground />
       <div className={classes.meshBackground} />
       <div className={classes.gridPattern} />
 
