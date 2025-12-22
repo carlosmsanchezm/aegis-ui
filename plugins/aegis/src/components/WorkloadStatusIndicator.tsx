@@ -1,5 +1,5 @@
 import React, { FC } from 'react';
-import { Box, Typography } from '@material-ui/core';
+import { Box, CircularProgress, Typography } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
 import ErrorOutlineIcon from '@material-ui/icons/ErrorOutline';
@@ -21,12 +21,7 @@ const useStyles = makeStyles(theme => ({
     textTransform: 'uppercase',
   },
   spinner: {
-    width: 14,
-    height: 14,
-    borderRadius: '50%',
-    border: `2px solid ${theme.palette.primary.main}`,
-    borderTopColor: 'transparent',
-    animation: '$spin 0.9s linear infinite',
+    color: theme.palette.primary.main,
   },
   ready: {
     background: 'rgba(34, 197, 94, 0.12)',
@@ -48,9 +43,6 @@ const useStyles = makeStyles(theme => ({
   terminated: {
     background: 'rgba(148, 163, 184, 0.22)',
     color: theme.palette.text.secondary,
-  },
-  '@keyframes spin': {
-    to: { transform: 'rotate(360deg)' },
   },
 }));
 
@@ -103,7 +95,7 @@ export const WorkloadStatusIndicator: FC<WorkloadStatusIndicatorProps> = ({
         return <PauseCircleOutlineIcon fontSize="small" />;
       case 'provisioning':
       default:
-        return <span className={classes.spinner} />;
+        return <CircularProgress size={14} thickness={4} className={classes.spinner} />;
     }
   })();
 
