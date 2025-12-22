@@ -76,9 +76,8 @@ const useStyles = makeStyles(theme => ({
       position: 'absolute',
       inset: 0,
       background:
-        'linear-gradient(120deg, rgba(139,92,246,0.15), rgba(124,58,237,0.06), rgba(34,211,238,0.05))',
-      opacity: 0.9,
-      animation: '$sheen 6s ease-in-out infinite',
+        'radial-gradient(ellipse at top right, rgba(139,92,246,0.18), rgba(124,58,237,0.08) 50%, transparent 70%)',
+      animation: '$pulse 3s ease-in-out infinite',
       pointerEvents: 'none',
     },
   },
@@ -145,11 +144,11 @@ const useStyles = makeStyles(theme => ({
     overflow: 'hidden',
   },
   progressBar: {
-    width: '45%',
+    width: '40%',
     height: '100%',
     borderRadius: 999,
-    background: theme.palette.primary.main,
-    animation: '$progressSlide 1.8s ease-in-out infinite',
+    background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.primary.light})`,
+    animation: '$progressSlide 2s linear infinite',
   },
   errorBox: {
     padding: theme.spacing(1.5),
@@ -188,15 +187,13 @@ const useStyles = makeStyles(theme => ({
   errorToggle: {
     marginTop: theme.spacing(1),
   },
-  '@keyframes sheen': {
-    '0%': { transform: 'translateX(-20%)' },
-    '50%': { transform: 'translateX(0%)' },
-    '100%': { transform: 'translateX(20%)' },
+  '@keyframes pulse': {
+    '0%, 100%': { opacity: 0.6 },
+    '50%': { opacity: 1 },
   },
   '@keyframes progressSlide': {
-    '0%': { transform: 'translateX(-50%)' },
-    '50%': { transform: 'translateX(120%)' },
-    '100%': { transform: 'translateX(-50%)' },
+    '0%': { transform: 'translateX(-100%)' },
+    '100%': { transform: 'translateX(250%)' },
   },
 }));
 
