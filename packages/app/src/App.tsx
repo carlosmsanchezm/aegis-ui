@@ -27,6 +27,7 @@ import { Root } from './components/Root';
 import {
   AegisClusterCreatePage,
   AegisClusterDetailsPage,
+  AegisClustersFleetPage,
   AegisClustersPage,
   AegisDashboardPage,
   AegisPosturePage,
@@ -145,6 +146,7 @@ const routes = (
     <Route path="/aegis/telemetry" element={<AegisTelemetryPage />} />
     <Route path="/aegis/posture" element={<AegisPosturePage />} />
     <Route path="/aegis/clusters" element={<AegisClustersPage />} />
+    <Route path="/aegis/clusters/fleet" element={<AegisClustersFleetPage />} />
     <Route path="/aegis/clusters/:clusterId" element={<AegisClusterDetailsPage />} />
     <Route path="/aegis/workloads" element={<AegisWorkloadListPage />} />
     <Route path="/aegis/workloads/:id" element={<AegisWorkloadDetailsPage />} />
