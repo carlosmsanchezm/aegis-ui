@@ -507,4 +507,9 @@ export const WorkloadCard: FC<WorkloadCardProps> = memo(({
       </Box>
     </Box>
   );
+}, (prev, next) => {
+  return (
+    prev.highlight === next.highlight &&
+    JSON.stringify(prev.workload) === JSON.stringify(next.workload)
+  );
 });
