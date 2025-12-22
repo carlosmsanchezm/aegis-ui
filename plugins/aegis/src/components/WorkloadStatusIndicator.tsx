@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import { FC, memo } from 'react';
 import { Box, CircularProgress, Typography } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
 import CheckCircleIcon from '@material-ui/icons/CheckCircle';
@@ -78,7 +78,7 @@ type WorkloadStatusIndicatorProps = {
   status?: string;
 };
 
-export const WorkloadStatusIndicator: FC<WorkloadStatusIndicatorProps> = ({
+export const WorkloadStatusIndicator: FC<WorkloadStatusIndicatorProps> = memo(({
   status,
 }) => {
   const classes = useStyles();
@@ -107,7 +107,7 @@ export const WorkloadStatusIndicator: FC<WorkloadStatusIndicatorProps> = ({
       </Typography>
     </Box>
   );
-};
+});
 
 export const getWorkloadStatusTone = (status?: string): StatusTone =>
   getStatusMeta(status).tone;
