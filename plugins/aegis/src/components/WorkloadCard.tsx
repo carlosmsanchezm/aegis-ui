@@ -1,4 +1,4 @@
-import { FC, useMemo, useState } from 'react';
+import { FC, useMemo, useState, memo } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   Box,
@@ -267,7 +267,21 @@ const formatElapsed = (value?: string): string => {
   return `${days}d ago`;
 };
 
-export const WorkloadCard: FC<WorkloadCardProps> = ({
+const ProvisioningMessage = memo(() => {
+  const classes = useStyles();
+  return (
+    <Box className={classes.message}>
+      <Typography variant="body2">
+        Starting your GPU workspace. Provisioning typically completes in 3-6 minutes.
+      </Typography>
+      <Box className={classes.progressWrapper}>
+        <LinearProgress />
+      </Box>
+    </Box>
+  );
+});
+
+export const WorkloadCard: FC<WorkloadCardProps> = memo(({
   workload,
   highlight = false,
 }) => {
@@ -445,14 +459,7 @@ export const WorkloadCard: FC<WorkloadCardProps> = ({
       </Box>
 
       {statusTone === 'provisioning' ? (
-        <Box className={classes.message}>
-          <Typography variant="body2">
-            Starting your GPU workspace. Provisioning typically completes in 3-6 minutes.
-          </Typography>
-          <Box className={classes.progressWrapper}>
-            <LinearProgress />
-          </Box>
-        </Box>
+        <ProvisioningMessage />
       ) : null}
 
       {isFailed && workload.message ? (
@@ -500,4 +507,4 @@ export const WorkloadCard: FC<WorkloadCardProps> = ({
       </Box>
     </Box>
   );
-};
+});
