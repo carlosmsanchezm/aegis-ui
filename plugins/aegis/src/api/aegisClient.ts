@@ -30,6 +30,17 @@ export type WorkloadDTO = {
   uiStatus?: string;
   message?: string;
   url?: string;
+  createdAt?: string;
+  etaSeconds?: number;
+  connectionInfo?: {
+    host?: string;
+    sshUser?: string;
+    workspacePath?: string;
+    vscodeUri?: string;
+    jupyterUrl?: string;
+    terminalUrl?: string;
+    sshCommand?: string;
+  };
   workspace?: WorkspaceSpec;
   training?: TrainingSpec;
 };
