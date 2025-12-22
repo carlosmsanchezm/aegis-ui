@@ -6,6 +6,7 @@ import {
   Chip,
   Collapse,
   IconButton,
+  LinearProgress,
   Menu,
   MenuItem,
   Tooltip,
@@ -76,8 +77,7 @@ const useStyles = makeStyles(theme => ({
       position: 'absolute',
       inset: 0,
       background:
-        'radial-gradient(ellipse at top right, rgba(139,92,246,0.18), rgba(124,58,237,0.08) 50%, transparent 70%)',
-      animation: '$pulse 3s ease-in-out infinite',
+        'radial-gradient(ellipse at top right, rgba(139,92,246,0.15), rgba(124,58,237,0.06) 50%, transparent 70%)',
       pointerEvents: 'none',
     },
   },
@@ -136,19 +136,17 @@ const useStyles = makeStyles(theme => ({
     background: alpha(theme.palette.primary.main, 0.08),
     color: theme.palette.text.secondary,
   },
-  progressTrack: {
+  progressWrapper: {
     marginTop: theme.spacing(1),
-    height: 6,
-    borderRadius: 999,
-    background: alpha(theme.palette.primary.main, 0.2),
-    overflow: 'hidden',
-  },
-  progressBar: {
-    width: '40%',
-    height: '100%',
-    borderRadius: 999,
-    background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.primary.light})`,
-    animation: '$progressSlide 2s linear infinite',
+    '& .MuiLinearProgress-root': {
+      height: 6,
+      borderRadius: 999,
+      backgroundColor: alpha(theme.palette.primary.main, 0.15),
+    },
+    '& .MuiLinearProgress-bar': {
+      borderRadius: 999,
+      background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.primary.light})`,
+    },
   },
   errorBox: {
     padding: theme.spacing(1.5),
@@ -186,14 +184,6 @@ const useStyles = makeStyles(theme => ({
   },
   errorToggle: {
     marginTop: theme.spacing(1),
-  },
-  '@keyframes pulse': {
-    '0%, 100%': { opacity: 0.6 },
-    '50%': { opacity: 1 },
-  },
-  '@keyframes progressSlide': {
-    '0%': { transform: 'translateX(-100%)' },
-    '100%': { transform: 'translateX(250%)' },
   },
 }));
 
@@ -449,8 +439,8 @@ export const WorkloadCard: FC<WorkloadCardProps> = ({
           <Typography variant="body2">
             Starting your GPU workspace. Provisioning typically completes in 3-6 minutes.
           </Typography>
-          <Box className={classes.progressTrack}>
-            <Box className={classes.progressBar} />
+          <Box className={classes.progressWrapper}>
+            <LinearProgress />
           </Box>
         </Box>
       ) : null}
