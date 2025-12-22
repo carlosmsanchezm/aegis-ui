@@ -928,7 +928,12 @@ export const LaunchWorkspacePage: FC = () => {
         severity: 'success',
       });
       if (workloadsLink) {
-        navigate(workloadsLink());
+        const target = workloadsLink();
+        const params = new URLSearchParams({ project: projectId });
+        if (createdId) {
+          params.set('highlight', createdId);
+        }
+        navigate(`${target}?${params.toString()}`);
       }
     } catch (e: unknown) {
       let msg = 'Failed to submit workspace.';
