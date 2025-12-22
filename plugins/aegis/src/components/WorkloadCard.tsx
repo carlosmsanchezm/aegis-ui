@@ -1,4 +1,4 @@
-import React, { FC, useMemo, useState } from 'react';
+import { FC, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   Box,
@@ -136,6 +136,10 @@ const useStyles = makeStyles(theme => ({
     background: alpha(theme.palette.primary.main, 0.08),
     color: theme.palette.text.secondary,
   },
+  '@keyframes fullSweep': {
+    '0%': { left: '-40%' },
+    '100%': { left: '100%' },
+  },
   progressWrapper: {
     marginTop: theme.spacing(1),
     '& .MuiLinearProgress-root': {
@@ -145,12 +149,13 @@ const useStyles = makeStyles(theme => ({
       overflow: 'hidden',
     },
     '& .MuiLinearProgress-bar1Indeterminate': {
+      width: '40%',
       borderRadius: 3,
       background: theme.palette.primary.main,
+      animation: '$fullSweep 1.5s linear infinite',
     },
     '& .MuiLinearProgress-bar2Indeterminate': {
-      borderRadius: 3,
-      background: theme.palette.primary.light,
+      display: 'none',
     },
   },
   errorBox: {
