@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Box,
   Button,
   Card,
@@ -11,6 +8,7 @@ import {
   CardContent,
   CardHeader,
   Chip,
+  CircularProgress,
   Divider,
   FormControl,
   FormControlLabel,
@@ -33,7 +31,6 @@ import {
   Typography,
   makeStyles,
 } from '@material-ui/core';
-import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import GitHubIcon from '@material-ui/icons/GitHub';
 import DescriptionIcon from '@material-ui/icons/Description';
 import CodeIcon from '@material-ui/icons/Code';
@@ -58,11 +55,16 @@ import {
 import { keycloakAuthApiRef } from '../../apis';
 import {
   ApiError,
+  ImportClusterMethod,
+  ImportClusterProvider,
+  ImportClusterResponse,
   Job,
   ProjectRecord,
   createCluster,
   getClusterJobStatus,
+  importCluster,
   isTerminalStatus,
+  listClusters,
   listProjects,
 } from '../../../../../plugins/aegis/src/api/aegisClient';
 
@@ -116,6 +118,27 @@ const parseLooseYaml = (input: string): Record<string, unknown> => {
 
   return result;
 };
+
+const readFileAsBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => {
+      reject(reader.error ?? new Error('Unable to read file'));
+    };
+    reader.onload = () => {
+      if (!(reader.result instanceof ArrayBuffer)) {
+        reject(new Error('Unable to read file'));
+        return;
+      }
+      const bytes = new Uint8Array(reader.result);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 1) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      resolve(window.btoa(binary));
+    };
+    reader.readAsArrayBuffer(file);
+  });
 
 type Persona = 'platform-admin' | 'cluster-creator' | 'ml-engineer';
 
@@ -355,6 +378,8 @@ type TimelineStep = {
   hint?: string;
 };
 
+type AgentConnectionStatus = 'idle' | 'waiting' | 'connected' | 'failed';
+
 const baseTimeline = (): TimelineStep[] => [
   { id: 'submit', label: 'Submit spec', status: 'pending' },
   { id: 'pulumi', label: 'Pulumi apply', status: 'pending' },
@@ -392,6 +417,53 @@ const sanitizeClusterId = (value: string): string => {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
   return slug || `cluster-${Date.now().toString(36)}`;
+};
+
+const clusterIdIsValid = (value: string): boolean =>
+  /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(value);
+
+const parseLabelLines = (
+  raw: string,
+): { labels: Record<string, string>; error?: string } => {
+  const labels: Record<string, string> = {};
+  const lines = raw
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const idx = line.indexOf('=');
+    if (idx <= 0) {
+      return {
+        labels: {},
+        error: `Invalid label "${line}". Use key=value (one per line).`,
+      };
+    }
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    if (!key || !value) {
+      return {
+        labels: {},
+        error: `Invalid label "${line}". Use key=value (one per line).`,
+      };
+    }
+    labels[key] = value;
+  }
+
+  return { labels };
+};
+
+const renderHelmValuesYaml = (result: ImportClusterResponse | null): string => {
+  const env = result?.helmValues?.k8sAgent?.env ?? {};
+  const keys = Object.keys(env).sort((a, b) => a.localeCompare(b));
+  if (keys.length === 0) {
+    return '# No helm values returned.';
+  }
+  const lines = ['k8sAgent:', '  env:'];
+  keys.forEach(key => {
+    lines.push(`    ${key}: ${JSON.stringify(env[key] ?? '')}`);
+  });
+  return lines.join('\n');
 };
 
 const buildProfileParameters = (
@@ -450,14 +522,38 @@ export const AegisClusterCreatePage = () => {
     `name: atlas-train-govcloud\nprofileRef: eks-train@1.5.0\nregion: us-east-1\nparameters:\n  gpu:\n    count: 0\n  nodePool:\n    spotAllowed: false\n`);
   const [yamlError, setYamlError] = useState<string | null>(null);
   const [planOutput, setPlanOutput] = useState<string>('');
-  const [importMethod, setImportMethod] = useState<'arn' | 'kubeconfig'>('arn');
-  const [attachVerified, setAttachVerified] = useState(false);
+  const [importStep, setImportStep] = useState(0);
+  const [importValidationEnabled, setImportValidationEnabled] = useState(false);
+  const [importMethod, setImportMethod] =
+    useState<ImportClusterMethod>('agent_only');
+  const [importProvider, setImportProvider] =
+    useState<ImportClusterProvider>('local');
+  const [importRegion, setImportRegion] = useState('local');
+  const [importClusterId, setImportClusterId] = useState('dev-local');
+  const [importClusterName, setImportClusterName] = useState(
+    'Local Development Cluster',
+  );
+  const [importLabels, setImportLabels] = useState('');
+  const [importAssumeRoleArn, setImportAssumeRoleArn] = useState('');
+  const [importKubeconfigFile, setImportKubeconfigFile] = useState<File | null>(
+    null,
+  );
+  const [importResult, setImportResult] =
+    useState<ImportClusterResponse | null>(null);
+  const [importingCluster, setImportingCluster] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSubmittedProjectId, setImportSubmittedProjectId] = useState<string | null>(null);
+  const [agentConnectionStatus, setAgentConnectionStatus] =
+    useState<AgentConnectionStatus>('idle');
+  const [agentConnectionError, setAgentConnectionError] = useState<string | null>(null);
+  const [agentConnectionAttempt, setAgentConnectionAttempt] = useState(0);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [jobContext, setJobContext] = useState<{ projectId: string; clusterId: string } | null>(null);
   const jobStatusNotifiedRef = useRef<string | null>(null);
+  const importNavigateRef = useRef(false);
   const projectHasAwsCredentials = (project?: ProjectRecord | null) =>
     Boolean(
       project?.aws?.accountId &&
@@ -626,6 +722,192 @@ export const AegisClusterCreatePage = () => {
     }, 5000);
     return () => clearTimeout(timeout);
   }, [job, fetchApi, discoveryApi, identityApi, authApi, alertApi]);
+
+  const importProjectId = selectedProjectId.trim();
+  const importClusterIdTrimmed = importClusterId.trim();
+  const importClusterIdSuggestion = sanitizeClusterId(importClusterIdTrimmed);
+  const importClusterNameTrimmed = importClusterName.trim();
+  const importRegionTrimmed = importRegion.trim();
+  const importAssumeRoleArnTrimmed = importAssumeRoleArn.trim();
+  const importLabelsParsed = useMemo(() => parseLabelLines(importLabels), [importLabels]);
+
+  const importClusterIdError = useMemo(() => {
+    if (!importValidationEnabled && !importClusterIdTrimmed) {
+      return null;
+    }
+    if (!importClusterIdTrimmed) {
+      return 'Cluster ID is required.';
+    }
+    if (importClusterIdTrimmed !== importClusterIdSuggestion) {
+      return `Use lowercase letters, numbers, and hyphens (suggested: ${importClusterIdSuggestion}).`;
+    }
+    if (!clusterIdIsValid(importClusterIdTrimmed)) {
+      return 'Cluster ID must start and end with a letter or number and may contain hyphens.';
+    }
+    return null;
+  }, [importValidationEnabled, importClusterIdSuggestion, importClusterIdTrimmed]);
+
+  const importDetailsValid =
+    Boolean(importProjectId) &&
+    Boolean(importClusterNameTrimmed) &&
+    Boolean(importRegionTrimmed) &&
+    Boolean(importClusterIdTrimmed) &&
+    !importClusterIdError &&
+    !importLabelsParsed.error;
+
+  const importCredentialsValid =
+    importDetailsValid &&
+    (importMethod === 'assume_role'
+      ? importProvider === 'existing-aws' && Boolean(importAssumeRoleArnTrimmed)
+      : importMethod === 'kubeconfig'
+        ? Boolean(importKubeconfigFile)
+        : true);
+
+  useEffect(() => {
+    if (importProvider !== 'existing-aws' && importMethod === 'assume_role') {
+      setImportMethod('agent_only');
+      setImportAssumeRoleArn('');
+    }
+  }, [importMethod, importProvider]);
+
+  useEffect(() => {
+    if (importMethod !== 'kubeconfig' && importKubeconfigFile) {
+      setImportKubeconfigFile(null);
+    }
+    if (importMethod !== 'assume_role' && importAssumeRoleArn) {
+      setImportAssumeRoleArn('');
+    }
+  }, [importAssumeRoleArn, importKubeconfigFile, importMethod]);
+
+  useEffect(() => {
+    if (importStep !== 2 || !importResult || !importSubmittedProjectId) {
+      setAgentConnectionStatus('idle');
+      setAgentConnectionError(null);
+      importNavigateRef.current = false;
+      return;
+    }
+
+    if (importResult.status === 'active') {
+      setAgentConnectionStatus('connected');
+      setAgentConnectionError(null);
+      return;
+    }
+
+    setAgentConnectionStatus('waiting');
+    setAgentConnectionError(null);
+
+    let cancelled = false;
+    let intervalId: number | undefined;
+    let timeoutId: number | undefined;
+
+    const stop = () => {
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+
+    const check = async () => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        const clusters = await listClusters(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          authApi,
+          { projectId: importSubmittedProjectId },
+        );
+        if (cancelled) {
+          return;
+        }
+        const cluster = clusters.find(item => item.id === importResult.clusterId);
+        if (!cluster) {
+          return;
+        }
+        const phase = (cluster.phase ?? '').toLowerCase();
+        if (phase.includes('ready') || Boolean(cluster.lastHeartbeat)) {
+          if (cancelled) {
+            return;
+          }
+          setAgentConnectionStatus('connected');
+          setAgentConnectionError(null);
+          stop();
+          return;
+        }
+        if (phase.includes('unhealthy')) {
+          if (cancelled) {
+            return;
+          }
+          setAgentConnectionStatus('failed');
+          setAgentConnectionError('Agent connected but the cluster is reporting unhealthy.');
+          stop();
+          return;
+        }
+        if (phase.includes('error') || phase.includes('degraded')) {
+          if (cancelled) {
+            return;
+          }
+          setAgentConnectionStatus('failed');
+          setAgentConnectionError(
+            `Cluster is reporting ${cluster.phase || 'an error'} while waiting for agent connection.`,
+          );
+          stop();
+        }
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        const message =
+          err instanceof ApiError ? err.message : 'Unable to check agent connection status.';
+        setAgentConnectionStatus('failed');
+        setAgentConnectionError(message);
+        stop();
+      }
+    };
+
+    void check();
+    intervalId = window.setInterval(check, 5000);
+    timeoutId = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+      setAgentConnectionStatus('failed');
+      setAgentConnectionError('The agent did not connect within 60 seconds. Verify it was deployed, then retry.');
+      stop();
+    }, 60000);
+
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [
+    agentConnectionAttempt,
+    authApi,
+    discoveryApi,
+    fetchApi,
+    identityApi,
+    importResult,
+    importStep,
+    importSubmittedProjectId,
+  ]);
+
+  useEffect(() => {
+    if (agentConnectionStatus !== 'connected' || !importResult) {
+      return undefined;
+    }
+    if (importNavigateRef.current) {
+      return undefined;
+    }
+    importNavigateRef.current = true;
+    const timeoutId = window.setTimeout(() => {
+      navigate(`/aegis/clusters/${encodeURIComponent(importResult.clusterId)}`);
+    }, 1000);
+    return () => window.clearTimeout(timeoutId);
+  }, [agentConnectionStatus, importResult, navigate]);
 
   const readinessState = useMemo(() => {
     return readinessChecks.map(check => {
@@ -801,8 +1083,125 @@ export const AegisClusterCreatePage = () => {
     }
   };
 
-  const attachCommand =
-    'curl -fsSL https://aegis.run/install-agent | sudo PROFILE=atlas-gpu bash -s -- --verify-hash';
+  const handleImportExisting = async () => {
+    setImportValidationEnabled(true);
+    if (!importCredentialsValid) {
+      alertApi.post({
+        severity: 'error',
+        message: 'Fix the highlighted fields before importing.',
+      });
+      return;
+    }
+
+    setImportingCluster(true);
+    setImportError(null);
+    setImportResult(null);
+    setImportSubmittedProjectId(importProjectId);
+    setAgentConnectionStatus('idle');
+    setAgentConnectionError(null);
+    importNavigateRef.current = false;
+
+    try {
+      const kubeconfig =
+        importMethod === 'kubeconfig' && importKubeconfigFile
+          ? await readFileAsBase64(importKubeconfigFile)
+          : undefined;
+      const labelsRecord = importLabelsParsed.labels;
+      const labels =
+        labelsRecord && Object.keys(labelsRecord).length > 0 ? labelsRecord : undefined;
+      const response = await importCluster(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        authApi,
+        {
+          projectId: importProjectId,
+          clusterId: importClusterIdTrimmed,
+          provider: importProvider,
+          region: importRegionTrimmed,
+          name: importClusterNameTrimmed,
+          ...(labels ? { labels } : {}),
+          importMethod,
+          ...(kubeconfig ? { kubeconfig } : {}),
+          ...(importMethod === 'assume_role' && importAssumeRoleArnTrimmed
+            ? { assumeRoleArn: importAssumeRoleArnTrimmed }
+            : {}),
+        },
+      );
+      setImportResult(response);
+      setImportStep(2);
+      if (response.warnings?.length) {
+        alertApi.post({
+          severity: 'warning',
+          message: response.warnings.join(' • '),
+        });
+      } else {
+        alertApi.post({
+          severity: 'success',
+          message:
+            response.status === 'active'
+              ? `Cluster ${response.clusterId} is connected - redirecting to details...`
+              : `Cluster ${response.clusterId} imported - waiting for agent connection...`,
+        });
+      }
+    } catch (error) {
+      const message =
+        error instanceof ApiError ? error.message : 'Failed to import cluster.';
+      setImportError(message);
+      alertApi.post({ severity: 'error', message });
+    } finally {
+      setImportingCluster(false);
+    }
+  };
+
+  const resetImportFlow = () => {
+    setImportValidationEnabled(false);
+    setImportStep(0);
+    setImportError(null);
+    setImportResult(null);
+    setImportingCluster(false);
+    setImportSubmittedProjectId(null);
+    setAgentConnectionStatus('idle');
+    setAgentConnectionError(null);
+    setAgentConnectionAttempt(0);
+    importNavigateRef.current = false;
+  };
+
+  const handleImportContinue = async () => {
+    setImportValidationEnabled(true);
+    if (importStep === 0) {
+      if (!importDetailsValid) {
+        alertApi.post({
+          severity: 'error',
+          message: 'Fix the highlighted fields to continue.',
+        });
+        return;
+      }
+      setImportStep(1);
+      return;
+    }
+
+    if (importStep === 1) {
+      await handleImportExisting();
+    }
+  };
+
+  const attachCommand = useMemo(() => {
+    if (!importResult) {
+      return 'Submit an import request to generate an install command.';
+    }
+    const lines: string[] = [];
+    if (importResult.agentScriptUrl) {
+      lines.push(`curl -fsSL ${importResult.agentScriptUrl} | bash`);
+    }
+    if (importResult.installCommand) {
+      if (lines.length > 0) {
+        lines.push('# OR');
+      }
+      lines.push(importResult.installCommand);
+    }
+    return lines.join('\n');
+  }, [importResult]);
 
   const renderFromProfile = () => (
     <Box>
@@ -1259,86 +1658,338 @@ export const AegisClusterCreatePage = () => {
     </Box>
   );
 
-  const renderImportExisting = () => (
-    <Box mt={2}>
-      <Typography variant="h6">Attach an existing cluster</Typography>
-      <Typography variant="body2" color="textSecondary" paragraph>
-        Install the Aegis agent to stream posture, compliance, and cost telemetry. We
-        support role-based access via AssumeRole or short-lived kubeconfig uploads.
-      </Typography>
-      <RadioGroup
-        row
-        value={importMethod}
-        onChange={event => setImportMethod(event.target.value as 'arn' | 'kubeconfig')}
-      >
-        <FormControlLabel
-          value="arn"
-          control={<Radio color="primary" />}
-          label={
-            <div className={classes.radioOption}>
-              <CodeIcon /> <span>AssumeRole ARN</span>
-            </div>
-          }
-        />
-        <FormControlLabel
-          value="kubeconfig"
-          control={<Radio color="primary" />}
-          label={
-            <div className={classes.radioOption}>
-              <CloudDownloadIcon /> <span>Kubeconfig upload</span>
-            </div>
-          }
-        />
-      </RadioGroup>
+  const renderImportExisting = () => {
+    const assumeRoleSupported = importProvider === 'existing-aws';
 
-      <Paper className={classes.helperCard} variant="outlined">
-        <Typography variant="subtitle2">Attach command</Typography>
-        <Typography component="pre" className={classes.terminal}>
-          {attachCommand}
+    const stepLabel =
+      importStep === 0
+        ? 'Continue'
+        : importStep === 1
+          ? importingCluster
+            ? 'Importing…'
+            : 'Import cluster'
+          : 'Done';
+
+    const stepDisabled =
+      importingCluster ||
+      (importStep === 0 ? !importDetailsValid : importStep === 1 ? !importCredentialsValid : true);
+
+    return (
+      <Box mt={2}>
+        <Typography variant="h6">Import an existing cluster</Typography>
+        <Typography variant="body2" color="textSecondary" paragraph>
+          Local clusters run on your development machine (kind, minikube, Docker Desktop). Deploy the Aegis agent to register
+          your cluster and start streaming telemetry.
         </Typography>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={attachVerified}
-              onChange={event => setAttachVerified(event.target.checked)}
-              color="primary"
-            />
-          }
-          label="Agent hash verified"
-        />
-      </Paper>
 
-      <Accordion defaultExpanded>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography>Posture & compliance scan</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Box width="100%">
-            <Typography variant="body2" color="textSecondary">
-              Baseline profile: atlas-gpu-train@1.3.1 · Drift detected in networking policy and
-              GPU driver version.
+        {importError && (
+          <WarningPanel severity="warning" title="Import failed">
+            {importError}
+          </WarningPanel>
+        )}
+
+        <Stepper alternativeLabel activeStep={importStep}>
+          {['Cluster details', 'Connection method', 'Install & status'].map(label => (
+            <Step key={label}>
+              <StepLabel>{label}</StepLabel>
+            </Step>
+          ))}
+        </Stepper>
+
+        {importStep === 0 && (
+          <Box mt={3}>
+            <Typography variant="subtitle1">Cluster details</Typography>
+            <Typography variant="body2" color="textSecondary" paragraph>
+              Choose a project and provide a stable cluster identifier. The cluster ID will be used for RBAC, audit logs, and agent
+              registration.
             </Typography>
-            <Box mt={2}>
-              <Paper variant="outlined" className={classes.helperCard}>
-                <Typography variant="subtitle1">Compliance deltas</Typography>
-                <Typography variant="body2" color="textSecondary">
-                  • FedRAMP High control AC-6: Privileged session logging not enabled.\n                  • IL-5 boundary: Flow logs disabled in VPC.
-                </Typography>
-              </Paper>
-            </Box>
-            <Box mt={2}>
-              <Typography variant="subtitle1">Labels to apply</Typography>
-              <div className={classes.formGrid}>
-                <TextField label="profileRef" value="atlas-gpu-train@1.3.1" />
-                <TextField label="imported" value="true" />
-                <TextField label="compliance" value="IL-5" />
-              </div>
+            <Box
+              display="grid"
+              gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+              style={{ gap: 16 }}
+            >
+              {projects.length > 0 ? (
+                <FormControl variant="outlined" fullWidth error={importValidationEnabled && !importProjectId}>
+                  <InputLabel id="import-project-select">Project</InputLabel>
+                  <Select
+                    labelId="import-project-select"
+                    value={selectedProjectId}
+                    onChange={event =>
+                      setFormState(prev => ({
+                        ...prev,
+                        project: event.target.value as string,
+                      }))
+                    }
+                    label="Project"
+                  >
+                    {projects.map(project => (
+                      <MenuItem key={project.id} value={project.id}>
+                        {project.displayName || project.id}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  <FormHelperText>Owning project for RBAC and guardrails.</FormHelperText>
+                </FormControl>
+              ) : (
+                <TextField
+                  label="Project ID"
+                  value={selectedProjectId}
+                  onChange={event =>
+                    setFormState(prev => ({ ...prev, project: event.target.value }))
+                  }
+                  error={importValidationEnabled && !importProjectId}
+                  helperText={loadingProjects ? 'Loading projects…' : 'Enter project slug.'}
+                />
+              )}
+              <TextField
+                label="Cluster ID"
+                value={importClusterId}
+                onChange={event => setImportClusterId(event.target.value)}
+                onBlur={() => {
+                  if (importClusterIdTrimmed && !importClusterIdError) {
+                    setImportClusterId(importClusterIdTrimmed);
+                  } else if (importClusterIdTrimmed) {
+                    setImportClusterId(importClusterIdSuggestion);
+                  }
+                }}
+                error={Boolean(importClusterIdError)}
+                helperText={importClusterIdError ?? 'Unique identifier (e.g. dev-local).'}
+              />
+              <TextField
+                label="Cluster name"
+                value={importClusterName}
+                onChange={event => setImportClusterName(event.target.value)}
+                error={importValidationEnabled && !importClusterNameTrimmed}
+                helperText="Friendly display name."
+              />
+              <FormControl variant="outlined" fullWidth>
+                <InputLabel id="import-provider-select">Provider</InputLabel>
+                <Select
+                  labelId="import-provider-select"
+                  value={importProvider}
+                  onChange={event =>
+                    setImportProvider(event.target.value as ImportClusterProvider)
+                  }
+                  label="Provider"
+                >
+                  {(
+                    [
+                      'local',
+                      'baremetal',
+                      'existing-aws',
+                      'existing-gcp',
+                      'existing-azure',
+                      'airgapped',
+                    ] as ImportClusterProvider[]
+                  ).map(value => (
+                    <MenuItem key={value} value={value}>
+                      {value}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label="Region"
+                value={importRegion}
+                onChange={event => setImportRegion(event.target.value)}
+                error={importValidationEnabled && !importRegionTrimmed}
+                helperText="Use local for kind/minikube."
+              />
+              <TextField
+                label="Labels (optional)"
+                value={importLabels}
+                onChange={event => setImportLabels(event.target.value)}
+                error={Boolean(importLabelsParsed.error)}
+                helperText={importLabelsParsed.error ?? 'One per line: key=value'}
+                multiline
+                minRows={3}
+              />
             </Box>
           </Box>
-        </AccordionDetails>
-      </Accordion>
-    </Box>
-  );
+        )}
+
+        {importStep === 1 && (
+          <Box mt={3}>
+            <Typography variant="subtitle1">Connection method</Typography>
+            <Typography variant="body2" color="textSecondary" paragraph>
+              Agent Only is recommended for air-gapped environments — no credentials leave your network.
+            </Typography>
+
+            <RadioGroup
+              row
+              value={importMethod}
+              onChange={event =>
+                setImportMethod(event.target.value as ImportClusterMethod)
+              }
+            >
+              <FormControlLabel
+                value="agent_only"
+                control={<Radio color="primary" />}
+                label={
+                  <div className={classes.radioOption}>
+                    <DoneIcon /> <span>Agent only</span>
+                  </div>
+                }
+              />
+              <FormControlLabel
+                value="assume_role"
+                disabled={!assumeRoleSupported}
+                control={<Radio color="primary" />}
+                label={
+                  <div className={classes.radioOption}>
+                    <CodeIcon /> <span>AssumeRole ARN</span>
+                  </div>
+                }
+              />
+              <FormControlLabel
+                value="kubeconfig"
+                control={<Radio color="primary" />}
+                label={
+                  <div className={classes.radioOption}>
+                    <CloudDownloadIcon /> <span>Kubeconfig upload</span>
+                  </div>
+                }
+              />
+            </RadioGroup>
+
+            {!assumeRoleSupported && (
+              <FormHelperText>
+                AssumeRole imports are only supported for provider=existing-aws.
+              </FormHelperText>
+            )}
+
+            {importMethod === 'assume_role' && (
+              <Box mt={2}>
+                <TextField
+                  label="AssumeRole ARN"
+                  fullWidth
+                  value={importAssumeRoleArn}
+                  onChange={event => setImportAssumeRoleArn(event.target.value)}
+                  error={importValidationEnabled && !importAssumeRoleArnTrimmed}
+                  helperText="Required for existing-aws clusters."
+                />
+              </Box>
+            )}
+
+            {importMethod === 'kubeconfig' && (
+              <Box mt={2} display="flex" alignItems="center" style={{ gap: 12 }}>
+                <Button
+                  variant="outlined"
+                  component="label"
+                  startIcon={<CloudDownloadIcon />}
+                >
+                  Upload kubeconfig
+                  <input
+                    type="file"
+                    hidden
+                    accept=".yaml,.yml,.kubeconfig,.conf"
+                    onChange={event => {
+                      const file = event.target.files?.[0] ?? null;
+                      setImportKubeconfigFile(file);
+                    }}
+                  />
+                </Button>
+                <Typography variant="body2" color="textSecondary">
+                  {importKubeconfigFile ? importKubeconfigFile.name : 'No file selected'}
+                </Typography>
+                {importValidationEnabled && !importKubeconfigFile ? (
+                  <Typography variant="body2" color="error">
+                    Kubeconfig file required.
+                  </Typography>
+                ) : null}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {importStep === 2 && (
+          <Box mt={3}>
+            <Typography variant="subtitle1">Install & status</Typography>
+            <Typography variant="body2" color="textSecondary" paragraph>
+              Deploy the agent using the generated values and install command. The agent will attempt to connect within 60 seconds of
+              deployment.
+            </Typography>
+
+            <Paper className={classes.helperCard} variant="outlined">
+              <Typography variant="subtitle2">Install command</Typography>
+              <Typography component="pre" className={classes.terminal}>
+                {attachCommand}
+              </Typography>
+            </Paper>
+
+            <Paper className={classes.helperCard} variant="outlined" style={{ marginTop: 16 }}>
+              <Typography variant="subtitle2">Helm values (values.yaml)</Typography>
+              <Typography component="pre" className={classes.terminal}>
+                {renderHelmValuesYaml(importResult)}
+              </Typography>
+            </Paper>
+
+            <Paper className={classes.helperCard} variant="outlined" style={{ marginTop: 16 }}>
+              <Typography variant="subtitle2">Agent status</Typography>
+              <Box mt={1} display="flex" alignItems="center" style={{ gap: 12 }}>
+                {agentConnectionStatus === 'waiting' ? (
+                  <CircularProgress size={18} />
+                ) : agentConnectionStatus === 'connected' ? (
+                  <DoneIcon color="primary" />
+                ) : agentConnectionStatus === 'failed' ? (
+                  <ErrorOutlineIcon color="secondary" />
+                ) : null}
+                <Typography variant="body2">
+                  {agentConnectionStatus === 'waiting'
+                    ? 'Waiting for agent connection...'
+                    : agentConnectionStatus === 'connected'
+                      ? 'Agent connected. Redirecting to cluster details...'
+                      : agentConnectionStatus === 'failed'
+                        ? 'Connection failed.'
+                        : 'Status check pending.'}
+                </Typography>
+              </Box>
+              {agentConnectionError ? (
+                <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>
+                  {agentConnectionError}
+                </Typography>
+              ) : null}
+              <Box mt={2} display="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
+                {agentConnectionStatus === 'failed' ? (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => setAgentConnectionAttempt(value => value + 1)}
+                  >
+                    Retry status check
+                  </Button>
+                ) : null}
+                <Button variant="outlined" onClick={resetImportFlow}>
+                  Start new import
+                </Button>
+              </Box>
+            </Paper>
+          </Box>
+        )}
+
+        <Box mt={3} display="flex" justifyContent="space-between">
+          <Button
+            disabled={importStep === 0 || importingCluster || importStep === 2}
+            onClick={() => setImportStep(step => Math.max(0, step - 1))}
+          >
+            Back
+          </Button>
+          {importStep < 2 ? (
+            <Button
+              color="primary"
+              variant="contained"
+              disabled={stepDisabled}
+              onClick={handleImportContinue}
+            >
+              {stepLabel}
+            </Button>
+          ) : (
+            <span />
+          )}
+        </Box>
+      </Box>
+    );
+  };
 
   return (
     <Page themeId="tool">
