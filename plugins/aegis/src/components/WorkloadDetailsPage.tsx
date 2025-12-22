@@ -121,6 +121,74 @@ const HELPER_FLAG = 'aegis.helper.installed';
 const SYSTEM_ACK_FLAG = 'aegis.system.use.ack';
 const RULES_ACK_FLAG = 'aegis.rules.of.behavior.ack';
 
+const DEMO_WORKLOADS: Record<string, WorkloadDTO> = {
+  'ws-pytorch-training-01': {
+    id: 'ws-pytorch-training-01',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-east-1',
+    status: 'RUNNING',
+    uiStatus: 'RUNNING',
+    url: 'k8s://aegis-workspaces/pod/ws-pytorch-training-01',
+    workspace: {
+      flavor: 'gpu-large',
+      image: 'ghcr.io/aegis/workspace-jupyter-pytorch:latest',
+      interactive: true,
+    },
+  },
+  'ws-data-science-02': {
+    id: 'ws-data-science-02',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-east-1',
+    status: 'PROVISIONING',
+    uiStatus: 'PROVISIONING',
+    url: 'k8s://aegis-workspaces/pod/ws-data-science-02',
+    workspace: {
+      flavor: 'gpu-standard',
+      image: 'ghcr.io/aegis/workspace-vscode:latest',
+      interactive: true,
+    },
+  },
+  'ws-model-inference-03': {
+    id: 'ws-model-inference-03',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-west-2',
+    status: 'RUNNING',
+    uiStatus: 'RUNNING',
+    url: 'k8s://aegis-workspaces/pod/ws-model-inference-03',
+    workspace: {
+      flavor: 'gpu-large',
+      image: 'ghcr.io/aegis/workspace-inference:latest',
+      interactive: true,
+      command: ['python', 'serve.py', '--model', 'llama-2-7b'],
+    },
+  },
+  'ws-failed-job-04': {
+    id: 'ws-failed-job-04',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-east-1',
+    status: 'FAILED',
+    uiStatus: 'FAILED',
+    message: 'GPU node pool exhausted. No available capacity in us-east-1a.',
+    workspace: {
+      flavor: 'gpu-standard',
+      image: 'ghcr.io/aegis/workspace-jupyter:latest',
+      interactive: true,
+    },
+  },
+  'ws-completed-05': {
+    id: 'ws-completed-05',
+    projectId: 'p-demo',
+    clusterId: 'aegis-prod-us-east-1',
+    status: 'SUCCEEDED',
+    uiStatus: 'SUCCEEDED',
+    workspace: {
+      flavor: 'cpu-large',
+      image: 'ghcr.io/aegis/workspace-cli:latest',
+      interactive: true,
+    },
+  },
+};
+
 export const WorkloadDetailsPage: FC = () => {
   const classes = useStyles();
   const { id } = useParams<{ id: string }>();
@@ -156,6 +224,13 @@ export const WorkloadDetailsPage: FC = () => {
       setError('Missing workload id');
       return;
     }
+    
+    // Check for demo data first
+    if (DEMO_WORKLOADS[id]) {
+      setWorkload(DEMO_WORKLOADS[id]);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
