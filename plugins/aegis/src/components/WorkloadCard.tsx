@@ -166,8 +166,10 @@ const useStyles = makeStyles(theme => ({
   connectButton: {
     background: theme.palette.primary.main,
     color: theme.palette.primary.contrastText,
+    boxShadow: `0 0 16px ${alpha(theme.palette.primary.main, 0.4)}`,
     '&:hover': {
       background: theme.palette.primary.dark,
+      boxShadow: `0 0 24px ${alpha(theme.palette.primary.main, 0.5)}`,
     },
   },
   description: {
@@ -478,14 +480,15 @@ export const WorkloadCard: FC<WorkloadCardProps> = ({
 
       <Box className={classes.actionRow}>
         {isRunning && vscodeUri ? (
-          <Tooltip title="Opens VS Code locally via the vscode:// URI scheme.">
+          <Tooltip title="Open VS Code locally using a secure remote SSH connection">
             <Button
               variant="contained"
               className={classes.connectButton}
               component="a"
               href={vscodeUri}
+              startIcon={<LaunchIcon />}
             >
-              Connect to VS Code
+              Connect
             </Button>
           </Tooltip>
         ) : null}

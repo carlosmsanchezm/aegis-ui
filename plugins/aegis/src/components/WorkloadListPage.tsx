@@ -167,6 +167,12 @@ export const WorkloadListPage: FC = () => {
       createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
       gpuType: 'NVIDIA A10G',
       workspaceType: 'jupyter',
+      connectionInfo: {
+        sshUser: 'aegis',
+        sshHost: 'ws-pytorch-training-01.aegis.internal',
+        vscodeUri: 'vscode://vscode-remote/ssh-remote+aegis@ws-pytorch-training-01.aegis.internal/home/aegis',
+        jupyterUrl: 'https://ws-pytorch-training-01.aegis.internal:8888',
+      },
     },
     {
       id: 'ws-data-science-02',
@@ -193,6 +199,12 @@ export const WorkloadListPage: FC = () => {
       createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       gpuType: 'NVIDIA A10G',
       workspaceType: 'cli',
+      connectionInfo: {
+        sshUser: 'aegis',
+        sshHost: 'ws-model-inference-03.aegis.internal',
+        vscodeUri: 'vscode://vscode-remote/ssh-remote+aegis@ws-model-inference-03.aegis.internal/home/aegis',
+        terminalUrl: 'https://ws-model-inference-03.aegis.internal:8080/terminal',
+      },
     },
     {
       id: 'ws-failed-job-04',
@@ -206,6 +218,7 @@ export const WorkloadListPage: FC = () => {
       createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
       gpuType: 'NVIDIA T4',
       workspaceType: 'jupyter',
+      message: 'GPU node pool exhausted. No available capacity in us-east-1a. Retry with a different availability zone.',
     },
     {
       id: 'ws-completed-05',
