@@ -4,7 +4,6 @@ import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
 import BuildIcon from '@material-ui/icons/Build';
 import CloudQueueIcon from '@material-ui/icons/CloudQueue';
 import DashboardIcon from '@material-ui/icons/Dashboard';
-import HomeIcon from '@material-ui/icons/Home';
 import LaptopMacIcon from '@material-ui/icons/LaptopMac';
 import LockIcon from '@material-ui/icons/Lock';
 import SecurityIcon from '@material-ui/icons/Security';
@@ -202,8 +201,7 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
                 to="aegis/clusters"
                 text="Clusters"
               />
-              <SidebarItem icon={LayersIcon} to="aegis/clusters/fleet" text="Fleet" />
-              <SidebarItem icon={LaptopMacIcon} to="aegis/workloads" text="Workloads" />
+              <SidebarItem icon={LaptopMacIcon} to="aegis/workspaces" text="Workspaces" />
               <SidebarItem icon={TimelineIcon} to="aegis/telemetry" text="Telemetry" />
               <SidebarItem icon={SecurityIcon} to="aegis/posture" text="Compliance posture" />
               <MyGroupsSidebarItem

@@ -499,7 +499,7 @@ export const WorkloadCard: FC<WorkloadCardProps> = memo(({
         <Button
           variant="outlined"
           component={RouterLink}
-          to={workload.id ? `/aegis/workloads/${workload.id}` : '#'}
+          to={workload.id ? `/aegis/workspaces/${workload.id}` : '#'}
           disabled={!workload.id}
         >
           Details

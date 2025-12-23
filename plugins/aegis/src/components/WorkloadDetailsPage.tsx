@@ -537,7 +537,7 @@ export const WorkloadDetailsPage: FC = () => {
             <Box className={classes.headerMeta}>
               <Breadcrumbs className={classes.breadcrumbs}>
                 <RouterLink
-                  to="/aegis/workloads"
+                  to="/aegis/workspaces"
                   className={classes.breadcrumbs}
                   style={{ textDecoration: 'none', color: 'inherit' }}
                 >
@@ -591,7 +591,7 @@ export const WorkloadDetailsPage: FC = () => {
                 variant="text"
                 size="small"
                 startIcon={<ArrowBackIcon />}
-                onClick={() => navigate('/aegis/workloads')}
+                onClick={() => navigate('/aegis/workspaces')}
               >
                 Back to list
               </Button>
@@ -805,7 +805,7 @@ export const WorkloadDetailsPage: FC = () => {
                           View related logs
                         </RouterLink>
                         <RouterLink
-                          to="/aegis/workloads"
+                          to="/aegis/workspaces"
                           className={classes.troubleshootingLink}
                         >
                           Return to workload list

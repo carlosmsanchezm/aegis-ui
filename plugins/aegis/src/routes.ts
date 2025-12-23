@@ -5,15 +5,15 @@ export const rootRouteRef = createRouteRef({
 });
 
 export const workloadsRouteRef = createSubRouteRef({
-  id: 'aegis-workloads',
+  id: 'aegis-workspaces',
   parent: rootRouteRef,
-  path: '/workloads',
+  path: '/workspaces',
 });
 
 export const workloadDetailsRouteRef = createSubRouteRef({
-  id: 'aegis-workload-details',
+  id: 'aegis-workspace-details',
   parent: rootRouteRef,
-  path: '/workloads/:id',
+  path: '/workspaces/:id',
 });
 
 export const launchWorkspaceRouteRef = createSubRouteRef({

@@ -437,7 +437,7 @@ export const SubmitWorkloadPage: FC = () => {
                   <Box>
                     <Button
                       component={RouterLink}
-                      to={`/aegis/workloads/${result.id}`}
+                      to={`/aegis/workspaces/${result.id}`}
                       color="primary"
                       variant="outlined"
                       size="small"
