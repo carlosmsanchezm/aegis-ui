@@ -4,8 +4,6 @@ import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
 import BuildIcon from '@material-ui/icons/Build';
 import CloudQueueIcon from '@material-ui/icons/CloudQueue';
 import DashboardIcon from '@material-ui/icons/Dashboard';
-import DescriptionIcon from '@material-ui/icons/Description';
-import ExtensionIcon from '@material-ui/icons/Extension';
 import HomeIcon from '@material-ui/icons/Home';
 import LaptopMacIcon from '@material-ui/icons/LaptopMac';
 import LockIcon from '@material-ui/icons/Lock';
@@ -45,7 +43,6 @@ import {
   Link,
 } from '@backstage/core-components';
 import { MyGroupsSidebarItem } from '@backstage/plugin-org';
-import { NotificationsSidebarItem } from '@backstage/plugin-notifications';
 
 const useSidebarStyles = makeStyles(theme => ({
   root: {
@@ -299,11 +296,6 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
                 to="aegis/admin/audit-logs"
                 text="Audit Logs"
               />
-              <SidebarItem icon={HomeIcon} to="catalog" text="Catalog" />
-              <SidebarItem icon={ExtensionIcon} to="api-docs" text="APIs" />
-              <SidebarItem icon={DescriptionIcon} to="docs" text="Docs" />
-              <NotificationsSidebarItem />
-              <SidebarItem icon={SettingsIcon} to="settings" text="Settings" />
             </NavSection>
           </SidebarScrollWrapper>
 
