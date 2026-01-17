@@ -10,5 +10,8 @@ module.exports = {
     'no-restricted-syntax': 'off',
     '@backstage/no-relative-monorepo-imports': 'off',
     '@backstage/no-undeclared-imports': 'off',
+    'dot-notation': 'off',
+    'consistent-return': 'off',
+    'react-hooks/exhaustive-deps': 'warn',
   },
 };
