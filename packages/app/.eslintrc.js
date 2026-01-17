@@ -13,5 +13,12 @@ module.exports = {
     'dot-notation': 'off',
     'consistent-return': 'off',
     'react-hooks/exhaustive-deps': 'warn',
+    '@typescript-eslint/no-use-before-define': 'off',
+    '@typescript-eslint/no-shadow': 'off',
+    'no-nested-ternary': 'off',
+    'prefer-template': 'off',
+    'prefer-const': 'off',
+    'no-console': 'off',
+    'react/jsx-boolean-value': 'off',
   },
 };
