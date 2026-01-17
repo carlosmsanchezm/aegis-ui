@@ -55,7 +55,8 @@
     "koa": "^2.16.0",
     "prismjs": "^1.30.0",
     "cookie": "^1.0.2",
-    "diff": "^7.0.0"
+    "diff": "^7.0.0",
+    "test-exclude": "^6.0.0"
   },
   "prettier": "@backstage/cli/config/prettier",
   "lint-staged": {
