@@ -10,5 +10,8 @@ module.exports = {
     'no-restricted-syntax': 'off',
     'consistent-return': 'off',
     'react-hooks/exhaustive-deps': 'warn',
+    '@typescript-eslint/no-use-before-define': 'off',
+    'no-nested-ternary': 'off',
+    'prefer-template': 'off',
   },
 };
