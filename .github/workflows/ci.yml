@@ -33,11 +33,8 @@ jobs:
       - name: Lint
         run: yarn lint:all
 
-      # TODO: Re-enable when @backstage/cli jest config is compatible with Node 20
-      # The current version uses promisify(glob) which fails with glob@11
-      # See: https://github.com/backstage/backstage/issues/xxxxx
-      # - name: Run tests
-      #   run: yarn test:all
+      - name: Run tests
+        run: yarn test:all
 
       - name: Build
         run: yarn build:all
