@@ -1,75 +1,93 @@
-# Aegis Platform (Backstage UI)
+# Aegis UI
 
-Backstage-based frontend for the Aegis platform.
+**Backstage-based web frontend for the Aegis GPU control plane**
+
+Aegis UI provides a web interface for managing GPU workloads, clusters, budgets, and interactive VS Code workspaces across the Aegis multi-cluster platform. Built on [Backstage](https://backstage.io/), it integrates with the Platform API via a REST proxy and authenticates users through Keycloak OIDC.
+
+## Features
+
+- **Workload management** -- Submit, monitor, and manage GPU/CPU workloads with real-time status polling and provisioning timelines
+- **Interactive workspaces** -- Launch VS Code workspaces from the browser and connect via the Sovran extension
+- **FinOps dashboards** -- Cost analytics, quota management, and billing alerts per project and queue
+- **Operations monitoring** -- Log explorer, metrics dashboards, alert management, and per-resource detail views
+- **Cluster administration** -- Cluster profile management, IaC connector configuration, and provisioning oversight
+- **Multi-tenant projects** -- Project creation, policy management, user/role administration, and audit logging
+- **Keycloak SSO** -- OIDC authentication with automatic token refresh and session management
 
 ## Quick Start
+
+### Prerequisites
+
+- Node.js 20 or 22
+- Yarn 4.x
+- Access to a running [aegis-platform](https://github.com/carlosmsanchezm/aegis-platform) instance (or `kubectl port-forward`)
 
 ### Local Development
 
 ```bash
-# From repository root
-make deploy-local && make port-forward && make dev-backstage
-# Access at http://localhost:3000
+# Install dependencies
+yarn install
+
+# Start with local Platform API (requires port-forward to platform-api on :10080)
+yarn dev
+
+# Or start with cloud backend
+yarn dev --config app-config.cloud.yaml
 ```
 
-### Keycloak SSO setup
+The app serves at [http://localhost:3000](http://localhost:3000).
 
-```bash
-# Install the Keycloak CRDs (done automatically when you deploy `aegis-services`)
-kubectl get crd keycloaks.k8s.keycloak.org
+### Configuration Modes
 
-# Enable Keycloak in the chart with forceRender for the first install
-helm upgrade --install aegis-services charts/aegis-services \
-  -f charts/aegis-services/values/common.yaml \
-  -f charts/aegis-services/values/local.yaml \
-  -f charts/aegis-services/values/local-tls.yaml \
-  --set keycloak.forceRender=true \
-  --namespace aegis-system --create-namespace --wait
+| Mode | Backend Target | Config File |
+|------|---------------|-------------|
+| Local | `localhost:10080` (port-forward) | `app-config.local-dev.yaml` |
+| Cloud | `platform-api.aegist.dev:8080` | `app-config.cloud.yaml` |
+| Cloud TLS | `platform-api.aegist.dev:8080` (TLS) | `app-config.cloud-tls.yaml` |
 
-# Populate Backstage environment variables
-cp aegis-platform/.env.development aegis-platform/.env
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│              Backstage App              │
+│                                         │
+│  ┌─────────────┐  ┌──────────────────┐  │
+│  │  App Shell  │  │  Aegis Plugin    │  │
+│  │  (React)    │  │  - Workloads     │  │
+│  │             │  │  - Workspaces    │  │
+│  │  Keycloak   │  │  - FinOps        │  │
+│  │  Auth       │  │  - Operations    │  │
+│  │             │  │  - Admin         │  │
+│  └──────┬──────┘  └────────┬─────────┘  │
+│         │                  │            │
+│  ┌──────▼──────────────────▼─────────┐  │
+│  │       Backstage Proxy Backend     │  │
+│  │       /api/proxy/aegis/*          │  │
+│  └──────────────────┬────────────────┘  │
+└─────────────────────┼───────────────────┘
+                      │ REST
+                      ▼
+              ┌───────────────┐
+              │  Platform API │
+              │  (gRPC+REST)  │
+              └───────────────┘
 ```
 
-The `.env.development` file points Backstage at the local Keycloak instance (`https://keycloak.localtest.me`). Adjust the values if you deploy Keycloak to a different hostname or realm.
+The Backstage proxy backend forwards `/api/proxy/aegis/*` requests to the Platform API's REST gateway. Authentication tokens from Keycloak are forwarded in the `Authorization` header.
 
-### Cloud Development
+## Project Structure
 
-```bash
-make dev-backstage-cloud
-# Access at http://localhost:3000
+```
+packages/
+  app/          # Frontend application (React, Material-UI)
+  backend/      # Backstage backend server
+plugins/
+  aegis/        # Custom Aegis plugin (workloads, FinOps, operations, admin)
 ```
 
-## Configuration Modes
+## Related Repositories
 
-| Command                        | Backend                            | Port-Forward? |
-| ------------------------------ | ---------------------------------- | ------------- |
-| `make dev-backstage`           | localhost:10080                    | Yes ✅        |
-| `make dev-backstage-cloud`     | platform-api.aegist.dev:8080       | No ❌         |
-| `make dev-backstage-cloud-tls` | platform-api.aegist.dev:8080 (TLS) | No ❌         |
+- [aegis-platform](https://github.com/carlosmsanchezm/aegis-platform) -- Central control plane (Go, gRPC, K8s operator)
+- [sovran](https://github.com/carlosmsanchezm/sovran) -- VS Code extension for remote GPU workspaces
 
-## Config Files
-
-- `app-config.local-dev.yaml` → `http://localhost:10080` (local mode)
-- `app-config.cloud.yaml` → `http://platform-api.aegist.dev:8080` (cloud mode)
-- `app-config.cloud-tls.yaml` → Cloud with TLS
-- `app-config.local.yaml` → Active config (gitignored, auto-copied)
-
-## Workflow
-
-**Local:**
-
-```bash
-# Terminal 1
-make deploy-local
-make port-forward
-
-# Terminal 2
-make dev-backstage
-```
-
-**Cloud:**
-
-```bash
-make dev-backstage-cloud
-```
-# Test
+For detailed documentation, visit [aegis-platform.tech](https://aegis-platform.tech).
