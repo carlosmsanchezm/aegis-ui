@@ -1,6 +1,7 @@
-import { PropsWithChildren, ReactNode } from 'react';
-import { makeStyles } from '@material-ui/core';
+import { PropsWithChildren, ReactNode, useState, useCallback } from 'react';
+import { makeStyles, Collapse } from '@material-ui/core';
 import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
+import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import BuildIcon from '@material-ui/icons/Build';
 import CloudQueueIcon from '@material-ui/icons/CloudQueue';
 import DashboardIcon from '@material-ui/icons/Dashboard';
@@ -110,19 +111,49 @@ const useSidebarLogoStyles = makeStyles(theme => ({
 
 const useNavSectionStyles = makeStyles(theme => ({
   section: {
-    margin: theme.spacing(0.5, 0, 3),
-  },
-  sectionCollapsed: {
     margin: theme.spacing(0.5, 0, 1.5),
   },
+  sectionCollapsed: {
+    margin: theme.spacing(0.5, 0, 1),
+  },
   header: {
-    margin: theme.spacing(0, 2, 1),
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    margin: theme.spacing(0, 1.5, 0.5),
+    padding: theme.spacing(0.75, 0.5),
     fontSize: theme.typography.pxToRem(12.5),
     fontWeight: 600,
     letterSpacing: '0.16em',
     textTransform: 'uppercase',
     color: theme.palette.text.secondary,
     opacity: 0.76,
+    cursor: 'pointer',
+    borderRadius: theme.shape.borderRadius,
+    transition: theme.transitions.create(['background-color', 'opacity'], {
+      duration: theme.transitions.duration.shorter,
+    }),
+    '&:hover': {
+      opacity: 1,
+      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    },
+  },
+  headerLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+  },
+  chevron: {
+    fontSize: '1.1rem',
+    transition: theme.transitions.create('transform', {
+      duration: theme.transitions.duration.shorter,
+    }),
+  },
+  chevronExpanded: {
+    transform: 'rotate(0deg)',
+  },
+  chevronCollapsed: {
+    transform: 'rotate(-90deg)',
   },
   items: {
     display: 'flex',
@@ -154,23 +185,66 @@ const SidebarLogo = () => {
   );
 };
 
+const STORAGE_KEY = 'aegis-sidebar-collapsed';
+
+const getInitialCollapsedState = (): Record<string, boolean> => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+};
+
 type NavSectionProps = {
+  id: string;
   label: string;
   icon: ReactNode;
   children: ReactNode;
+  expanded: boolean;
+  onToggle: (id: string) => void;
 };
 
-const NavSection = ({ label, icon, children }: NavSectionProps) => {
+const NavSection = ({ id, label, icon, children, expanded, onToggle }: NavSectionProps) => {
   const classes = useNavSectionStyles();
-  const { isOpen } = useSidebarOpenState();
+  const { isOpen: sidebarOpen } = useSidebarOpenState();
+
+  const handleClick = () => {
+    onToggle(id);
+  };
 
   return (
     <SidebarGroup label={label} icon={icon} value={label}>
-      <div className={isOpen ? classes.section : classes.sectionCollapsed}>
-        {isOpen && <div className={classes.header}>{label}</div>}
-        <div className={`${classes.items} ${!isOpen ? classes.itemsCollapsed : ''}`}>
-          {children}
-        </div>
+      <div className={sidebarOpen ? classes.section : classes.sectionCollapsed}>
+        {sidebarOpen && (
+          <div
+            className={classes.header}
+            onClick={handleClick}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleClick();
+              }
+            }}
+            aria-expanded={expanded}
+          >
+            <span className={classes.headerLabel}>{label}</span>
+            <ExpandMoreIcon
+              className={`${classes.chevron} ${
+                expanded ? classes.chevronExpanded : classes.chevronCollapsed
+              }`}
+            />
+          </div>
+        )}
+        {sidebarOpen ? (
+          <Collapse in={expanded} timeout={200}>
+            <div className={classes.items}>{children}</div>
+          </Collapse>
+        ) : (
+          <div className={classes.itemsCollapsed}>{children}</div>
+        )}
       </div>
     </SidebarGroup>
   );
@@ -178,6 +252,23 @@ const NavSection = ({ label, icon, children }: NavSectionProps) => {
 
 export const Root = ({ children }: PropsWithChildren<{}>) => {
   const classes = useSidebarStyles();
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(
+    getInitialCollapsedState
+  );
+
+  const handleToggle = useCallback((id: string) => {
+    setCollapsedSections(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore localStorage errors
+      }
+      return next;
+    });
+  }, []);
+
+  const isExpanded = (id: string) => !collapsedSections[id];
 
   return (
     <div className={classes.root}>
@@ -187,15 +278,26 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
           <SidebarLogo />
           <SidebarDivider />
 
-          <NavSection label="Create" icon={<AddCircleOutlineIcon />}>
-            <SidebarItem icon={BuildIcon} to="aegis/create/clusters" text="Clusters" />
-            <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspaces" />
-          </NavSection>
-
-          <SidebarDivider />
-
           <SidebarScrollWrapper>
-            <NavSection label="Manage" icon={<DashboardIcon />}>
+            <NavSection
+              id="create"
+              label="Create"
+              icon={<AddCircleOutlineIcon />}
+              expanded={isExpanded('create')}
+              onToggle={handleToggle}
+            >
+              <SidebarItem icon={BuildIcon} to="aegis/create/clusters" text="Clusters" />
+              <SidebarItem icon={LockIcon} to="aegis/workspaces/create" text="Workspaces" />
+            </NavSection>
+
+            <SidebarDivider />
+            <NavSection
+              id="manage"
+              label="Manage"
+              icon={<DashboardIcon />}
+              expanded={isExpanded('manage')}
+              onToggle={handleToggle}
+            >
               <SidebarItem
                 icon={CloudQueueIcon}
                 to="aegis/clusters"
@@ -213,7 +315,13 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
 
             <SidebarDivider />
 
-            <NavSection label="Operations" icon={<BuildIcon />}>
+            <NavSection
+              id="operations"
+              label="Operations"
+              icon={<BuildIcon />}
+              expanded={isExpanded('operations')}
+              onToggle={handleToggle}
+            >
               <SidebarItem
                 icon={AssessmentIcon}
                 to="aegis/operations/metrics"
@@ -238,7 +346,13 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
 
             <SidebarDivider />
 
-            <NavSection label="FinOps" icon={<MonetizationOnIcon />}>
+            <NavSection
+              id="finops"
+              label="FinOps"
+              icon={<MonetizationOnIcon />}
+              expanded={isExpanded('finops')}
+              onToggle={handleToggle}
+            >
               <SidebarItem
                 icon={AssessmentIcon}
                 to="aegis/finops/cost-dashboard"
@@ -258,7 +372,13 @@ export const Root = ({ children }: PropsWithChildren<{}>) => {
 
             <SidebarDivider />
 
-            <NavSection label="Admin" icon={<SettingsIcon />}>
+            <NavSection
+              id="admin"
+              label="Admin"
+              icon={<SettingsIcon />}
+              expanded={isExpanded('admin')}
+              onToggle={handleToggle}
+            >
               <SidebarItem
                 icon={LibraryBooksIcon}
                 to="aegis/admin/cluster-profiles"

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
 import {
@@ -10,6 +11,8 @@ import {
 import { UserIdentity } from '@backstage/core-components';
 import { keycloakAuthApiRef } from '../../apis';
 import { InteractiveBackground } from '../layout/InteractiveBackground';
+
+const POST_LOGIN_REDIRECT = '/aegis/admin/projects';
 
 const AegisLogo = () => (
   <div style={{ position: 'relative', width: 160, margin: '0 auto' }}>
@@ -182,8 +185,22 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
   const classes = useStyles();
   const authApi = useApi(keycloakAuthApiRef);
   const analytics = useAnalytics();
+  const navigate = useNavigate();
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const completeSignIn = async (identityResponse: BackstageIdentityResponse) => {
+    const profile = await authApi.getProfile();
+    onSignInSuccess(
+      UserIdentity.create({
+        identity: identityResponse.identity,
+        authApi,
+        profile,
+      }),
+    );
+    // Always redirect to projects page after login
+    navigate(POST_LOGIN_REDIRECT, { replace: true });
+  };
 
   const handleSignIn = async () => {
     try {
@@ -194,14 +211,7 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
       if (!identityResponse) {
         throw new Error('Authentication failed. Please try again.');
       }
-      const profile = await authApi.getProfile();
-      onSignInSuccess(
-        UserIdentity.create({
-          identity: identityResponse.identity,
-          authApi,
-          profile,
-        }),
-      );
+      await completeSignIn(identityResponse);
       analytics.captureEvent('signIn', 'success');
     } catch (err) {
       setError(err as Error);
@@ -216,14 +226,7 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
           await authApi.getBackstageIdentity({ optional: true });
         if (!mounted) return;
         if (identityResponse) {
-          const profile = await authApi.getProfile();
-          onSignInSuccess(
-            UserIdentity.create({
-              identity: identityResponse.identity,
-              authApi,
-              profile,
-            }),
-          );
+          await completeSignIn(identityResponse);
           return;
         }
       } catch (err) {
