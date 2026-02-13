@@ -363,6 +363,22 @@ export type ProvisioningLogView = {
   message: string;
 };
 
+export type NodePoolConfig = {
+  name: string;
+  instanceType: string;
+  minSize: number;
+  maxSize: number;
+};
+
+export type ClusterConfigResponse = {
+  provider?: string;
+  region?: string;
+  k8sVersion?: string;
+  clusterName?: string;
+  nodePools?: NodePoolConfig[];
+  autoscaling?: boolean;
+};
+
 export type ProvisioningLogsResponse = {
   jobId: string;
   projectId?: string;
@@ -372,6 +388,7 @@ export type ProvisioningLogsResponse = {
   completedAt?: string;
   logs?: ProvisioningLogView[];
   nextCursor?: string;
+  clusterConfig?: ClusterConfigResponse;
 };
 
 export const DEFAULT_SSH_PORT = 22;

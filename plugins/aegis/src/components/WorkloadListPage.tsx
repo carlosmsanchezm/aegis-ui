@@ -1,18 +1,11 @@
 import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useLocation } from 'react-router-dom';
 import {
   Page,
   Content,
   ContentHeader,
   Progress,
   WarningPanel,
-  CopyTextButton,
-  StatusOK,
-  StatusWarning,
-  StatusError,
-  StatusPending,
-  Table,
-  TableColumn,
 } from '@backstage/core-components';
 import {
   alertApiRef,
@@ -31,55 +24,135 @@ import {
   TextField,
   Typography,
 } from '@material-ui/core';
+import { makeStyles } from '@material-ui/core/styles';
+import { alpha } from '@material-ui/core/styles/colorManipulator';
 import RefreshIcon from '@material-ui/icons/Refresh';
-import {
-  WorkloadDTO,
-  getFlavor,
-  isTerminalStatus,
-  listWorkloads,
-  mapDisplayStatus,
-  parseKubernetesUrl,
-  buildKubectlDescribeCommand,
-} from '../api/aegisClient';
+import RocketLaunchIcon from '@material-ui/icons/Whatshot';
+import { Skeleton } from '@material-ui/lab';
+import { WorkloadDTO, isTerminalStatus, listWorkloads } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { createWorkspaceRouteRef } from '../routes';
+import { WorkloadCard } from './WorkloadCard';
+import { isProvisioningStatus } from './WorkloadStatusIndicator';
+import { demoWorkloads } from '../demoData';
 
-const statusChip = (status: string) => {
-  const mapped = mapDisplayStatus(status);
-  switch (mapped.color) {
-    case 'ok':
-      return <StatusOK>{mapped.label}</StatusOK>;
-    case 'error':
-      return <StatusError>{mapped.label}</StatusError>;
-    case 'progress':
-      return <StatusPending>{mapped.label}</StatusPending>;
-    case 'warning':
-    default:
-      return <StatusWarning>{mapped.label}</StatusWarning>;
-  }
-};
+const useStyles = makeStyles(theme => ({
+  headerRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(2),
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  filterRow: {
+    marginTop: theme.spacing(2),
+  },
+  statsRow: {
+    display: 'flex',
+    gap: theme.spacing(2),
+    marginTop: theme.spacing(1),
+    color: theme.palette.text.secondary,
+  },
+  cardsGrid: {
+    display: 'grid',
+    gap: theme.spacing(2.5),
+    marginTop: theme.spacing(3),
+  },
+  skeletonCard: {
+    background: 'var(--aegis-card-surface)',
+    border: '1px solid var(--aegis-card-border)',
+    borderRadius: theme.shape.borderRadius * 2,
+    padding: theme.spacing(3),
+  },
+  emptyState: {
+    marginTop: theme.spacing(3),
+    borderRadius: theme.shape.borderRadius * 2,
+    border: '1px dashed var(--aegis-card-border)',
+    padding: theme.spacing(6, 3),
+    background: 'var(--aegis-card-surface)',
+    textAlign: 'center',
+  },
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    margin: '0 auto',
+    background: alpha(theme.palette.primary.main, 0.15),
+    color: theme.palette.primary.main,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lastUpdated: {
+    fontSize: theme.typography.pxToRem(12),
+    color: theme.palette.text.secondary,
+  },
+  toolbar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(1.5),
+    alignItems: 'center',
+  },
+}));
 
 type WorkloadRow = WorkloadDTO & { displayStatus: string };
 
 type StatusFilter = 'all' | 'active' | 'terminal';
 
+const formatElapsed = (seconds: number): string => {
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+};
+
 export const WorkloadListPage: FC = () => {
+  const classes = useStyles();
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
   const authApi = useApi(keycloakAuthApiRef);
   const alertApi = useApi(alertApiRef);
-  const navigate = useNavigate();
+  const location = useLocation();
   const createWorkspaceLink = useRouteRef(createWorkspaceRouteRef);
   const createWorkspacePath = createWorkspaceLink();
 
-  const [projectId, setProjectId] = useState('p-demo');
+  const [projectId, setProjectId] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('project') ?? 'p-demo';
+  });
   const [rows, setRows] = useState<WorkloadRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
-  const [shouldPoll, setShouldPoll] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const projectParam = params.get('project');
+    const highlightParam = params.get('highlight');
+    if (projectParam) {
+      setProjectId(projectParam);
+    }
+    setHighlightId(highlightParam);
+  }, [location.search]);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -89,20 +162,28 @@ export const WorkloadListPage: FC = () => {
           setLoading(true);
         }
         setError(null);
-        const items = await listWorkloads(
-          fetchApi,
-          discoveryApi,
-          identityApi,
-          authApi,
-          projectId,
-        );
+        
+        let items: WorkloadDTO[] = [];
+        try {
+          items = await listWorkloads(
+            fetchApi,
+            discoveryApi,
+            identityApi,
+            authApi,
+            projectId,
+          );
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to load workloads from API, falling back to demo data', err);
+          items = demoWorkloads;
+        }
+        
         const mapped: WorkloadRow[] = items.map(w => ({
           ...w,
           displayStatus: w.uiStatus ?? w.status ?? 'PLACED',
         }));
         setRows(mapped);
-        const anyActive = mapped.some(w => !isTerminalStatus(w.status));
-        setShouldPoll(anyActive);
+        setLastUpdated(new Date());
       } catch (e: any) {
         const msg = e?.message ?? String(e);
         setError(msg);
@@ -116,30 +197,12 @@ export const WorkloadListPage: FC = () => {
         }
       }
     },
-    [alertApi, discoveryApi, fetchApi, identityApi, authApi, projectId],
+    [alertApi, projectId, fetchApi, discoveryApi, identityApi, authApi],
   );
 
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    if (!shouldPoll) {
-      return () => {};
-    }
-    const timer = setInterval(() => {
-      load({ silent: true });
-    }, 4000);
-    return () => clearInterval(timer);
-  }, [shouldPoll, load]);
-
-  const handleProjectChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setProjectId(event.target.value);
-  };
-
-  const handleStatusFilter = (event: React.ChangeEvent<{ value: unknown }>) => {
-    setStatusFilter(event.target.value as StatusFilter);
-  };
 
   const filteredRows = useMemo(() => {
     return rows
@@ -160,101 +223,66 @@ export const WorkloadListPage: FC = () => {
       });
   }, [rows, search, statusFilter]);
 
-  const columns = useMemo<TableColumn<WorkloadRow>[]>(
-    () => [
-      {
-        title: 'Workload ID',
-        field: 'id',
-        render: row => (
-          <Box display="flex" alignItems="center" gridGap={8}>
-            {row.id ? (
-              <RouterLink
-                to={`/aegis/workloads/${row.id}`}
-                style={{ textDecoration: 'none' }}
-              >
-                <Typography variant="body2" color="primary">
-                  {row.id}
-                </Typography>
-              </RouterLink>
-            ) : (
-              <Typography variant="body2">—</Typography>
-            )}
-            {row.id ? <CopyTextButton text={row.id} /> : null}
-          </Box>
-        ),
-      },
-      {
-        title: 'Status',
-        field: 'displayStatus',
-        render: row => statusChip(row.displayStatus),
-      },
-      {
-        title: 'Flavor',
-        field: 'flavor',
-        render: row => (
-          <Typography variant="body2">{getFlavor(row)}</Typography>
-        ),
-      },
-      {
-        title: 'Project',
-        field: 'projectId',
-      },
-      {
-        title: 'Link',
-        field: 'url',
-        render: row => {
-          if (!row.url) {
-            return (
-              <Typography variant="body2" color="textSecondary">
-                N/A
-              </Typography>
-            );
-          }
-          const loc = parseKubernetesUrl(row.url);
-          const cmd = buildKubectlDescribeCommand(loc);
-          return (
-            <Box display="flex" alignItems="center" gridGap={8}>
-              <Typography variant="body2">{row.url}</Typography>
-              {cmd ? (
-                <CopyTextButton text={cmd} />
-              ) : null}
-            </Box>
-          );
-        },
-      },
-      {
-        title: 'Actions',
-        field: 'actions',
-        sorting: false,
-        render: row => (
-          <Button
-            variant="outlined"
-            size="small"
-            component={RouterLink}
-            to={row.id ? `/aegis/workloads/${row.id}` : '#'}
-            disabled={!row.id}
-          >
-            Details
-          </Button>
-        ),
-      },
-    ],
-    [],
+  const shouldPoll = useMemo(
+    () => filteredRows.some(row => isProvisioningStatus(row.status)),
+    [filteredRows],
   );
+
+  useEffect(() => {
+    if (!shouldPoll) {
+      return () => {};
+    }
+    const timer = setInterval(() => {
+      load({ silent: true });
+    }, 7000);
+    return () => clearInterval(timer);
+  }, [shouldPoll, load]);
+
+  useEffect(() => {
+    if (!highlightId) {
+      return () => {};
+    }
+    const handle = window.setTimeout(() => {
+      const element = document.getElementById(`workload-card-${highlightId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 200);
+    return () => {
+      window.clearTimeout(handle);
+    };
+  }, [highlightId, filteredRows]);
+
+  const handleProjectChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setProjectId(event.target.value);
+  };
+
+  const handleStatusFilter = (event: React.ChangeEvent<{ value: unknown }>) => {
+    setStatusFilter(event.target.value as StatusFilter);
+  };
 
   const activeCount = rows.filter(r => !isTerminalStatus(r.status)).length;
   const completedCount = rows.filter(r => isTerminalStatus(r.status)).length;
+
+  const lastUpdatedLabel = lastUpdated
+    ? formatElapsed(Math.floor((now - lastUpdated.getTime()) / 1000))
+    : '—';
 
   return (
     <Page themeId="tool">
       <Content>
         <ContentHeader title="Workload Status">
           <Typography variant="body1" color="textSecondary">
-            Monitor submitted workspaces and investigate their runtime posture.
+            Monitor submitted workspaces, track provisioning progress, and connect once ready.
           </Typography>
         </ContentHeader>
-        <ContentHeader title="Filters">
-          <Box display="flex" gridGap={8}>
+
+        <Box className={classes.headerRow}>
+          <Typography variant="h5">Filters</Typography>
+          <Box className={classes.toolbar}>
+            <Typography className={classes.lastUpdated}>
+              Last updated: {lastUpdatedLabel}
+            </Typography>
             <Button
               variant="outlined"
               size="small"
@@ -269,12 +297,12 @@ export const WorkloadListPage: FC = () => {
               component={RouterLink}
               to={createWorkspacePath}
             >
-              Create New Workspace
+              Launch Workspace
             </Button>
           </Box>
-        </ContentHeader>
+        </Box>
 
-        <Grid container spacing={2} alignItems="flex-end">
+        <Grid container spacing={2} alignItems="flex-end" className={classes.filterRow}>
           <Grid item xs={12} md={4}>
             <TextField
               label="Project ID"
@@ -306,42 +334,81 @@ export const WorkloadListPage: FC = () => {
           </Grid>
         </Grid>
 
-        <Box mt={2} display="flex" gridGap={16}>
+        <Box className={classes.statsRow}>
           <Typography variant="body2">Active: {activeCount}</Typography>
           <Typography variant="body2">Completed: {completedCount}</Typography>
         </Box>
 
-        {loading && <Progress />}
+        {loading && rows.length > 0 ? <Progress /> : null}
 
-        {error && (
+        {error ? (
           <Box mt={2}>
             <WarningPanel title="Failed to load workloads" severity="error">
               {error}
+              <Box mt={2}>
+                <Button variant="outlined" onClick={() => load()}>
+                  Retry
+                </Button>
+              </Box>
             </WarningPanel>
           </Box>
-        )}
+        ) : null}
 
-        <Box mt={2}>
-          <Table
-            options={{
-              paging: false,
-              search: false,
-              sorting: true,
-              padding: 'dense',
-              rowStyle: {
-                cursor: 'pointer',
-              },
-            }}
-            data={filteredRows}
-            columns={columns}
-            title="Workloads"
-            onRowClick={(_, row) => {
-              if (row?.id) {
-                navigate(`/aegis/workloads/${row.id}`);
-              }
-            }}
-          />
-        </Box>
+        {!loading && !error && filteredRows.length === 0 ? (
+          <Box className={classes.emptyState}>
+            <Box className={classes.emptyIcon}>
+              <RocketLaunchIcon />
+            </Box>
+            <Typography variant="h6" gutterBottom>
+              No workspaces yet
+            </Typography>
+            <Typography variant="body2" color="textSecondary">
+              Launch your first GPU workspace and we will keep you updated on provisioning.
+            </Typography>
+            <Box mt={2}>
+              <Button
+                variant="contained"
+                color="primary"
+                component={RouterLink}
+                to={createWorkspacePath}
+              >
+                Launch your first workspace
+              </Button>
+            </Box>
+          </Box>
+        ) : null}
+
+        {loading && rows.length === 0 ? (
+          <Box className={classes.cardsGrid}>
+            {[0, 1, 2].map(item => (
+              <Box key={item} className={classes.skeletonCard}>
+                <Skeleton variant="rect" height={28} width="40%" />
+                <Box mt={2}>
+                  <Skeleton variant="rect" height={18} width="60%" />
+                </Box>
+                <Box mt={2}>
+                  <Skeleton variant="rect" height={80} />
+                </Box>
+                <Box mt={2} display="flex" gridGap={12}>
+                  <Skeleton variant="rect" height={32} width={140} />
+                  <Skeleton variant="rect" height={32} width={100} />
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+
+        {filteredRows.length > 0 ? (
+          <Box className={classes.cardsGrid}>
+            {filteredRows.map(row => (
+              <WorkloadCard
+                key={row.id ?? row.displayStatus}
+                workload={row}
+                highlight={row.id === highlightId}
+              />
+            ))}
+          </Box>
+        ) : null}
       </Content>
     </Page>
   );

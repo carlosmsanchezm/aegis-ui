@@ -27,7 +27,6 @@ import { Root } from './components/Root';
 import {
   AegisClusterCreatePage,
   AegisClusterDetailsPage,
-  AegisClustersFleetPage,
   AegisClustersPage,
   AegisDashboardPage,
   AegisPosturePage,
@@ -70,6 +69,7 @@ import {
   AegisIaCConnectorsAdminPage,
 } from '@internal/plugin-aegis';
 import { keycloakAuthApiRef } from './apis';
+import { AegisSignInPage } from './components/signin/AegisSignInPage';
 
 export const keycloakSignInProvider = {
   id: 'keycloak',
@@ -99,17 +99,13 @@ const app = createApp({
     });
   },
   components: {
-    // Force Keycloak SSO with automatic redirect to eliminate guest fallback paths.
-    // Temporarily disabled for local development without Keycloak
-    // SignInPage: props => (
-    //   <SignInPage {...props} auto provider={keycloakSignInProvider} />
-    // ),
+    SignInPage: props => <AegisSignInPage {...props} />,
   },
 });
 
 const routes = (
   <FlatRoutes>
-    <Route path="/" element={<Navigate to="catalog" />} />
+    <Route path="/" element={<Navigate to="/aegis/admin/projects" />} />
     <Route path="/catalog" element={<CatalogIndexPage />} />
     <Route
       path="/catalog/:namespace/:kind/:name"
@@ -149,10 +145,9 @@ const routes = (
     <Route path="/aegis/telemetry" element={<AegisTelemetryPage />} />
     <Route path="/aegis/posture" element={<AegisPosturePage />} />
     <Route path="/aegis/clusters" element={<AegisClustersPage />} />
-    <Route path="/aegis/clusters/fleet" element={<AegisClustersFleetPage />} />
     <Route path="/aegis/clusters/:clusterId" element={<AegisClusterDetailsPage />} />
-    <Route path="/aegis/workloads" element={<AegisWorkloadListPage />} />
-    <Route path="/aegis/workloads/:id" element={<AegisWorkloadDetailsPage />} />
+    <Route path="/aegis/workspaces" element={<AegisWorkloadListPage />} />
+    <Route path="/aegis/workspaces/:id" element={<AegisWorkloadDetailsPage />} />
     <Route path="/aegis/operations/metrics" element={<AegisOpsMetricsPage />} />
     <Route
       path="/aegis/operations/resources/:resourceId"

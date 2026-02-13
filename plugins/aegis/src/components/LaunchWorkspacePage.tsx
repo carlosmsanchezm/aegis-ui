@@ -72,6 +72,7 @@ import {
   projectCatalog,
   visibilityCopy,
 } from './projects/projectCatalog';
+import { addDemoWorkload } from '../demoData';
 
 import type { Theme } from '@material-ui/core/styles';
 
@@ -915,6 +916,22 @@ export const LaunchWorkspacePage: FC = () => {
     try {
       setSubmitting(true);
       setError(null);
+      
+      // Simulate backend creation for demo consistency
+      addDemoWorkload({
+        id: workspaceId,
+        projectId,
+        clusterId: clusterId || 'aegis-prod-us-east-1',
+        status: 'PROVISIONING',
+        uiStatus: 'PROVISIONING',
+        flavor: form.flavor,
+        workspace: {
+          image: form.image,
+          interactive: true,
+        },
+        createdAt: new Date().toISOString(),
+      });
+
       const response = await createWorkspace(
         fetchApi,
         discoveryApi,
@@ -928,7 +945,12 @@ export const LaunchWorkspacePage: FC = () => {
         severity: 'success',
       });
       if (workloadsLink) {
-        navigate(workloadsLink());
+        const target = workloadsLink();
+        const params = new URLSearchParams({ project: projectId });
+        if (createdId) {
+          params.set('highlight', createdId);
+        }
+        navigate(`${target}?${params.toString()}`);
       }
     } catch (e: unknown) {
       let msg = 'Failed to submit workspace.';
