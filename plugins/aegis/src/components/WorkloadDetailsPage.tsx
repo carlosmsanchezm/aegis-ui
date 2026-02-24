@@ -43,7 +43,6 @@ import {
   WorkloadStatusIndicator,
   isRunningStatus,
 } from './WorkloadStatusIndicator';
-import { demoWorkloads } from '../demoData';
 
 const useStyles = makeStyles(theme => ({
   header: {
@@ -270,13 +269,6 @@ export const WorkloadDetailsPage: FC = () => {
   const load = useCallback(async () => {
     if (!id) {
       setError('Missing workload id');
-      return;
-    }
-
-    // Check for demo data first
-    const demoItem = demoWorkloads.find(w => w.id === id);
-    if (demoItem) {
-      setWorkload(demoItem);
       return;
     }
 

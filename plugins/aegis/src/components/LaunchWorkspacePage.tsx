@@ -72,8 +72,6 @@ import {
   projectCatalog,
   visibilityCopy,
 } from './projects/projectCatalog';
-import { addDemoWorkload } from '../demoData';
-
 import type { Theme } from '@material-ui/core/styles';
 
 type WorkspaceTypeId = 'vscode' | 'jupyter' | 'cli';
@@ -916,21 +914,6 @@ export const LaunchWorkspacePage: FC = () => {
     try {
       setSubmitting(true);
       setError(null);
-      
-      // Simulate backend creation for demo consistency
-      addDemoWorkload({
-        id: workspaceId,
-        projectId,
-        clusterId: clusterId || 'aegis-prod-us-east-1',
-        status: 'PROVISIONING',
-        uiStatus: 'PROVISIONING',
-        flavor: form.flavor,
-        workspace: {
-          image: form.image,
-          interactive: true,
-        },
-        createdAt: new Date().toISOString(),
-      });
 
       const response = await createWorkspace(
         fetchApi,

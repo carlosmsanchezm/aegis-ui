@@ -26,7 +26,7 @@ const server = setupServer(
         ctx.json({
           id: 'w-ui-123',
           status: 'PLACED',
-          projectId: 'p-demo',
+          projectId: 'p-ui-e2e',
         }),
       );
     },
@@ -38,7 +38,7 @@ const server = setupServer(
         ctx.json({
           id: 'w-ui-123',
           status: 'SUCCEEDED',
-          projectId: 'p-demo',
+          projectId: 'p-ui-e2e',
         }),
       ),
   ),
@@ -116,8 +116,7 @@ describe('SubmitWorkloadPage', () => {
       </TestApiProvider>,
     );
 
-    const projectField = await screen.findByDisplayValue('p-demo');
-    await user.clear(projectField);
+    const projectField = await screen.findByLabelText(/project/i);
     await user.type(projectField, 'p-ui-e2e');
 
     const queueField = await screen.findByDisplayValue('default');

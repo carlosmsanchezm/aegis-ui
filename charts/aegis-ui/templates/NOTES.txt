@@ -1,0 +1,50 @@
+Aegis UI has been deployed successfully!
+
+Deployment Summary:
+  Release:    {{ .Release.Name }}
+  Namespace:  {{ .Release.Namespace }}
+  Replicas:   {{ .Values.replicaCount }}
+
+Service Access:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  URL: https://{{ .host }}
+{{- end }}
+{{- else if eq .Values.service.type "NodePort" }}
+  Get the application URL by running:
+    export NODE_PORT=$(kubectl get svc {{ include "aegis-ui.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}")
+    export NODE_IP=$(kubectl get nodes -o jsonpath="{.items[0].status.addresses[0].address}")
+    echo http://$NODE_IP:$NODE_PORT
+{{- else if eq .Values.service.type "LoadBalancer" }}
+  Get the application URL by running:
+    kubectl get svc {{ include "aegis-ui.fullname" . }} -n {{ .Release.Namespace }} -w
+{{- else }}
+  Port forward to access the application:
+    kubectl port-forward svc/{{ include "aegis-ui.fullname" . }} 7007:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+    Then open: http://localhost:7007
+{{- end }}
+
+Useful Commands:
+
+  # Check pod status
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
+
+  # View logs
+  kubectl logs -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }} -f
+
+  # Check health
+  kubectl exec -it deploy/{{ include "aegis-ui.fullname" . }} -n {{ .Release.Namespace }} -- wget -qO- http://localhost:7007/healthcheck
+
+Configuration Checklist:
+  Verify these REQUIRED values are set:
+  - image.repository    (container image)
+  - env.APP_BASE_URL    (public frontend URL)
+  - env.BACKEND_BASE_URL (public backend URL)
+  - env.BACKEND_SECRET  (backend auth secret)
+  - aegisPlatform.apiUrl (platform API endpoint)
+  - postgres.host       (PostgreSQL host)
+  - postgres.user       (PostgreSQL user)
+  - postgres.password   (PostgreSQL password, or use postgres.existingSecret)
+  - keycloak.baseUrl    (Keycloak base URL)
+  - keycloak.clientId   (OIDC client ID)
+  - keycloak.clientSecret (OIDC client secret)

@@ -1,14 +1,24 @@
-import { ChangeEvent, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Page,
   Content,
   ContentHeader,
   HeaderLabel,
+  Progress,
   Table,
   TableColumn,
+  WarningPanel,
 } from '@backstage/core-components';
 import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import {
   Box,
+  Button,
   FormControl,
   Grid,
   InputLabel,
@@ -18,14 +28,23 @@ import {
   Typography,
   makeStyles,
 } from '@material-ui/core';
+import RefreshIcon from '@material-ui/icons/Refresh';
+
+import {
+  BudgetRecord,
+  ProjectRecord,
+  listBudgets,
+  listProjects,
+} from '../api/aegisClient';
+import { keycloakAuthApiRef } from '../api/refs';
 
 type CostBreakdownRow = {
   project: string;
-  workspace: string;
+  queue: string;
   spend: string;
-  gpuHours: string;
-  owner: string;
-  variance: string;
+  budget: string;
+  utilization: string;
+  policy: string;
 };
 
 const useStyles = makeStyles(theme => ({
@@ -95,81 +114,143 @@ const useStyles = makeStyles(theme => ({
     borderRadius: theme.shape.borderRadius * 2,
     padding: theme.spacing(2.5, 3, 3),
   },
+  emptyState: {
+    marginTop: theme.spacing(4),
+    borderRadius: theme.shape.borderRadius * 2,
+    border: '1px dashed var(--aegis-card-border)',
+    padding: theme.spacing(6, 3),
+    background: 'var(--aegis-card-surface)',
+    textAlign: 'center',
+  },
 }));
 
-const kpiMetrics = [
-  {
-    label: 'Month-to-Date (MTD) Spend',
-    value: '$248,900',
-    delta: '↑ 12.4% vs. last month',
-  },
-  {
-    label: 'Forecasted Month-End Spend',
-    value: '$372,450',
-    delta: 'Projected +6.8%',
-  },
-  {
-    label: 'Active Workspaces',
-    value: '146',
-    delta: '19 pending renewals',
-  },
-];
+const formatUsd = (value: number): string =>
+  `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-const costBreakdown: CostBreakdownRow[] = [
-  {
-    project: 'p-aurora',
-    workspace: 'aurora-ml-lab',
-    spend: '$32,180',
-    gpuHours: '1,820',
-    owner: 'Dr. Patel',
-    variance: '+8% vs. budget',
-  },
-  {
-    project: 'p-atlas',
-    workspace: 'atlas-synthetic',
-    spend: '$27,940',
-    gpuHours: '1,540',
-    owner: 'M. Gomez',
-    variance: '+3% vs. budget',
-  },
-  {
-    project: 'p-demo',
-    workspace: 'demo-benchmarking',
-    spend: '$18,420',
-    gpuHours: '940',
-    owner: 'S. Ali',
-    variance: '-5% vs. budget',
-  },
-  {
-    project: 'p-vanguard',
-    workspace: 'vanguard-risk-sim',
-    spend: '$41,110',
-    gpuHours: '2,260',
-    owner: 'A. Chen',
-    variance: '+12% vs. budget',
-  },
-  {
-    project: 'p-observatory',
-    workspace: 'orbital-tracking',
-    spend: '$22,005',
-    gpuHours: '1,120',
-    owner: 'J. Kim',
-    variance: '+1% vs. budget',
-  },
-];
+type ProjectBudgets = {
+  project: ProjectRecord;
+  budgets: BudgetRecord[];
+};
 
 export const AegisCostDashboardPage = () => {
   const classes = useStyles();
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
+  const alertApi = useApi(alertApiRef);
+
   const [timeframe, setTimeframe] = useState('30');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [projectBudgets, setProjectBudgets] = useState<ProjectBudgets[]>([]);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const projectsResponse = await listProjects(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        authApi,
+      );
+      const projects = projectsResponse?.items ?? [];
+
+      const results: ProjectBudgets[] = await Promise.all(
+        projects.map(async project => {
+          try {
+            const budgets = await listBudgets(
+              fetchApi,
+              discoveryApi,
+              identityApi,
+              authApi,
+              project.id,
+            );
+            return { project, budgets };
+          } catch {
+            return { project, budgets: [] };
+          }
+        }),
+      );
+
+      setProjectBudgets(results);
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      setError(msg);
+      alertApi.post({
+        message: `Failed to load cost data: ${msg}`,
+        severity: 'error',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchApi, discoveryApi, identityApi, authApi, alertApi]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const allBudgets = useMemo(
+    () => projectBudgets.flatMap(pb => pb.budgets),
+    [projectBudgets],
+  );
+
+  const kpiMetrics = useMemo(() => {
+    const totalSpend = allBudgets.reduce((sum, b) => sum + (b.spentUsd ?? 0), 0);
+    const totalBudget = allBudgets.reduce((sum, b) => sum + (b.limitUsd ?? 0), 0);
+    const utilization =
+      totalBudget > 0 ? ((totalSpend / totalBudget) * 100).toFixed(1) : '0.0';
+
+    return [
+      {
+        label: 'Total Spend (All Projects)',
+        value: formatUsd(totalSpend),
+        delta: `${allBudgets.length} budget(s) tracked`,
+      },
+      {
+        label: 'Total Budget Allocated',
+        value: formatUsd(totalBudget),
+        delta: `${projectBudgets.length} project(s)`,
+      },
+      {
+        label: 'Budget Utilization',
+        value: `${utilization}%`,
+        delta:
+          Number(utilization) > 80
+            ? 'Approaching budget limit'
+            : 'Within budget',
+      },
+    ];
+  }, [allBudgets, projectBudgets]);
+
+  const costBreakdown = useMemo<CostBreakdownRow[]>(() => {
+    return projectBudgets.flatMap(pb =>
+      pb.budgets.map(b => {
+        const spent = b.spentUsd ?? 0;
+        const limit = b.limitUsd ?? 0;
+        const pct = limit > 0 ? ((spent / limit) * 100).toFixed(1) : 'N/A';
+        return {
+          project: pb.project.displayName ?? pb.project.id,
+          queue: b.queue ?? 'default',
+          spend: formatUsd(spent),
+          budget: formatUsd(limit),
+          utilization: pct === 'N/A' ? pct : `${pct}%`,
+          policy: b.policyMode ?? 'monitor',
+        };
+      }),
+    );
+  }, [projectBudgets]);
 
   const columns = useMemo<TableColumn<CostBreakdownRow>[]>(
     () => [
       { title: 'Project', field: 'project', defaultSort: 'asc' },
-      { title: 'Workspace', field: 'workspace' },
+      { title: 'Queue', field: 'queue' },
       { title: 'Spend ($)', field: 'spend', sorting: false },
-      { title: 'GPU Hours', field: 'gpuHours', sorting: false },
-      { title: 'Owner', field: 'owner', sorting: false },
-      { title: 'Variance', field: 'variance', sorting: false },
+      { title: 'Budget ($)', field: 'budget', sorting: false },
+      { title: 'Utilization', field: 'utilization', sorting: false },
+      { title: 'Policy', field: 'policy', sorting: false },
     ],
     [],
   );
@@ -178,6 +259,41 @@ export const AegisCostDashboardPage = () => {
     setTimeframe(event.target.value as string);
   };
 
+  if (loading) {
+    return (
+      <Page themeId="tool">
+        <Content className={classes.pageContent}>
+          <ContentHeader title="Cost Analytics Dashboard">
+            <HeaderLabel label="Perspective" value="FinOps" />
+            <HeaderLabel label="Currency" value="USD" />
+          </ContentHeader>
+          <Progress />
+        </Content>
+      </Page>
+    );
+  }
+
+  if (error) {
+    return (
+      <Page themeId="tool">
+        <Content className={classes.pageContent}>
+          <ContentHeader title="Cost Analytics Dashboard">
+            <HeaderLabel label="Perspective" value="FinOps" />
+            <HeaderLabel label="Currency" value="USD" />
+          </ContentHeader>
+          <WarningPanel title="Failed to load cost data" severity="error">
+            {error}
+            <Box mt={2}>
+              <Button variant="outlined" onClick={load}>
+                Retry
+              </Button>
+            </Box>
+          </WarningPanel>
+        </Content>
+      </Page>
+    );
+  }
+
   return (
     <Page themeId="tool">
       <Content className={classes.pageContent}>
@@ -185,6 +301,14 @@ export const AegisCostDashboardPage = () => {
           <HeaderLabel label="Perspective" value="FinOps" />
           <HeaderLabel label="Currency" value="USD" />
           <div className={classes.headerActions}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<RefreshIcon />}
+              onClick={load}
+            >
+              Refresh
+            </Button>
             <FormControl variant="outlined" size="small" className={classes.selectControl}>
               <InputLabel id="aegis-cost-timeframe-label">Timeframe</InputLabel>
               <Select
@@ -223,31 +347,47 @@ export const AegisCostDashboardPage = () => {
             <Grid item xs={12} md={7}>
               <Paper elevation={0} className={classes.chartCard}>
                 <Typography variant="h5">Historical Spend Over Time</Typography>
-                <Box className={classes.chartPlaceholder}>Line chart placeholder</Box>
+                <Box className={classes.chartPlaceholder}>
+                  Chart visualization coming soon
+                </Box>
               </Paper>
             </Grid>
             <Grid item xs={12} md={5}>
               <Paper elevation={0} className={classes.chartCard}>
                 <Typography variant="h5">Spend by Project</Typography>
-                <Box className={classes.chartPlaceholder}>Bar / Donut chart placeholder</Box>
+                <Box className={classes.chartPlaceholder}>
+                  Chart visualization coming soon
+                </Box>
               </Paper>
             </Grid>
           </Grid>
 
-          <Box className={classes.tableWrapper} mt={4}>
-            <Typography variant="h6" gutterBottom>
-              Detailed Project & Workspace Spend
-            </Typography>
-            <Table
-              options={{
-                paging: false,
-                search: false,
-                padding: 'dense',
-              }}
-              data={costBreakdown}
-              columns={columns}
-            />
-          </Box>
+          {costBreakdown.length === 0 ? (
+            <Box className={classes.emptyState}>
+              <Typography variant="h6" gutterBottom>
+                No budget data available
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                Configure budgets for your projects in Quota Management to see
+                cost analytics here.
+              </Typography>
+            </Box>
+          ) : (
+            <Box className={classes.tableWrapper} mt={4}>
+              <Typography variant="h6" gutterBottom>
+                Detailed Project Budget & Spend
+              </Typography>
+              <Table
+                options={{
+                  paging: false,
+                  search: false,
+                  padding: 'dense',
+                }}
+                data={costBreakdown}
+                columns={columns}
+              />
+            </Box>
+          )}
         </Box>
       </Content>
     </Page>

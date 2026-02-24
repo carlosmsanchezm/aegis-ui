@@ -656,6 +656,18 @@ export const upsertQueue = async (
   );
 };
 
+export type BudgetRecord = {
+  projectId: string;
+  queue?: string;
+  limitUsd: number;
+  spentUsd?: number;
+  policyMode?: string;
+};
+
+export type ListBudgetsResponse = {
+  items: BudgetRecord[];
+};
+
 export type BudgetInput = {
   projectId: string;
   queue: string;
@@ -691,6 +703,40 @@ export const upsertBudget = async (
     },
   );
 };
+
+export const listBudgets = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  projectId: string,
+): Promise<BudgetRecord[]> => {
+  const res = await restJson<undefined, ListBudgetsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/budgets/list`,
+    { method: 'GET', requireAuth: true },
+  );
+  return res?.items ?? [];
+};
+
+export const getBudget = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  projectId: string,
+): Promise<BudgetRecord> =>
+  restJson<undefined, BudgetRecord>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/budgets`,
+    { method: 'GET', requireAuth: true },
+  );
 
 const buildProxyUrl = async (
   discoveryApi: DiscoveryApi,

@@ -48,7 +48,7 @@ type ProvisioningStep = {
 const SYNTHETIC_LOGS_INFRA: LogLine[] = [
   { timestamp: '14:02:01', level: 'info', message: 'pulumi:pulumi:Stack (aegis-gpu-cluster-dev): creating' },
   { timestamp: '14:02:03', level: 'info', message: 'aws:ec2:Vpc (aegis-vpc): creating...' },
-  { timestamp: '14:02:05', level: 'info', message: 'aws:ec2:Vpc (aegis-vpc): created (id: vpc-0a1b2c3d4e)' },
+  { timestamp: '14:02:05', level: 'info', message: 'aws:ec2:Vpc (aegis-vpc): created (id: vpc-xxxxxxxxxx)' },
   { timestamp: '14:02:06', level: 'info', message: 'aws:ec2:Subnet (private-subnet-1): creating...' },
   { timestamp: '14:02:08', level: 'info', message: 'aws:ec2:Subnet (private-subnet-1): created (id: subnet-12345)' },
   { timestamp: '14:02:09', level: 'debug', message: 'aws:ec2:NatGateway: Waiting for EIP allocation...' },

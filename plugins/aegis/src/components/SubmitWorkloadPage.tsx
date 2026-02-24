@@ -69,7 +69,7 @@ export const SubmitWorkloadPage: FC = () => {
   const alertApi = useApi(alertApiRef);
 
   const [form, setForm] = useState<FormState>({
-    projectId: 'p-demo',
+    projectId: '',
     queue: 'default',
     flavor: 'a10-mig-1g',
     image: 'alpine:3.19',

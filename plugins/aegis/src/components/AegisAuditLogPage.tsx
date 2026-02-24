@@ -6,6 +6,7 @@ import {
   HeaderLabel,
   Table,
   TableColumn,
+  WarningPanel,
 } from '@backstage/core-components';
 import {
   Box,
@@ -15,6 +16,7 @@ import {
   Typography,
   makeStyles,
 } from '@material-ui/core';
+import EventNoteIcon from '@material-ui/icons/EventNote';
 
 const useStyles = makeStyles(theme => ({
   layout: {
@@ -37,6 +39,26 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'column',
     gap: theme.spacing(2.5),
   },
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: theme.spacing(2),
+    padding: theme.spacing(6, 2),
+    textAlign: 'center',
+  },
+  iconWrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: '50%',
+    backgroundColor:
+      theme.palette.type === 'dark'
+        ? 'rgba(96, 165, 250, 0.15)'
+        : 'rgba(79, 70, 229, 0.1)',
+  },
 }));
 
 type AuditRow = {
@@ -49,53 +71,12 @@ type AuditRow = {
   outcome: 'success' | 'failure';
 };
 
-const auditLog: AuditRow[] = [
-  {
-    id: 'LOG-21931',
-    event: 'workspace.create',
-    target: 'atlas-train-4821',
-    actor: 'nina.alvarez',
-    timestamp: '2024-04-12 09:10 UTC',
-    ip: '10.48.12.16',
-    outcome: 'success',
-  },
-  {
-    id: 'LOG-21928',
-    event: 'quota.override-request',
-    target: 'REQ-10421',
-    actor: 'nina.alvarez',
-    timestamp: '2024-04-12 09:06 UTC',
-    ip: '10.48.12.16',
-    outcome: 'success',
-  },
-  {
-    id: 'LOG-21911',
-    event: 'workspace.terminate',
-    target: 'convai-eval-2338',
-    actor: 'jacob.singh',
-    timestamp: '2024-04-11 23:18 UTC',
-    ip: '10.56.31.44',
-    outcome: 'success',
-  },
-  {
-    id: 'LOG-21907',
-    event: 'policy.update',
-    target: 'TEAM-LABS-T4',
-    actor: 'maya.chen',
-    timestamp: '2024-04-11 22:01 UTC',
-    ip: '10.39.08.57',
-    outcome: 'success',
-  },
-  {
-    id: 'LOG-21898',
-    event: 'workspace.create',
-    target: 'edge-val-0441',
-    actor: 'ravi.patel',
-    timestamp: '2024-04-11 18:34 UTC',
-    ip: '10.61.14.03',
-    outcome: 'failure',
-  },
-];
+/**
+ * No backend ListAuditEvents RPC is exposed yet.
+ * Audit events are being collected by the backend (P0-2), but there is no
+ * REST endpoint to query them. Initialize with empty data.
+ */
+const auditEvents: AuditRow[] = [];
 
 export const AegisAuditLogPage: FC = () => {
   const classes = useStyles();
@@ -119,7 +100,7 @@ export const AegisAuditLogPage: FC = () => {
   );
 
   const filtered = useMemo(() => {
-    return auditLog.filter(row => {
+    return auditEvents.filter(row => {
       const matchesSearch =
         !search ||
         row.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -130,10 +111,6 @@ export const AegisAuditLogPage: FC = () => {
       return matchesSearch && matchesEvent && matchesOutcome;
     });
   }, [search, eventFilter, outcomeFilter]);
-
-  const uniqueEvents = useMemo(() => {
-    return Array.from(new Set(auditLog.map(row => row.event)));
-  }, []);
 
   return (
     <Page themeId="tool">
@@ -162,11 +139,6 @@ export const AegisAuditLogPage: FC = () => {
                 style={{ width: 220 }}
               >
                 <MenuItem value="all">All events</MenuItem>
-                {uniqueEvents.map(event => (
-                  <MenuItem key={event} value={event}>
-                    {event}
-                  </MenuItem>
-                ))}
               </TextField>
               <TextField
                 select
@@ -187,17 +159,41 @@ export const AegisAuditLogPage: FC = () => {
 
           <Paper className={classes.card}>
             <Typography variant="h6">Workspace audit trail</Typography>
-            <Table
-              options={{ paging: false, search: false, padding: 'dense' }}
-              data={filtered}
-              columns={columns}
-            />
-            <Box>
-              <Typography variant="caption" color="textSecondary">
-                Showing {filtered.length} of {auditLog.length} events
-              </Typography>
-            </Box>
+            {filtered.length === 0 ? (
+              <div className={classes.emptyState}>
+                <div className={classes.iconWrapper}>
+                  <EventNoteIcon color="primary" style={{ fontSize: 32 }} />
+                </div>
+                <Typography variant="h6" color="textSecondary">
+                  Audit events are being collected
+                </Typography>
+                <Typography variant="body2" color="textSecondary" style={{ maxWidth: 480 }}>
+                  The backend is recording audit events for all platform operations.
+                  A log viewer will be available once the ListAuditEvents API endpoint
+                  is deployed in the next release.
+                </Typography>
+              </div>
+            ) : (
+              <>
+                <Table
+                  options={{ paging: false, search: false, padding: 'dense' }}
+                  data={filtered}
+                  columns={columns}
+                />
+                <Box>
+                  <Typography variant="caption" color="textSecondary">
+                    Showing {filtered.length} of {auditEvents.length} events
+                  </Typography>
+                </Box>
+              </>
+            )}
           </Paper>
+
+          <WarningPanel severity="info" title="API integration pending">
+            The audit log listing API (<code>ListAuditEvents</code>) is not yet exposed via the
+            REST gateway. Audit events are being stored by the backend and will be queryable once
+            the endpoint is available.
+          </WarningPanel>
         </div>
       </Content>
     </Page>

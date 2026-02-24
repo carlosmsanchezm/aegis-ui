@@ -34,7 +34,6 @@ import { keycloakAuthApiRef } from '../api/refs';
 import { createWorkspaceRouteRef } from '../routes';
 import { WorkloadCard } from './WorkloadCard';
 import { isProvisioningStatus } from './WorkloadStatusIndicator';
-import { demoWorkloads } from '../demoData';
 
 const useStyles = makeStyles(theme => ({
   headerRow: {
@@ -128,7 +127,7 @@ export const WorkloadListPage: FC = () => {
 
   const [projectId, setProjectId] = useState(() => {
     const params = new URLSearchParams(location.search);
-    return params.get('project') ?? 'p-demo';
+    return params.get('project') ?? '';
   });
   const [rows, setRows] = useState<WorkloadRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -163,20 +162,13 @@ export const WorkloadListPage: FC = () => {
         }
         setError(null);
         
-        let items: WorkloadDTO[] = [];
-        try {
-          items = await listWorkloads(
-            fetchApi,
-            discoveryApi,
-            identityApi,
-            authApi,
-            projectId,
-          );
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn('Failed to load workloads from API, falling back to demo data', err);
-          items = demoWorkloads;
-        }
+        const items = await listWorkloads(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          authApi,
+          projectId,
+        );
         
         const mapped: WorkloadRow[] = items.map(w => ({
           ...w,

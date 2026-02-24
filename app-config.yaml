@@ -28,7 +28,9 @@ backend:
     externalAccess:
       - type: jwks
         options:
+          # DEV ONLY: Override in app-config.production.yaml via ${KEYCLOAK_JWKS_URL}
           url: https://keycloak.aegis-platform.tech/realms/aegis/protocol/openid-connect/certs
+          # DEV ONLY: Override in app-config.production.yaml via ${KEYCLOAK_ISSUER}
           issuer: https://keycloak.aegis-platform.tech/realms/aegis
           audience: backstage
           subjectPrefix: 'keycloak:'
@@ -56,6 +58,7 @@ integrations:
 proxy:
   endpoints:
     '/aegis':
+      # DEV ONLY: Override in app-config.production.yaml via ${AEGIS_API_URL}
       target: 'https://platform-api.localtest.me'
       changeOrigin: true
       secure: false
@@ -83,7 +86,9 @@ auth:
       development:
         clientId: ${KEYCLOAK_CLIENT_ID}
         clientSecret: ${KEYCLOAK_CLIENT_SECRET}
+        # DEV ONLY: Override in app-config.production.yaml via ${KEYCLOAK_ISSUER}
         issuer: https://keycloak.aegis-platform.tech/realms/aegis
+        # DEV ONLY: Override in app-config.production.yaml via ${KEYCLOAK_METADATA_URL}
         metadataUrl: https://keycloak.aegis-platform.tech/realms/aegis/.well-known/openid-configuration
         additionalScopes:
           - offline_access
