@@ -6,10 +6,10 @@
     "node": "20 || 22"
   },
   "scripts": {
-    "dev": "cp app-config.local-dev.yaml app-config.local.yaml && backstage-cli repo start",
-    "dev:cloud": "cp app-config.cloud.yaml app-config.local.yaml && backstage-cli repo start",
-    "dev:cloud-tls": "cp app-config.cloud-tls.yaml app-config.local.yaml && backstage-cli repo start",
-    "start": "backstage-cli repo start",
+    "dev": "cp app-config.local-dev.yaml app-config.local.yaml && NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-$HOME/aegis-local-trust.pem} backstage-cli repo start",
+    "dev:cloud": "cp app-config.cloud.yaml app-config.local.yaml && NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-$HOME/aegis-local-trust.pem} backstage-cli repo start",
+    "dev:cloud-tls": "cp app-config.cloud-tls.yaml app-config.local.yaml && NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-$HOME/aegis-local-trust.pem} backstage-cli repo start",
+    "start": "NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-$HOME/aegis-local-trust.pem} backstage-cli repo start",
     "build:backend": "yarn workspace backend build",
     "build:all": "backstage-cli repo build --all",
     "build-image": "yarn workspace backend build-image",
@@ -56,7 +56,11 @@
     "prismjs": "^1.30.0",
     "cookie": "^1.0.2",
     "diff": "^7.0.0",
-    "test-exclude": "^6.0.0"
+    "test-exclude": "^6.0.0",
+    "fast-xml-parser@npm:^4.4.1": "4.5.4",
+    "fast-xml-parser@npm:^4.5.0": "4.5.4",
+    "fast-xml-parser@npm:^5.0.7": "5.3.9",
+    "fast-xml-parser@npm:5.2.5": "5.3.9"
   },
   "prettier": "@backstage/cli/config/prettier",
   "lint-staged": {
