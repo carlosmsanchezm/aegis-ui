@@ -232,6 +232,7 @@ const setStoredFlag = (key: string, value: boolean) => {
 };
 
 const HELPER_FLAG = 'aegis.helper.installed';
+const VSCODE_SETUP_FLAG = 'aegis.vscode.extension.setup.complete';
 const SYSTEM_ACK_FLAG = 'aegis.system.use.ack';
 const RULES_ACK_FLAG = 'aegis.rules.of.behavior.ack';
 const DEFAULT_EMPTY = '—';
@@ -258,6 +259,9 @@ export const WorkloadDetailsPage: FC = () => {
 
   const [helperInstalled, setHelperInstalled] = useState(() =>
     getStoredFlag(HELPER_FLAG),
+  );
+  const [_vscodeSetupComplete, setVscodeSetupComplete] = useState(() =>
+    getStoredFlag(VSCODE_SETUP_FLAG),
   );
   const [systemAcked, setSystemAcked] = useState(() =>
     getStoredFlag(SYSTEM_ACK_FLAG),
@@ -458,6 +462,8 @@ export const WorkloadDetailsPage: FC = () => {
   const handleHelperConfirmed = useCallback(() => {
     setHelperInstalled(true);
     setStoredFlag(HELPER_FLAG, true);
+    setStoredFlag(VSCODE_SETUP_FLAG, true);
+    setVscodeSetupComplete(true);
   }, []);
 
   const loc = parseKubernetesUrl(workload?.url);
@@ -820,6 +826,10 @@ export const WorkloadDetailsPage: FC = () => {
         pendingSession={pendingSession}
         helperInstalled={helperInstalled}
         onConfirmHelper={handleHelperConfirmed}
+        onConfirmVscodeSetup={() => {
+          setStoredFlag(VSCODE_SETUP_FLAG, true);
+          setVscodeSetupComplete(true);
+        }}
         systemAcked={systemAcked}
         onAcknowledgeSystemUse={handleSystemAck}
         rulesAcked={rulesAcked}

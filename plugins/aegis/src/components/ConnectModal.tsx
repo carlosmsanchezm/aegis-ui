@@ -7,7 +7,6 @@ import {
   Button,
   Box,
   Typography,
-  Link,
 } from '@material-ui/core';
 import {
   CopyTextButton,
@@ -15,6 +14,7 @@ import {
   WarningPanel,
 } from '@backstage/core-components';
 import { ConnectionSession } from '../api/aegisClient';
+import { VSCodeExtensionSetup } from './VSCodeExtensionSetup';
 
 type Props = {
   open: boolean;
@@ -25,6 +25,7 @@ type Props = {
   pendingSession: boolean;
   helperInstalled: boolean;
   onConfirmHelper: () => void;
+  onConfirmVscodeSetup: () => void;
   systemAcked: boolean;
   onAcknowledgeSystemUse: () => void;
   rulesAcked: boolean;
@@ -34,8 +35,6 @@ type Props = {
   onRevoke: () => void;
   workloadId: string;
 };
-
-const helperDocUrl = 'https://docs.yourorg.dev/aegis/connect-helper';
 
 const formatExpiry = (expiresAtUtc?: string): string => {
   if (!expiresAtUtc) {
@@ -65,6 +64,7 @@ export const ConnectModal: FC<Props> = ({
   pendingSession,
   helperInstalled,
   onConfirmHelper,
+  onConfirmVscodeSetup,
   systemAcked,
   onAcknowledgeSystemUse,
   rulesAcked,
@@ -145,28 +145,12 @@ export const ConnectModal: FC<Props> = ({
             )}
 
             {needsHelper && (
-              <Box display="flex" flexDirection="column" gridGap={12}>
-                <Typography variant="h6">
-                  Install the Aegis Connect Helper
-                </Typography>
-                <Typography variant="body2">
-                  The helper binary brokers the one-time token into an SSH proxy
-                  command. Download the latest release for your platform and
-                  verify the published checksum before installing.
-                </Typography>
-                <Link href={helperDocUrl} target="_blank" rel="noopener">
-                  View installation instructions and checksums
-                </Link>
-                <Box display="flex" justifyContent="flex-end">
-                  <Button
-                    color="primary"
-                    variant="contained"
-                    onClick={onConfirmHelper}
-                  >
-                    I Installed the Helper
-                  </Button>
-                </Box>
-              </Box>
+              <VSCodeExtensionSetup
+                onConfirm={() => {
+                  onConfirmHelper();
+                  onConfirmVscodeSetup();
+                }}
+              />
             )}
 
             {readyToMint && (

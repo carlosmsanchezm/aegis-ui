@@ -5,6 +5,14 @@ import {
   OAuthApi,
 } from '@backstage/core-plugin-api';
 
+export type WorkspaceStorage = {
+  persistent?: boolean;
+  storageClass?: string;
+  size?: string;
+  mountPath?: string;
+  existingClaimName?: string;
+};
+
 export type WorkspaceSpec = {
   flavor?: string;
   image?: string;
@@ -13,6 +21,7 @@ export type WorkspaceSpec = {
   ports?: number[];
   env?: Record<string, string>;
   maxDurationSeconds?: number;
+  storage?: WorkspaceStorage;
 };
 
 export type TrainingSpec = {
@@ -122,7 +131,9 @@ export type ClusterSummary = {
     | 'Error'
     | 'Degraded'
     | 'Upgrading'
-    | 'Scaling';
+    | 'Scaling'
+    | 'Destroying'
+    | 'Destroyed';
   createdAt?: string;
   lastHeartbeat?: string;
   lastSyncedAt?: string;
@@ -524,6 +535,32 @@ const normalizeClusterProfile = (
   }
   return normalized;
 };
+
+export type PlatformConfigAwsDefaults = {
+  accountId?: string;
+  roleArn?: string;
+  externalId?: string;
+};
+
+export type PlatformConfig = {
+  devMode: boolean;
+  awsDefaults?: PlatformConfigAwsDefaults;
+};
+
+export const getPlatformConfig = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<PlatformConfig> =>
+  restJson<undefined, PlatformConfig>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/platform/config',
+    { method: 'GET' },
+  );
 
 export type CreateProjectInput = {
   id: string;
@@ -1119,6 +1156,36 @@ export const createCluster = async (
   );
 };
 
+export type DestroyClusterRequest = {
+  clusterId: string;
+  projectId: string;
+};
+
+export type DestroyClusterResponse = {
+  job: Job;
+};
+
+export const destroyCluster = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  req: DestroyClusterRequest,
+): Promise<DestroyClusterResponse> => {
+  return restJson<Record<string, string>, DestroyClusterResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/clusters/${encodeURIComponent(req.clusterId)}/destroy`,
+    {
+      method: 'POST',
+      body: { project_id: req.projectId },
+      requireAuth: true,
+    },
+  );
+};
+
 export const importCluster = async (
   fetchApi: FetchApi,
   discoveryApi: DiscoveryApi,
@@ -1413,3 +1480,26 @@ export const buildKubectlDescribeCommand = (
   }
   return `kubectl -n ${loc.namespace} describe ${loc.kind} ${loc.name}`;
 };
+
+export type ExtensionMetadata = {
+  version: string;
+  sha256: string;
+  vsixUrl: string;
+  setupScriptUrl: string;
+  requiredVscodeVersion: string;
+};
+
+export const getExtensionMetadata = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<ExtensionMetadata> =>
+  restJson<undefined, ExtensionMetadata>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/extension/metadata',
+    { method: 'GET' },
+  );
