@@ -61,6 +61,7 @@ export const VSCodeExtensionSetup: FC<VSCodeExtensionSetupProps> = ({
   }
 
   const [metadata, setMetadata] = useState<ExtensionMetadata | null>(null);
+  const [baseUrl, setBaseUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -73,6 +74,12 @@ export const VSCodeExtensionSetup: FC<VSCodeExtensionSetupProps> = ({
       try {
         setLoading(true);
         setError(false);
+        // Resolve the proxy base URL so we can build full download URLs.
+        const proxyBase = await discoveryApi.getBaseUrl('proxy');
+        const platformBase = `${proxyBase}/aegis`;
+        if (!cancelled) {
+          setBaseUrl(platformBase);
+        }
         const data = await getExtensionMetadata(
           fetchApi,
           discoveryApi,
@@ -100,14 +107,13 @@ export const VSCodeExtensionSetup: FC<VSCodeExtensionSetupProps> = ({
     };
   }, [fetchApi, discoveryApi, identityApi, authApi]);
 
-  const setupScriptUrl = metadata?.setupScriptUrl ?? '';
-  const curlCommand = setupScriptUrl
-    ? `curl -fsSL ${setupScriptUrl} | bash`
-    : 'curl -fsSL <platform-url>/api/v1/extension/setup-script | bash';
-
   const version = metadata?.version ?? 'latest';
-  const vsixUrl = metadata?.vsixUrl ?? '';
   const sha256 = metadata?.sha256 ?? '';
+  const fullVsixUrl = baseUrl && metadata?.vsixUrl ? `${baseUrl}${metadata.vsixUrl}` : '';
+  const fullSetupScriptUrl = baseUrl && metadata?.setupScriptUrl ? `${baseUrl}${metadata.setupScriptUrl}` : '';
+  const curlCommand = fullSetupScriptUrl
+    ? `curl -fsSL ${fullSetupScriptUrl} | bash`
+    : 'curl -fsSL <platform-url>/api/v1/extension/setup-script | bash';
   const installCommand = `code --install-extension aegis-remote-${version}.vsix --force`;
 
   if (loading) {
@@ -157,12 +163,12 @@ export const VSCodeExtensionSetup: FC<VSCodeExtensionSetupProps> = ({
           2. VS Code Extension (Manual)
         </Typography>
 
-        {vsixUrl ? (
+        {fullVsixUrl ? (
           <Box>
             <Button
               color="primary"
               variant="outlined"
-              href={vsixUrl}
+              href={fullVsixUrl}
               target="_blank"
               rel="noopener"
             >
