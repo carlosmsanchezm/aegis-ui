@@ -1,4 +1,4 @@
-import { ChangeEvent, FC, FormEvent, useMemo, useState } from 'react';
+import { ChangeEvent, FC, FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Content,
   ContentHeader,
@@ -38,7 +38,9 @@ import {
 import { keycloakAuthApiRef } from '../../api/refs';
 import {
   ApiError,
+  PlatformConfig,
   createProject,
+  getPlatformConfig,
   upsertBudget,
   upsertQueue,
 } from '../../api/aegisClient';
@@ -154,6 +156,35 @@ export const CreateProjectPage: FC = () => {
   const authApi = useApi(keycloakAuthApiRef);
   const navigate = useNavigate();
 
+  const [platformConfig, setPlatformConfig] = useState<PlatformConfig | null>(null);
+  const devMode = platformConfig?.devMode ?? false;
+
+  useEffect(() => {
+    let cancelled = false;
+    getPlatformConfig(fetchApi, discoveryApi, identityApi, authApi)
+      .then(config => {
+        if (cancelled) return;
+        setPlatformConfig(config);
+      })
+      .catch(() => {
+        // If the config endpoint is unavailable, assume production mode
+        if (!cancelled) setPlatformConfig({ devMode: false });
+      });
+    return () => { cancelled = true; };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  // Pre-fill AWS fields from platform defaults
+  useEffect(() => {
+    if (!platformConfig?.awsDefaults) return;
+    const defaults = platformConfig.awsDefaults;
+    setForm(prev => ({
+      ...prev,
+      ...(defaults.accountId && !prev.awsAccountId ? { awsAccountId: defaults.accountId } : {}),
+      ...(defaults.roleArn && !prev.awsRoleArn ? { awsRoleArn: defaults.roleArn } : {}),
+      ...(defaults.externalId && !prev.awsExternalId ? { awsExternalId: defaults.externalId } : {}),
+    }));
+  }, [platformConfig]);
+
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
@@ -260,12 +291,16 @@ export const CreateProjectPage: FC = () => {
     const awsAccountId = form.awsAccountId.trim();
     const awsRoleArn = form.awsRoleArn.trim();
     const awsExternalId = form.awsExternalId.trim();
-    if (!awsAccountId || !awsRoleArn || !awsExternalId) {
-      setError('Provide the AWS account ID, IAM role ARN, and external ID for this project.');
+    if (!awsAccountId) {
+      setError('AWS account ID is required.');
       return;
     }
     if (!/^\d{12}$/.test(awsAccountId)) {
       setError('AWS account ID must be a 12-digit identifier.');
+      return;
+    }
+    if (!devMode && (!awsRoleArn || !awsExternalId)) {
+      setError('Provide the IAM role ARN and external ID for this project (required in production mode).');
       return;
     }
 
@@ -503,9 +538,13 @@ export const CreateProjectPage: FC = () => {
                 AWS deployment credentials
               </Typography>
               <Typography variant="body2" color="textSecondary">
-                ÆGIS uses a per-project AWS account binding when launching clusters. Provide the account, IAM role ARN,
-                and external ID configured for this project&apos;s spoke account.
+                {devMode
+                  ? 'Dev mode: only the AWS account ID is required. Role ARN and external ID are optional (ambient credentials will be used).'
+                  : 'Provide the account, IAM role ARN, and external ID configured for this project\u2019s spoke account.'}
               </Typography>
+              {devMode && (
+                <Chip label="Dev Mode" size="small" color="default" />
+              )}
               <div className={classes.gridRow}>
                 <TextField
                   label="AWS Account ID"
@@ -519,18 +558,22 @@ export const CreateProjectPage: FC = () => {
                 <TextField
                   label="IAM Role ARN"
                   variant="outlined"
-                  required
+                  required={!devMode}
                   value={form.awsRoleArn}
                   onChange={handleTextField('awsRoleArn')}
-                  helperText="Cross-account role that Pulumi assumes (e.g. arn:aws:iam::123456789012:role/AegisPlatformRole)."
+                  helperText={devMode
+                    ? 'Optional in dev mode. Cross-account role that Pulumi assumes.'
+                    : 'Cross-account role that Pulumi assumes (e.g. arn:aws:iam::123456789012:role/AegisPlatformRole).'}
                 />
                 <TextField
                   label="External ID"
                   variant="outlined"
-                  required
+                  required={!devMode}
                   value={form.awsExternalId}
                   onChange={handleTextField('awsExternalId')}
-                  helperText="External ID configured on the IAM role trust policy."
+                  helperText={devMode
+                    ? 'Optional in dev mode. External ID on the IAM role trust policy.'
+                    : 'External ID configured on the IAM role trust policy.'}
                 />
               </div>
             </CardContent>

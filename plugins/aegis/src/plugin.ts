@@ -103,7 +103,7 @@ export const AegisCostAnalyticsFinOpsPage = aegisPlugin.provide(
       import('./components/AegisCostDashboardPage').then(
         m => m.AegisCostDashboardPage as any,
       ),
-    mountPoint: costDashboardRouteRef as any,
+    mountPoint: costDashboardRouteRef,
   }),
 );
 
@@ -114,7 +114,7 @@ export const AegisQuotaManagementFinOpsPage = aegisPlugin.provide(
       import('./components/AegisQuotaManagementPage').then(
         m => m.AegisQuotaManagementPage as any,
       ),
-    mountPoint: quotaManagementRouteRef as any,
+    mountPoint: quotaManagementRouteRef,
   }),
 );
 
@@ -125,7 +125,7 @@ export const AegisBillingAlertsFinOpsPage = aegisPlugin.provide(
       import('./components/AegisBillingAlertsPage').then(
         m => m.AegisBillingAlertsPage as any,
       ),
-    mountPoint: billingAlertsRouteRef as any,
+    mountPoint: billingAlertsRouteRef,
   }),
 );
 
@@ -136,7 +136,7 @@ export const AegisOpsMetricsPage = aegisPlugin.provide(
       import('./components/AegisOpsMetricsPage').then(
         m => m.AegisOpsMetricsPage as any,
       ),
-    mountPoint: opsMetricsRouteRef as any,
+    mountPoint: opsMetricsRouteRef,
   }),
 );
 
@@ -147,7 +147,7 @@ export const AegisResourceDetailsPage = aegisPlugin.provide(
       import('./components/AegisResourceDetailsPage').then(
         m => m.AegisResourceDetailsPage as any,
       ),
-    mountPoint: opsResourceDetailsRouteRef as any,
+    mountPoint: opsResourceDetailsRouteRef,
   }),
 );
 
@@ -158,7 +158,7 @@ export const AegisLogExplorerPage = aegisPlugin.provide(
       import('./components/AegisLogExplorerPage').then(
         m => m.AegisLogExplorerPage as any,
       ),
-    mountPoint: opsLogExplorerRouteRef as any,
+    mountPoint: opsLogExplorerRouteRef,
   }),
 );
 
@@ -169,7 +169,7 @@ export const AegisAlertsDashboardPage = aegisPlugin.provide(
       import('./components/AegisAlertsDashboardPage').then(
         m => m.AegisAlertsDashboardPage as any,
       ),
-    mountPoint: opsAlertsRouteRef as any,
+    mountPoint: opsAlertsRouteRef,
   }),
 );
 
@@ -180,7 +180,7 @@ export const AegisClusterConfigPage = aegisPlugin.provide(
       import('./components/AegisClusterConfigPage').then(
         m => m.AegisClusterConfigPage as any,
       ),
-    mountPoint: opsConfigRouteRef as any,
+    mountPoint: opsConfigRouteRef,
   }),
 );
 

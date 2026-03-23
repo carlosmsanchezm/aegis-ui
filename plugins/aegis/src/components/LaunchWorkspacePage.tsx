@@ -568,6 +568,8 @@ export const LaunchWorkspacePage: FC = () => {
     image: '',
     ports: '22',
     env: '',
+    persistentStorage: true,
+    storageSize: '50Gi',
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -908,6 +910,11 @@ export const LaunchWorkspacePage: FC = () => {
         interactive: true,
         ports: ports.length > 0 ? ports : undefined,
         env: Object.keys(env).length > 0 ? env : undefined,
+        storage: {
+          persistent: form.persistentStorage,
+          size: form.persistentStorage ? form.storageSize.trim() || '50Gi' : undefined,
+          mountPath: '/home/coder',
+        },
       },
     };
 
@@ -1104,13 +1111,16 @@ export const LaunchWorkspacePage: FC = () => {
                         fullWidth
                         options={projectOptions.map(option => option.id)}
                         value={form.projectId}
-                        inputValue={form.projectId}
                         onChange={(_, value) =>
                           setForm(prev => ({ ...prev, projectId: (value ?? '').trim() }))
                         }
-                        onInputChange={(_, value) =>
-                          setForm(prev => ({ ...prev, projectId: value ?? '' }))
-                        }
+                        onInputChange={(_, value, reason) => {
+                          // Only update form.projectId on user input (free-text typing),
+                          // NOT on 'reset' which fires after selection with the display label.
+                          if (reason === 'input') {
+                            setForm(prev => ({ ...prev, projectId: value ?? '' }));
+                          }
+                        }}
                         getOptionLabel={option => {
                           const meta = projectOptionLookup.get(option);
                           return meta?.name ?? option;
@@ -1317,15 +1327,79 @@ export const LaunchWorkspacePage: FC = () => {
                     <Typography variant="overline" color="textSecondary">
                       Runtime configuration
                     </Typography>
-                    <TextField
-                      label="Container image"
-                      value={form.image}
-                      onChange={handleFormFieldChange('image')}
-                      variant="outlined"
-                      required
-                      fullWidth
-                      helperText="OCI image with your workspace runtime"
+                    <FormControl variant="outlined" fullWidth>
+                      <InputLabel id="launch-workspace-image-template">
+                        Workspace image
+                      </InputLabel>
+                      <Select
+                        labelId="launch-workspace-image-template"
+                        label="Workspace image"
+                        value={selectedTemplate?.id === 'custom' ? 'custom' : (form.image || 'default')}
+                        onChange={(e) => {
+                          const val = e.target.value as string;
+                          if (val === 'custom') {
+                            setForm(prev => ({ ...prev, image: '' }));
+                          } else if (val === 'default') {
+                            setForm(prev => ({ ...prev, image: selectedTemplate?.defaults.image || '' }));
+                          }
+                        }}
+                      >
+                        <MenuItem value="default">
+                          <div>
+                            <Typography variant="subtitle2">Default Workspace</Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              Python, Git, SSH, CUDA runtime. pip install your packages.
+                            </Typography>
+                          </div>
+                        </MenuItem>
+                        <MenuItem value="custom">
+                          <div>
+                            <Typography variant="subtitle2">Custom Image</Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              Provide your own container image URI from your registry.
+                            </Typography>
+                          </div>
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                    {(selectedTemplate?.id === 'custom' || !form.image) && (
+                      <TextField
+                        label="Container image URI"
+                        value={form.image}
+                        onChange={handleFormFieldChange('image')}
+                        variant="outlined"
+                        required
+                        fullWidth
+                        helperText="OCI image with your workspace runtime (e.g. your-registry/workspace:latest)"
+                      />
+                    )}
+                    <Divider style={{ margin: '8px 0' }} />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={form.persistentStorage}
+                          onChange={(e) => setForm(prev => ({ ...prev, persistentStorage: e.target.checked }))}
+                          color="primary"
+                        />
+                      }
+                      label="Persistent storage"
                     />
+                    <FormHelperText>
+                      {form.persistentStorage
+                        ? 'Data survives workspace restarts. Mounted at /home/coder.'
+                        : 'Ephemeral — data is lost when the workspace stops.'}
+                    </FormHelperText>
+                    {form.persistentStorage && (
+                      <TextField
+                        label="Storage size"
+                        value={form.storageSize}
+                        onChange={(e) => setForm(prev => ({ ...prev, storageSize: e.target.value }))}
+                        variant="outlined"
+                        fullWidth
+                        helperText="e.g. 50Gi, 100Gi, 200Gi"
+                        style={{ marginTop: 8 }}
+                      />
+                    )}
                     <FormControl
                       variant="outlined"
                       fullWidth
@@ -1512,6 +1586,14 @@ export const LaunchWorkspacePage: FC = () => {
                     <div className={classes.reviewRow}>
                       <span className={classes.reviewLabel}>Container image</span>
                       <span className={classes.reviewValue}>{form.image || '—'}</span>
+                    </div>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <div className={classes.reviewRow}>
+                      <span className={classes.reviewLabel}>Persistent storage</span>
+                      <span className={classes.reviewValue}>
+                        {form.persistentStorage ? `${form.storageSize} at /home/coder` : 'Ephemeral'}
+                      </span>
                     </div>
                   </Grid>
                   <Grid item xs={12} md={6}>

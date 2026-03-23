@@ -1,0 +1,68 @@
+# Multi-stage Dockerfile for aegis-ui (Backstage) production build
+# Builds everything from source inside Docker - no host pre-build required.
+# Execute with repo root as Docker context:
+#   docker build -t aegis-ui -f packages/backend/Dockerfile.cloud .
+
+# Stage 1: Install dependencies and build
+FROM node:22-bookworm-slim AS build
+
+ENV PYTHON=/usr/bin/python3
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends python3 g++ build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+USER node
+WORKDIR /app
+
+# Copy everything (respecting .dockerignore)
+COPY --chown=node:node . .
+
+# Install all deps (including devDependencies for build)
+RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
+    YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+
+# Build
+RUN yarn tsc && yarn build:backend
+
+# Stage 2: Production image
+FROM node:22-bookworm-slim
+
+ENV PYTHON=/usr/bin/python3
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends python3 g++ build-essential libsqlite3-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+USER node
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NODE_OPTIONS="--no-node-snapshot"
+
+# Copy yarn config, lockfile, and package manifests from build stage
+COPY --chown=node:node --from=build /app/.yarn ./.yarn
+COPY --chown=node:node --from=build /app/.yarnrc.yml ./
+COPY --chown=node:node --from=build /app/backstage.json ./
+COPY --chown=node:node --from=build /app/yarn.lock /app/package.json ./
+COPY --chown=node:node --from=build /app/packages/backend/package.json packages/backend/package.json
+COPY --chown=node:node --from=build /app/packages/app/package.json packages/app/package.json
+COPY --chown=node:node --from=build /app/plugins/aegis/package.json plugins/aegis/package.json
+
+# Install production deps only
+RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
+    yarn workspaces focus --all --production && rm -rf "$(yarn cache clean)"
+
+# Copy built backend and app output
+COPY --chown=node:node --from=build /app/packages/backend/dist packages/backend/dist
+COPY --chown=node:node --from=build /app/packages/app/dist packages/app/dist
+COPY --chown=node:node --from=build /app/plugins/aegis/dist plugins/aegis/dist
+
+# Copy app configs
+COPY --chown=node:node --from=build /app/app-config.yaml /app/app-config.production.yaml ./
+
+CMD ["node", "packages/backend", "--config", "app-config.yaml", "--config", "app-config.production.yaml"]

@@ -29,7 +29,14 @@ import { alpha } from '@material-ui/core/styles/colorManipulator';
 import RefreshIcon from '@material-ui/icons/Refresh';
 import RocketLaunchIcon from '@material-ui/icons/Whatshot';
 import { Skeleton } from '@material-ui/lab';
-import { WorkloadDTO, isTerminalStatus, listWorkloads } from '../api/aegisClient';
+import {
+  ApiError,
+  ProjectRecord,
+  WorkloadDTO,
+  isTerminalStatus,
+  listProjects,
+  listWorkloads,
+} from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
 import { createWorkspaceRouteRef } from '../routes';
 import { WorkloadCard } from './WorkloadCard';
@@ -127,8 +134,9 @@ export const WorkloadListPage: FC = () => {
 
   const [projectId, setProjectId] = useState(() => {
     const params = new URLSearchParams(location.search);
-    return params.get('project') ?? '';
+    return params.get('project')?.trim() ?? '';
   });
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [rows, setRows] = useState<WorkloadRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,31 +153,68 @@ export const WorkloadListPage: FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const projectParam = params.get('project');
+    const projectParam = params.get('project')?.trim() ?? '';
     const highlightParam = params.get('highlight');
-    if (projectParam) {
+    if (projectParam !== '') {
       setProjectId(projectParam);
     }
     setHighlightId(highlightParam);
   }, [location.search]);
 
+  useEffect(() => {
+    let active = true;
+    const loadProjects = async () => {
+      try {
+        const response = await listProjects(
+          fetchApi,
+          discoveryApi,
+          identityApi,
+          authApi,
+        );
+        if (!active) {
+          return;
+        }
+        const items = response.items ?? [];
+        setProjects(items);
+        if (items.length > 0) {
+          setProjectId(prev => prev.trim() || items[0].id);
+        }
+      } catch {
+        if (active) {
+          setProjects([]);
+        }
+      }
+    };
+    loadProjects();
+    return () => {
+      active = false;
+    };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
       const silent = opts?.silent ?? false;
       try {
+        const normalizedProjectId = projectId.trim();
         if (!silent) {
           setLoading(true);
         }
         setError(null);
-        
+
+        if (!normalizedProjectId) {
+          setRows([]);
+          setLastUpdated(new Date());
+          return;
+        }
+
         const items = await listWorkloads(
           fetchApi,
           discoveryApi,
           identityApi,
           authApi,
-          projectId,
+          normalizedProjectId,
         );
-        
+
         const mapped: WorkloadRow[] = items.map(w => ({
           ...w,
           displayStatus: w.uiStatus ?? w.status ?? 'PLACED',
@@ -177,7 +222,8 @@ export const WorkloadListPage: FC = () => {
         setRows(mapped);
         setLastUpdated(new Date());
       } catch (e: any) {
-        const msg = e?.message ?? String(e);
+        const msg =
+          e instanceof ApiError ? e.message : e?.message ?? String(e);
         setError(msg);
         alertApi.post({
           message: `Failed to load workloads: ${msg}`,
@@ -299,9 +345,21 @@ export const WorkloadListPage: FC = () => {
             <TextField
               label="Project ID"
               fullWidth
+              select={projects.length > 0}
               value={projectId}
               onChange={handleProjectChange}
-            />
+              helperText={
+                projects.length > 0
+                  ? 'Select a project to load workloads.'
+                  : 'Enter a project ID (for example: demo-2).'
+              }
+            >
+              {projects.map(project => (
+                <MenuItem key={project.id} value={project.id}>
+                  {project.displayName || project.id}
+                </MenuItem>
+              ))}
+            </TextField>
           </Grid>
           <Grid item xs={12} md={4}>
             <TextField

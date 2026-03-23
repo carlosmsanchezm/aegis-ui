@@ -1,0 +1,42 @@
+---
+apiVersion: v1
+
+name: "aegis/ui"
+
+tags:
+  - "1.0.0"
+  - "latest"
+
+args:
+  BASE_REGISTRY: "registry1.dso.mil"
+  BASE_IMAGE: "ironbank/opensource/nodejs/nodejs22"
+  BASE_TAG: "22.14"
+  BUILDER_REGISTRY: "registry1.dso.mil"
+  BUILDER_IMAGE: "ironbank/opensource/nodejs/nodejs22"
+  BUILDER_TAG: "22.14"
+
+labels:
+  org.opencontainers.image.title: "aegis-ui"
+  org.opencontainers.image.description: "Aegis Platform UI — Backstage-based developer portal for GPU workload management"
+  org.opencontainers.image.vendor: "Aegis Platform"
+  org.opencontainers.image.licenses: "Proprietary"
+  org.opencontainers.image.version: "1.0.0"
+  org.opencontainers.image.url: "https://aegis-platform.tech"
+  mil.dso.ironbank.image.keywords: "backstage,ui,developer-portal,gpu,workload"
+  mil.dso.ironbank.image.type: "commercial"
+  mil.dso.ironbank.product.name: "aegis-ui"
+
+# Aegis UI source — update hash when tagging release
+resources:
+  - filename: aegis-ui-src.tar.gz
+    url: https://github.com/carlosmsanchezm/aegis-ui/archive/refs/tags/v1.0.0.tar.gz
+    validation:
+      type: sha256
+      value: 127f0fac4846b3c7d6ea871041c0b3fa8b4db835883bdbcfd1021e812920b435
+
+maintainers:
+  - name: "Carlos Sanchez"
+    username: "cms553"
+    email: "carlos@aegis-platform.tech"
+    company: "Aegis Platform LLC"
+    cht_member: false

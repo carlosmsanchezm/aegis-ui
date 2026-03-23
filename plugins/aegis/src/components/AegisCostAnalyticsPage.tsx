@@ -1,12 +1,27 @@
-import { FC, useMemo } from 'react';
+import { FC, useEffect, useMemo, useState } from 'react';
 import {
   Page,
   Content,
   ContentHeader,
   HeaderLabel,
+  Progress,
   Table,
   TableColumn,
+  WarningPanel,
 } from '@backstage/core-components';
+import {
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../api/refs';
+import {
+  BudgetRecord,
+  listBudgets,
+  listProjects,
+  ProjectRecord,
+} from '../api/aegisClient';
 import {
   Box,
   Chip,
@@ -83,121 +98,103 @@ const useStyles = makeStyles(theme => ({
   },
 }));
 
-type ProjectUsage = {
+type ProjectBudgetRow = {
   project: string;
-  gpuHours: number;
-  monthOverMonth: number;
+  projectId: string;
   budget: number;
-  actual: number;
-  forecast: number;
-  quotaUtilization: number;
+  spent: number;
+  utilization: number;
 };
-
-const projectUsageData: ProjectUsage[] = [
-  {
-    project: 'Atlas Vision Training',
-    gpuHours: 482,
-    monthOverMonth: 12,
-    budget: 18000,
-    actual: 16240,
-    forecast: 17600,
-    quotaUtilization: 0.83,
-  },
-  {
-    project: 'Conversational R&D',
-    gpuHours: 388,
-    monthOverMonth: -6,
-    budget: 15500,
-    actual: 14980,
-    forecast: 15120,
-    quotaUtilization: 0.72,
-  },
-  {
-    project: 'Edge Deployment Validation',
-    gpuHours: 216,
-    monthOverMonth: 8,
-    budget: 9200,
-    actual: 8740,
-    forecast: 9100,
-    quotaUtilization: 0.61,
-  },
-  {
-    project: 'Model Compression Experiments',
-    gpuHours: 126,
-    monthOverMonth: 3,
-    budget: 6400,
-    actual: 6180,
-    forecast: 6400,
-    quotaUtilization: 0.49,
-  },
-];
-
-const quotaAlerts = [
-  {
-    project: 'Atlas Vision Training',
-    message: '83% of GPU hour quota consumed for April.',
-    severity: 'warning' as const,
-  },
-  {
-    project: 'Conversational R&D',
-    message: 'Budget tracking indicates $520 under forecast.',
-    severity: 'ok' as const,
-  },
-  {
-    project: 'Edge Deployment Validation',
-    message: 'Quota holding steady at 61% utilization.',
-    severity: 'ok' as const,
-  },
-];
 
 export const AegisCostAnalyticsPage: FC = () => {
   const classes = useStyles();
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
 
-  const columns = useMemo<TableColumn<ProjectUsage>[]>(
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<ProjectBudgetRow[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const projectsRes = await listProjects(fetchApi, discoveryApi, identityApi, authApi);
+        const projects: ProjectRecord[] = projectsRes.items ?? [];
+
+        const budgetRows: ProjectBudgetRow[] = [];
+        for (const project of projects) {
+          try {
+            const budgets: BudgetRecord[] = await listBudgets(
+              fetchApi, discoveryApi, identityApi, authApi, project.id,
+            );
+            const totalLimit = budgets.reduce((s, b) => s + (b.limitUsd ?? 0), 0);
+            const totalSpent = budgets.reduce((s, b) => s + (b.spentUsd ?? 0), 0);
+            budgetRows.push({
+              project: project.displayName || project.id,
+              projectId: project.id,
+              budget: totalLimit,
+              spent: totalSpent,
+              utilization: totalLimit > 0 ? totalSpent / totalLimit : 0,
+            });
+          } catch {
+            budgetRows.push({
+              project: project.displayName || project.id,
+              projectId: project.id,
+              budget: 0,
+              spent: 0,
+              utilization: 0,
+            });
+          }
+        }
+        if (active) {
+          setRows(budgetRows);
+          setError(null);
+        }
+      } catch (err) {
+        if (active) {
+          setError(err instanceof Error ? err.message : 'Failed to load analytics data');
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => { active = false; };
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  const columns = useMemo<TableColumn<ProjectBudgetRow>[]>(
     () => [
       { title: 'Project', field: 'project' },
       {
-        title: 'GPU Hours (30d)',
-        field: 'gpuHours',
+        title: 'Budget',
+        field: 'budget',
         render: row => (
           <Typography variant="body2" component="span">
-            {row.gpuHours.toLocaleString('en-US')} hrs
+            ${row.budget.toLocaleString('en-US')}
           </Typography>
         ),
       },
       {
-        title: 'Trend',
-        field: 'monthOverMonth',
+        title: 'Spent',
+        field: 'spent',
         render: row => (
-          <Chip
-            label={`${row.monthOverMonth > 0 ? '+' : ''}${row.monthOverMonth}% MoM`}
-            color={row.monthOverMonth >= 0 ? 'primary' : 'secondary'}
-            size="small"
-          />
+          <Typography variant="body2" component="span">
+            ${row.spent.toLocaleString('en-US')}
+          </Typography>
         ),
       },
       {
-        title: 'Budget vs. Actual',
-        field: 'actual',
-        render: row => (
-          <Box display="flex" flexDirection="column">
-            <Typography variant="body2">
-              ${row.actual.toLocaleString('en-US')} / ${row.budget.toLocaleString('en-US')}
-            </Typography>
-            <Typography variant="caption" color="textSecondary">
-              Forecast: ${row.forecast.toLocaleString('en-US')}
-            </Typography>
-          </Box>
-        ),
-      },
-      {
-        title: 'Quota Utilization',
-        field: 'quotaUtilization',
+        title: 'Utilization',
+        field: 'utilization',
         render: row => (
           <Chip
-            label={`${Math.round(row.quotaUtilization * 100)}%`}
+            label={`${Math.round(row.utilization * 100)}%`}
             size="small"
-            color={row.quotaUtilization > 0.85 ? 'secondary' : 'primary'}
+            color={row.utilization > 0.85 ? 'secondary' : 'primary'}
           />
         ),
       },
@@ -206,36 +203,41 @@ export const AegisCostAnalyticsPage: FC = () => {
   );
 
   const totals = useMemo(() => {
-    const spend = projectUsageData.reduce((sum, p) => sum + p.actual, 0);
-    const budget = projectUsageData.reduce((sum, p) => sum + p.budget, 0);
-    const forecast = projectUsageData.reduce((sum, p) => sum + p.forecast, 0);
-    const utilization =
-      projectUsageData.reduce((sum, p) => sum + p.quotaUtilization, 0) /
-      projectUsageData.length;
-
-    return {
-      spend,
-      budget,
-      forecast,
-      utilization,
-    };
-  }, []);
+    const spend = rows.reduce((sum, r) => sum + r.spent, 0);
+    const budget = rows.reduce((sum, r) => sum + r.budget, 0);
+    return { spend, budget };
+  }, [rows]);
 
   return (
     <Page themeId="tool">
       <Content>
         <ContentHeader title="Usage & Cost Analytics">
-          <HeaderLabel label="Reporting" value="30-day view" />
+          <HeaderLabel label="Reporting" value="Budget overview" />
         </ContentHeader>
+        {loading && <Progress />}
+        {error && (
+          <WarningPanel severity="warning" title="Failed to load analytics">
+            {error}
+          </WarningPanel>
+        )}
         <div className={classes.content}>
           <div className={classes.metricsRow}>
             <div className={classes.metricCard}>
-              <div className={classes.metricLabel}>Actual Spend</div>
+              <div className={classes.metricLabel}>Total Budget</div>
+              <div className={classes.metricValue}>
+                ${totals.budget.toLocaleString('en-US')}
+              </div>
+              <Typography variant="body2" color="textSecondary">
+                Allocated across {rows.length} project{rows.length !== 1 ? 's' : ''}
+              </Typography>
+            </div>
+            <div className={classes.metricCard}>
+              <div className={classes.metricLabel}>Total Spent</div>
               <div className={classes.metricValue}>
                 ${totals.spend.toLocaleString('en-US')}
               </div>
               <Typography variant="body2" color="textSecondary">
-                Across all active Aegis projects (30 days)
+                Reported by Platform API
               </Typography>
             </div>
             <div className={classes.metricCard}>
@@ -244,25 +246,14 @@ export const AegisCostAnalyticsPage: FC = () => {
                 ${(totals.budget - totals.spend).toLocaleString('en-US')}
               </div>
               <Typography variant="body2" color="textSecondary">
-                ${totals.budget.toLocaleString('en-US')} allocated
+                Across all active projects
               </Typography>
             </div>
             <div className={classes.metricCard}>
-              <div className={classes.metricLabel}>Forecasted Spend</div>
-              <div className={classes.metricValue}>
-                ${totals.forecast.toLocaleString('en-US')}
-              </div>
+              <div className={classes.metricLabel}>GPU Hours</div>
+              <div className={classes.metricValue}>—</div>
               <Typography variant="body2" color="textSecondary">
-                Based on rolling 7-day average
-              </Typography>
-            </div>
-            <div className={classes.metricCard}>
-              <div className={classes.metricLabel}>Quota Utilization</div>
-              <div className={classes.metricValue}>
-                {Math.round(totals.utilization * 100)}%
-              </div>
-              <Typography variant="body2" color="textSecondary">
-                Aggregate GPU hour consumption
+                Requires metering infrastructure
               </Typography>
             </div>
           </div>
@@ -273,33 +264,38 @@ export const AegisCostAnalyticsPage: FC = () => {
                 <Typography variant="h6" className={classes.cardTitle}>
                   Spend Over Time
                 </Typography>
-                <div className={classes.trendPlaceholder}>Time-Series Chart Placeholder</div>
+                <div className={classes.trendPlaceholder}>
+                  Requires Prometheus metering integration
+                </div>
               </Paper>
             </Grid>
             <Grid item xs={12} md={4}>
               <Paper className={classes.card}>
                 <Typography variant="h6" className={classes.cardTitle}>
-                  Quota Alerts
+                  Budget Alerts
                 </Typography>
                 <Box display="flex" flexDirection="column" gridGap={16}>
-                  {quotaAlerts.map(alert => (
-                    <Box
-                      key={alert.project}
-                      display="flex"
-                      flexDirection="column"
-                      gridGap={4}
-                    >
-                      <Typography variant="subtitle1">{alert.project}</Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        {alert.message}
-                      </Typography>
-                      <Chip
-                        size="small"
-                        label={alert.severity === 'warning' ? 'Monitor' : 'Healthy'}
-                        color={alert.severity === 'warning' ? 'secondary' : 'primary'}
-                      />
-                    </Box>
-                  ))}
+                  {rows.filter(r => r.utilization > 0.8).length === 0 ? (
+                    <Typography variant="body2" color="textSecondary">
+                      No budget alerts. All projects are within thresholds.
+                    </Typography>
+                  ) : (
+                    rows
+                      .filter(r => r.utilization > 0.8)
+                      .map(r => (
+                        <Box key={r.projectId} display="flex" flexDirection="column" gridGap={4}>
+                          <Typography variant="subtitle1">{r.project}</Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            {Math.round(r.utilization * 100)}% of budget consumed (${r.spent.toLocaleString('en-US')} / ${r.budget.toLocaleString('en-US')})
+                          </Typography>
+                          <Chip
+                            size="small"
+                            label={r.utilization > 0.9 ? 'Critical' : 'Monitor'}
+                            color="secondary"
+                          />
+                        </Box>
+                      ))
+                  )}
                 </Box>
               </Paper>
             </Grid>
@@ -307,11 +303,11 @@ export const AegisCostAnalyticsPage: FC = () => {
 
           <Paper className={classes.card}>
             <Typography variant="h6" className={classes.cardTitle}>
-              Per-Project Usage
+              Per-Project Budget
             </Typography>
             <Table
               options={{ paging: false, search: false, padding: 'dense' }}
-              data={projectUsageData}
+              data={rows}
               columns={columns}
             />
           </Paper>

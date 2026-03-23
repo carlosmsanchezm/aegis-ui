@@ -103,10 +103,10 @@ catalog:
     entityFilename: catalog-info.yaml
     pullRequestBranchName: backstage-integration
   rules:
-    - allow: [Component, System, API, Resource, Location]
+    - allow: [Component, System, API, Resource, Location, User, Group]
   locations:
     - type: file
-      target: ../../catalog-info.yaml
+      target: /Users/carlossanchez/code/aegis-ui/catalog-info.yaml
       rules:
         - allow:
             - Component

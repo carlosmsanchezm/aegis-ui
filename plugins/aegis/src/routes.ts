@@ -28,52 +28,36 @@ export const createWorkspaceRouteRef = createSubRouteRef({
   path: '/workspaces/create',
 });
 
-export const costDashboardRouteRef = createSubRouteRef({
+export const costDashboardRouteRef = createRouteRef({
   id: 'aegis-cost-dashboard',
-  parent: rootRouteRef,
-  path: '/finops/cost-dashboard',
 });
 
-export const quotaManagementRouteRef = createSubRouteRef({
+export const quotaManagementRouteRef = createRouteRef({
   id: 'aegis-quota-management',
-  parent: rootRouteRef,
-  path: '/finops/quotas',
 });
 
-export const billingAlertsRouteRef = createSubRouteRef({
+export const billingAlertsRouteRef = createRouteRef({
   id: 'aegis-billing-alerts',
-  parent: rootRouteRef,
-  path: '/finops/alerts',
 });
 
-export const opsMetricsRouteRef = createSubRouteRef({
+export const opsMetricsRouteRef = createRouteRef({
   id: 'aegis-operations-metrics',
-  parent: rootRouteRef,
-  path: '/operations/metrics',
 });
 
-export const opsResourceDetailsRouteRef = createSubRouteRef({
+export const opsResourceDetailsRouteRef = createRouteRef({
   id: 'aegis-operations-resource-details',
-  parent: rootRouteRef,
-  path: '/operations/resources/:resourceId',
 });
 
-export const opsLogExplorerRouteRef = createSubRouteRef({
+export const opsLogExplorerRouteRef = createRouteRef({
   id: 'aegis-operations-logs',
-  parent: rootRouteRef,
-  path: '/operations/logs',
 });
 
-export const opsAlertsRouteRef = createSubRouteRef({
+export const opsAlertsRouteRef = createRouteRef({
   id: 'aegis-operations-alerts',
-  parent: rootRouteRef,
-  path: '/operations/alerts',
 });
 
-export const opsConfigRouteRef = createSubRouteRef({
+export const opsConfigRouteRef = createRouteRef({
   id: 'aegis-operations-configuration',
-  parent: rootRouteRef,
-  path: '/operations/configuration',
 });
 
 export const costAnalyticsRouteRef = createSubRouteRef({

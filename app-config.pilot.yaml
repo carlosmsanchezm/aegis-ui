@@ -1,7 +1,15 @@
-# Local development configuration - points to local platform-api via port-forward
-# Requires: make port-forward (forwards to localhost:10080)
+# Pilot test configuration - points to pilot platform-api on port 19080
+# Ports: frontend=3001, backend=7009
+
+app:
+  baseUrl: http://localhost:3001
 
 backend:
+  baseUrl: http://localhost:7009
+  listen:
+    port: 7009
+  cors:
+    origin: http://localhost:3001
   auth:
     keys:
       - secret: dev-secret
@@ -29,7 +37,7 @@ auth:
         metadataUrl: https://keycloak.localtest.me/realms/aegis/.well-known/openid-configuration
         additionalScopes:
           - offline_access
-        callbackUrl: http://localhost:7008/api/auth/keycloak/handler/frame
+        callbackUrl: http://localhost:7009/api/auth/keycloak/handler/frame
         prompt: login
         signIn:
           resolvers:
@@ -41,7 +49,7 @@ auth:
 proxy:
   endpoints:
     '/aegis':
-      target: 'http://localhost:10080'
+      target: 'http://localhost:19080'
       changeOrigin: true
       credentials: forward
       allowedHeaders:
