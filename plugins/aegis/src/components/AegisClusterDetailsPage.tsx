@@ -48,6 +48,7 @@ import {
   ClusterNodePoolStatus,
   ClusterSummary,
   getCluster,
+  getProvisioningLogs,
   listClusters,
 } from '../api/aegisClient';
 import { keycloakAuthApiRef } from '../api/refs';
@@ -82,7 +83,7 @@ const useStyles = makeStyles(theme => ({
   },
 }));
 
-type DetailTab = 0 | 1 | 2 | 3;
+type DetailTab = 0 | 1 | 2 | 3 | 4;
 
 const statusChipColor: Record<ClusterDetail['phase'], 'primary' | 'secondary' | 'default'> = {
   Ready: 'primary',
@@ -241,6 +242,29 @@ const buildClusterFromSummary = (summary: ClusterSummary): ClusterDetail => {
       ? summary.lastHeartbeat
       : undefined;
 
+  const normalizedPhase = (summary.phase ?? '').toLowerCase();
+  const heartbeatCondition: ClusterJobCondition | undefined =
+    normalizedPhase === 'pending' && !lastHeartbeat
+      ? {
+          type: 'AgentConnection',
+          status: 'Unknown',
+          message: 'Cluster import is recorded. Waiting for first agent heartbeat.',
+        }
+      : normalizedPhase === 'unhealthy'
+        ? {
+            type: 'AgentConnection',
+            status: 'False',
+            message:
+              'Agent heartbeat is stale or missing. Verify aegis-spoke deployment and control-plane connectivity.',
+          }
+        : lastHeartbeat
+          ? {
+              type: 'AgentConnection',
+              status: 'True',
+              message: `Last heartbeat received at ${lastHeartbeat}.`,
+            }
+          : undefined;
+
   return {
     id: summary.id,
     name: summary.name || summary.id,
@@ -250,6 +274,12 @@ const buildClusterFromSummary = (summary: ClusterSummary): ClusterDetail => {
     phase: normalizeSummaryPhase(summary.phase),
     createdAt,
     ...(lastHeartbeat ? { lastSyncedAt: lastHeartbeat } : {}),
+    ...(heartbeatCondition
+      ? {
+          latestCondition: heartbeatCondition,
+          conditions: [heartbeatCondition],
+        }
+      : {}),
   };
 };
 
@@ -298,9 +328,89 @@ const ActivityList = ({ activity }: { activity?: ClusterActivityItem[] }) => {
   );
 };
 
+const ProvisioningLogPanel = ({
+  clusterId,
+  clusterName,
+  projectId,
+  provisioningJobId,
+  fetchApi,
+  discoveryApi,
+  identityApi,
+  authApi,
+}: {
+  clusterId: string;
+  clusterName: string;
+  projectId: string;
+  provisioningJobId?: string;
+  fetchApi: any;
+  discoveryApi: any;
+  identityApi: any;
+  authApi: any;
+}) => {
+  const [logs, setLogs] = useState<string[]>([]);
+  const [logLoading, setLogLoading] = useState(true);
+  const [logPhase, setLogPhase] = useState<string>('');
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchLogs = async () => {
+      setLogLoading(true);
+      try {
+        // Use provisioning job ID from cluster detail if available,
+        // otherwise derive from naming convention.
+        const jobId = provisioningJobId || `infra-${projectId}-${clusterName || clusterId}`;
+        const res = await getProvisioningLogs(fetchApi, discoveryApi, identityApi, authApi, jobId);
+        if (!mounted) return;
+        setLogs((res.logs ?? []).map((e: any) => e.message ?? ''));
+        setLogPhase(res.phase ?? '');
+      } catch {
+        if (mounted) setLogs([]);
+      } finally {
+        if (mounted) setLogLoading(false);
+      }
+    };
+    fetchLogs();
+    return () => { mounted = false; };
+  }, [clusterId, clusterName, projectId, fetchApi, discoveryApi, identityApi, authApi]);
+
+  if (logLoading) return <Progress />;
+
+  return (
+    <Card>
+      <CardContent>
+        <Typography variant="h6">
+          Provisioning log {logPhase ? `(${logPhase})` : ''}
+        </Typography>
+        {logs.length === 0 ? (
+          <Typography color="textSecondary">No provisioning logs available for this cluster.</Typography>
+        ) : (
+          <Box
+            component="pre"
+            style={{
+              background: '#1e1e1e',
+              color: '#d4d4d4',
+              padding: 16,
+              borderRadius: 4,
+              overflow: 'auto',
+              maxHeight: 500,
+              fontSize: 12,
+              fontFamily: 'monospace',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}
+          >
+            {logs.join('\n')}
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 export const AegisClusterDetailsPage = () => {
   const classes = useStyles();
-  const { id } = useParams<{ id: string }>();
+  const { id, clusterId: routeClusterId } = useParams<{ id?: string; clusterId?: string }>();
+  const resolvedClusterId = id ?? routeClusterId;
   const fetchApi = useApi(fetchApiRef);
   const discoveryApi = useApi(discoveryApiRef);
   const identityApi = useApi(identityApiRef);
@@ -315,7 +425,7 @@ export const AegisClusterDetailsPage = () => {
   const [usingFallback, setUsingFallback] = useState(false);
 
   useEffect(() => {
-    if (!id) {
+    if (!resolvedClusterId) {
       setError('Cluster identifier missing.');
       setLoading(false);
       return;
@@ -323,7 +433,7 @@ export const AegisClusterDetailsPage = () => {
     setLoading(true);
     setError(null);
     setUsingFallback(false);
-    getCluster(fetchApi, discoveryApi, identityApi, authApi, id)
+    getCluster(fetchApi, discoveryApi, identityApi, authApi, resolvedClusterId)
       .then(detail => {
         setCluster(detail);
       })
@@ -343,7 +453,7 @@ export const AegisClusterDetailsPage = () => {
               identityApi,
               authApi,
             );
-            const summary = summaries.find(item => item.id === id);
+            const summary = summaries.find(item => item.id === resolvedClusterId);
             if (summary) {
               setCluster(buildClusterFromSummary(summary));
               setUsingFallback(false);
@@ -357,7 +467,7 @@ export const AegisClusterDetailsPage = () => {
 
             setCluster(null);
             setUsingFallback(false);
-            setError(`Cluster "${id}" was not found (or you do not have access).`);
+            setError(`Cluster "${resolvedClusterId}" was not found (or you do not have access).`);
             return;
           } catch (listErr: unknown) {
             if (listErr instanceof ApiError && (listErr.status === 401 || listErr.status === 403)) {
@@ -368,7 +478,7 @@ export const AegisClusterDetailsPage = () => {
             }
           }
 
-          setCluster(buildFallbackCluster(id));
+          setCluster(buildFallbackCluster(resolvedClusterId));
           setUsingFallback(true);
           alertApi.post({
             severity: 'info',
@@ -381,7 +491,7 @@ export const AegisClusterDetailsPage = () => {
         setError(err instanceof Error ? err.message : 'Unable to load cluster details.');
       })
       .finally(() => setLoading(false));
-  }, [alertApi, authApi, discoveryApi, fetchApi, id, identityApi]);
+  }, [alertApi, authApi, discoveryApi, fetchApi, identityApi, resolvedClusterId]);
 
   const totalNodePools = useMemo(() => {
     const primary = cluster?.nodePools?.length ?? 0;
@@ -492,6 +602,7 @@ export const AegisClusterDetailsPage = () => {
               <Tab label={`Node pools (${totalNodePools})`} />
               <Tab label="Integrations" />
               <Tab label="Activity & logs" />
+              <Tab label="Provisioning log" />
             </Tabs>
             <div className={classes.tabPanel}>
               {tab === 0 && (
@@ -637,6 +748,18 @@ export const AegisClusterDetailsPage = () => {
                     <ActivityList activity={cluster.activity} />
                   </CardContent>
                 </Card>
+              )}
+              {tab === 4 && (
+                <ProvisioningLogPanel
+                  clusterId={cluster.id}
+                  clusterName={cluster.name}
+                  projectId={cluster.projectId}
+                  provisioningJobId={cluster.provisioningJobId}
+                  fetchApi={fetchApi}
+                  discoveryApi={discoveryApi}
+                  identityApi={identityApi}
+                  authApi={authApi}
+                />
               )}
             </div>
           </>

@@ -50,6 +50,10 @@ const useStyles = makeStyles(theme => ({
     background: 'rgba(148, 163, 184, 0.22)',
     color: theme.palette.text.secondary,
   },
+  warning: {
+    background: 'rgba(245, 158, 11, 0.16)',
+    color: theme.palette.warning.main,
+  },
   '@keyframes spin': {
     to: { transform: 'rotate(360deg)' },
   },
@@ -60,7 +64,7 @@ const useStyles = makeStyles(theme => ({
   },
 }));
 
-type StatusTone = 'provisioning' | 'ready' | 'failed' | 'stopping' | 'terminated';
+type StatusTone = 'provisioning' | 'ready' | 'failed' | 'stopping' | 'terminated' | 'warning';
 
 type StatusMeta = {
   tone: StatusTone;
@@ -74,6 +78,9 @@ const getStatusMeta = (status?: string): StatusMeta => {
   }
   if (normalized === 'FAILED') {
     return { tone: 'failed', label: 'Failed' };
+  }
+  if (normalized === 'SUSPENDED') {
+    return { tone: 'warning', label: 'Suspended' };
   }
   if (
     normalized === 'STOPPING' ||

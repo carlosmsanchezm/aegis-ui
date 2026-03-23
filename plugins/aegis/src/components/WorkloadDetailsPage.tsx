@@ -559,6 +559,16 @@ export const WorkloadDetailsPage: FC = () => {
                     {workload.message}
                   </Typography>
                 )}
+                {workload?.suspendReason && (
+                  <Typography variant="body2" className={classes.muted}>
+                    Reason: {workload.suspendReason === 'idle_timeout' ? 'Idle timeout exceeded' :
+                             workload.suspendReason === 'budget_exceeded' ? 'Budget limit reached' :
+                             workload.suspendReason === 'admin_action' ? 'Suspended by administrator' :
+                             workload.suspendReason === 'pod_failure' ? 'Pod failed to start' :
+                             workload.suspendReason}
+                    {workload.suspendedAtUtc && ` at ${new Date(workload.suspendedAtUtc).toLocaleString()}`}
+                  </Typography>
+                )}
               </Box>
             </Box>
             <Box className={classes.headerActions}>

@@ -39,6 +39,8 @@ export type WorkloadDTO = {
   uiStatus?: string;
   message?: string;
   url?: string;
+  suspendReason?: string;
+  suspendedAtUtc?: string;
   workspace?: WorkspaceSpec;
   training?: TrainingSpec;
 };
@@ -293,6 +295,20 @@ export type ClusterDetail = {
   account?: string;
   assumeRoleArn?: string;
   accountId?: string;
+  provisioningJobId?: string;
+  clusterEndpoint?: string;
+  proxyUrl?: string;
+  ilLevel?: string;
+  ttfGpuSecondsP50?: number;
+  availableFlavors?: string[];
+  labels?: Record<string, string>;
+  lastHeartbeat?: string;
+  observability?: {
+    lokiEndpoint?: string;
+    prometheusEndpoint?: string;
+    tempoEndpoint?: string;
+    alertmanagerEndpoint?: string;
+  };
 };
 
 export type PrometheusMetricSample = {
@@ -928,6 +944,7 @@ const restJson = async <TReq extends object | undefined, TRes>(
   return (await response.json()) as TRes;
 };
 
+// @ts-ignore: retained for future gRPC-web style calls
 const postJson = async <TReq extends object, TRes>(
   fetchApi: FetchApi,
   discoveryApi: DiscoveryApi,
@@ -1245,14 +1262,13 @@ export const getCluster = async (
   authApi: OAuthApi | undefined,
   clusterId: string,
 ): Promise<ClusterDetail> => {
-  return postJson<{ clusterId: string }, ClusterDetail>(
+  return restJson<undefined, ClusterDetail>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'GetCluster',
-    { clusterId },
-    { requireAuth: true },
+    `/api/v1/clusters/${encodeURIComponent(clusterId)}`,
+    { method: 'GET', requireAuth: true },
   );
 };
 
