@@ -1941,6 +1941,30 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@backstage/backend-openapi-utils@npm:^0.6.7":
+  version: 0.6.7
+  resolution: "@backstage/backend-openapi-utils@npm:0.6.7"
+  dependencies:
+    "@apidevtools/swagger-parser": "npm:^10.1.0"
+    "@backstage/backend-plugin-api": "npm:^1.8.0"
+    "@backstage/errors": "npm:^1.2.7"
+    "@backstage/types": "npm:^1.2.2"
+    "@types/express": "npm:^4.17.6"
+    "@types/express-serve-static-core": "npm:^4.17.5"
+    ajv: "npm:^8.16.0"
+    express: "npm:^4.22.0"
+    express-openapi-validator: "npm:^5.5.8"
+    express-promise-router: "npm:^4.1.0"
+    get-port: "npm:^5.1.1"
+    json-schema-to-ts: "npm:^3.0.0"
+    lodash: "npm:^4.17.21"
+    mockttp: "npm:^3.13.0"
+    openapi-merge: "npm:^1.3.2"
+    openapi3-ts: "npm:^3.1.2"
+  checksum: 10c0/76def9609c614361ee46688df8b0823eab7e662999bc0891915a280d1d7559b75de5fed2de1832d51106f8d87e82f07ebc21a827fbaff6573f6cb7618eb110a6
+  languageName: node
+  linkType: hard
+
 "@backstage/backend-plugin-api@npm:1.4.3, @backstage/backend-plugin-api@npm:^1.4.3":
   version: 1.4.3
   resolution: "@backstage/backend-plugin-api@npm:1.4.3"
@@ -2069,7 +2093,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@backstage/catalog-model@npm:^1.7.7":
+"@backstage/catalog-model@npm:^1.7.6, @backstage/catalog-model@npm:^1.7.7":
   version: 1.7.7
   resolution: "@backstage/catalog-model@npm:1.7.7"
   dependencies:
@@ -2981,16 +3005,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@backstage/plugin-bitbucket-cloud-common@npm:0.3.3-next.0":
-  version: 0.3.3-next.0
-  resolution: "@backstage/plugin-bitbucket-cloud-common@npm:0.3.3-next.0"
-  dependencies:
-    "@backstage/integration": "npm:1.18.1-next.0"
-    cross-fetch: "npm:^4.0.0"
-  checksum: 10c0/0f66c375c19c3353b739832c4fa09a5a8a2119b28499081599947a49d62e211a671cb0208d9dd048b1bce9a4f107285396886dda931874a4aefe19ddeb85a58c
-  languageName: node
-  linkType: hard
-
 "@backstage/plugin-catalog-backend-module-logs@npm:^0.1.15-next.0":
   version: 0.1.15-next.0
   resolution: "@backstage/plugin-catalog-backend-module-logs@npm:0.1.15-next.0"
@@ -3002,7 +3016,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@backstage/plugin-catalog-backend-module-scaffolder-entity-model@npm:0.2.13-next.0, @backstage/plugin-catalog-backend-module-scaffolder-entity-model@npm:^0.2.13-next.0":
+"@backstage/plugin-catalog-backend-module-scaffolder-entity-model@npm:^0.2.13-next.0":
   version: 0.2.13-next.0
   resolution: "@backstage/plugin-catalog-backend-module-scaffolder-entity-model@npm:0.2.13-next.0"
   dependencies:
@@ -3073,6 +3087,17 @@ __metadata:
     "@backstage/plugin-permission-common": "npm:0.9.3-next.0"
     "@backstage/plugin-search-common": "npm:1.2.21-next.0"
   checksum: 10c0/2bca651d6a1bcfc4dd78757368887c27fe8baa3f8640aafd823901bea9a77074510f39c615baf67dd2f248155937510f73a3d3ffe147f96a13d9dc67644970b8
+  languageName: node
+  linkType: hard
+
+"@backstage/plugin-catalog-common@npm:^1.1.8":
+  version: 1.1.8
+  resolution: "@backstage/plugin-catalog-common@npm:1.1.8"
+  dependencies:
+    "@backstage/catalog-model": "npm:^1.7.6"
+    "@backstage/plugin-permission-common": "npm:^0.9.6"
+    "@backstage/plugin-search-common": "npm:^1.2.22"
+  checksum: 10c0/ff5182cd43eb0b2e4cd7237ffee29cb26cbda855144768c32385da5084f8ffa617dc3a0e2fbe13158993c24af00e9af361deaf87136ea4a56a1a596a0f8aed02
   languageName: node
   linkType: hard
 
@@ -3182,6 +3207,30 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@backstage/plugin-catalog-node@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "@backstage/plugin-catalog-node@npm:2.1.0"
+  dependencies:
+    "@backstage/backend-plugin-api": "npm:^1.8.0"
+    "@backstage/catalog-client": "npm:^1.14.0"
+    "@backstage/catalog-model": "npm:^1.7.7"
+    "@backstage/errors": "npm:^1.2.7"
+    "@backstage/plugin-catalog-common": "npm:^1.1.8"
+    "@backstage/plugin-permission-common": "npm:^0.9.7"
+    "@backstage/plugin-permission-node": "npm:^0.10.11"
+    "@backstage/types": "npm:^1.2.2"
+    "@opentelemetry/api": "npm:^1.9.0"
+    lodash: "npm:^4.17.21"
+    yaml: "npm:^2.0.0"
+  peerDependencies:
+    "@backstage/backend-test-utils": ^1.11.1
+  peerDependenciesMeta:
+    "@backstage/backend-test-utils":
+      optional: true
+  checksum: 10c0/1c4e122dbd418b31cf728a57a34766c24ad3bf331923b5df7213a61e69b90ae9b093635888c1a4a0c0184ca4771940f63072d7706ed871acdb73120b43306e5d
+  languageName: node
+  linkType: hard
+
 "@backstage/plugin-catalog-react@npm:1.21.2-next.0, @backstage/plugin-catalog-react@npm:^1.21.2-next.0":
   version: 1.21.2-next.0
   resolution: "@backstage/plugin-catalog-react@npm:1.21.2-next.0"
@@ -3283,6 +3332,23 @@ __metadata:
     express: "npm:^4.17.1"
     uri-template: "npm:^2.0.0"
   checksum: 10c0/561cd37ca2e6825f02e8fb643b44a9fb203bbb39d0e3d9855cbdca84b2a375be3f776670e3f2f6ecf03b67ca457b13126460bae84ba5eecd5d66dc38c526e7b2
+  languageName: node
+  linkType: hard
+
+"@backstage/plugin-events-node@npm:^0.4.20":
+  version: 0.4.20
+  resolution: "@backstage/plugin-events-node@npm:0.4.20"
+  dependencies:
+    "@backstage/backend-plugin-api": "npm:^1.8.0"
+    "@backstage/errors": "npm:^1.2.7"
+    "@backstage/types": "npm:^1.2.2"
+    "@types/content-type": "npm:^1.1.8"
+    "@types/express": "npm:^4.17.6"
+    content-type: "npm:^1.0.5"
+    cross-fetch: "npm:^4.0.0"
+    express: "npm:^4.22.0"
+    uri-template: "npm:^2.0.0"
+  checksum: 10c0/54970736abd2ed621645044554bed2d888f3e6741bb492851d50bd96e5d19870d079854eefb28aafd5fcdad1a39adb1e810fb1d4002d723d44940de8b85eca94
   languageName: node
   linkType: hard
 
@@ -3723,101 +3789,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@backstage/plugin-scaffolder-backend-module-azure@npm:0.2.14-next.0":
-  version: 0.2.14-next.0
-  resolution: "@backstage/plugin-scaffolder-backend-module-azure@npm:0.2.14-next.0"
-  dependencies:
-    "@backstage/backend-plugin-api": "npm:1.4.3"
-    "@backstage/config": "npm:1.3.3"
-    "@backstage/errors": "npm:1.2.7"
-    "@backstage/integration": "npm:1.18.1-next.0"
-    "@backstage/plugin-scaffolder-node": "npm:0.12.0-next.0"
-    azure-devops-node-api: "npm:^14.0.0"
-    yaml: "npm:^2.0.0"
-  checksum: 10c0/37c5ca79bac409c0341f03fed94d4b375034d195cb217d17c2f4e379d5df0fd3d74cefaa4338e3a93356264a351df2c9ef7d06753d32e872fe1de011f3afbdda
-  languageName: node
-  linkType: hard
-
-"@backstage/plugin-scaffolder-backend-module-bitbucket-cloud@npm:0.2.14-next.0":
-  version: 0.2.14-next.0
-  resolution: "@backstage/plugin-scaffolder-backend-module-bitbucket-cloud@npm:0.2.14-next.0"
-  dependencies:
-    "@backstage/backend-plugin-api": "npm:1.4.3"
-    "@backstage/config": "npm:1.3.3"
-    "@backstage/errors": "npm:1.2.7"
-    "@backstage/integration": "npm:1.18.1-next.0"
-    "@backstage/plugin-bitbucket-cloud-common": "npm:0.3.3-next.0"
-    "@backstage/plugin-scaffolder-node": "npm:0.12.0-next.0"
-    bitbucket: "npm:^2.12.0"
-    fs-extra: "npm:^11.2.0"
-    yaml: "npm:^2.0.0"
-    zod: "npm:^3.22.4"
-  checksum: 10c0/5d572d8356f6f3c0c39913229ebe295d1e7f926fd8a1b6478744b32c5a9c7204940d3f178e2a2a51754ddb4c4875943e8d0f2664d3f8c9c90cb82976e0551e93
-  languageName: node
-  linkType: hard
-
-"@backstage/plugin-scaffolder-backend-module-bitbucket-server@npm:0.2.14-next.0":
-  version: 0.2.14-next.0
-  resolution: "@backstage/plugin-scaffolder-backend-module-bitbucket-server@npm:0.2.14-next.0"
-  dependencies:
-    "@backstage/backend-plugin-api": "npm:1.4.3"
-    "@backstage/config": "npm:1.3.3"
-    "@backstage/errors": "npm:1.2.7"
-    "@backstage/integration": "npm:1.18.1-next.0"
-    "@backstage/plugin-scaffolder-node": "npm:0.12.0-next.0"
-    fs-extra: "npm:^11.2.0"
-    yaml: "npm:^2.0.0"
-    zod: "npm:^3.22.4"
-  checksum: 10c0/8713396e6757e3a8c3f4245937515bfec740186e6d77e0d335a321cc8692a23b3af36e6fe326609fb960801b7dcc9b64541b5c51416bd20a30ec29748cbacfc9
-  languageName: node
-  linkType: hard
-
-"@backstage/plugin-scaffolder-backend-module-bitbucket@npm:0.3.15-next.0":
-  version: 0.3.15-next.0
-  resolution: "@backstage/plugin-scaffolder-backend-module-bitbucket@npm:0.3.15-next.0"
-  dependencies:
-    "@backstage/backend-plugin-api": "npm:1.4.3"
-    "@backstage/config": "npm:1.3.3"
-    "@backstage/errors": "npm:1.2.7"
-    "@backstage/integration": "npm:1.18.1-next.0"
-    "@backstage/plugin-scaffolder-backend-module-bitbucket-cloud": "npm:0.2.14-next.0"
-    "@backstage/plugin-scaffolder-backend-module-bitbucket-server": "npm:0.2.14-next.0"
-    "@backstage/plugin-scaffolder-node": "npm:0.12.0-next.0"
-    fs-extra: "npm:^11.2.0"
-    yaml: "npm:^2.0.0"
-  checksum: 10c0/8e277f8a395c6d2c4cf7c148ced40cbc50db1d14594d91f2b82f986dc6960e5495f159e7e4eb6980cddc43aa71c7568dfe19a46749622c1de2882617bb600ad4
-  languageName: node
-  linkType: hard
-
-"@backstage/plugin-scaffolder-backend-module-gerrit@npm:0.2.14-next.0":
-  version: 0.2.14-next.0
-  resolution: "@backstage/plugin-scaffolder-backend-module-gerrit@npm:0.2.14-next.0"
-  dependencies:
-    "@backstage/backend-plugin-api": "npm:1.4.3"
-    "@backstage/config": "npm:1.3.3"
-    "@backstage/errors": "npm:1.2.7"
-    "@backstage/integration": "npm:1.18.1-next.0"
-    "@backstage/plugin-scaffolder-node": "npm:0.12.0-next.0"
-    yaml: "npm:^2.0.0"
-  checksum: 10c0/db42183d804246ca28251ade2919b498d1e19a6df08478a38469420306d2b2c48fb143f6c7757d5eecfeadfa38eda6959a2b5bb2eaa02d81cea64f6f0a5d6e38
-  languageName: node
-  linkType: hard
-
-"@backstage/plugin-scaffolder-backend-module-gitea@npm:0.2.14-next.0":
-  version: 0.2.14-next.0
-  resolution: "@backstage/plugin-scaffolder-backend-module-gitea@npm:0.2.14-next.0"
-  dependencies:
-    "@backstage/backend-plugin-api": "npm:1.4.3"
-    "@backstage/config": "npm:1.3.3"
-    "@backstage/errors": "npm:1.2.7"
-    "@backstage/integration": "npm:1.18.1-next.0"
-    "@backstage/plugin-scaffolder-node": "npm:0.12.0-next.0"
-    yaml: "npm:^2.0.0"
-  checksum: 10c0/93a555a027f1de7aa9209fc73287e61d15e8e96964e72c788685403c175ba20388110b1e6ca46fc8a981274580a795139f2dbebc16aa6e52c6b359fb12281df0
-  languageName: node
-  linkType: hard
-
-"@backstage/plugin-scaffolder-backend-module-github@npm:0.9.1-next.0, @backstage/plugin-scaffolder-backend-module-github@npm:^0.9.1-next.0":
+"@backstage/plugin-scaffolder-backend-module-github@npm:^0.9.1-next.0":
   version: 0.9.1-next.0
   resolution: "@backstage/plugin-scaffolder-backend-module-github@npm:0.9.1-next.0"
   dependencies:
@@ -3839,25 +3811,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@backstage/plugin-scaffolder-backend-module-gitlab@npm:0.9.6-next.0":
-  version: 0.9.6-next.0
-  resolution: "@backstage/plugin-scaffolder-backend-module-gitlab@npm:0.9.6-next.0"
-  dependencies:
-    "@backstage/backend-plugin-api": "npm:1.4.3"
-    "@backstage/config": "npm:1.3.3"
-    "@backstage/errors": "npm:1.2.7"
-    "@backstage/integration": "npm:1.18.1-next.0"
-    "@backstage/plugin-scaffolder-node": "npm:0.12.0-next.0"
-    "@gitbeaker/requester-utils": "npm:^41.2.0"
-    "@gitbeaker/rest": "npm:^41.2.0"
-    luxon: "npm:^3.0.0"
-    winston: "npm:^3.2.1"
-    yaml: "npm:^2.0.0"
-    zod: "npm:^3.22.4"
-  checksum: 10c0/d1e4792afa7c0e72c862f7989b8cfb6045e86ea92944c79bd9e67e3b8f9c44a16df04a15ec19ec95239a1cfc2d92a828f97e8b6efc15e130e54db193891398d5
-  languageName: node
-  linkType: hard
-
 "@backstage/plugin-scaffolder-backend-module-notifications@npm:^0.1.15-next.0":
   version: 0.1.15-next.0
   resolution: "@backstage/plugin-scaffolder-backend-module-notifications@npm:0.1.15-next.0"
@@ -3871,62 +3824,47 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@backstage/plugin-scaffolder-backend@npm:^3.0.0-next.0":
-  version: 3.0.0-next.0
-  resolution: "@backstage/plugin-scaffolder-backend@npm:3.0.0-next.0"
+"@backstage/plugin-scaffolder-backend@npm:^3.1.5":
+  version: 3.2.0
+  resolution: "@backstage/plugin-scaffolder-backend@npm:3.2.0"
   dependencies:
-    "@backstage/backend-defaults": "npm:0.13.0-next.0"
-    "@backstage/backend-openapi-utils": "npm:0.6.1"
-    "@backstage/backend-plugin-api": "npm:1.4.3"
-    "@backstage/catalog-model": "npm:1.7.5"
-    "@backstage/config": "npm:1.3.3"
-    "@backstage/errors": "npm:1.2.7"
-    "@backstage/integration": "npm:1.18.1-next.0"
-    "@backstage/plugin-auth-node": "npm:0.6.7"
-    "@backstage/plugin-bitbucket-cloud-common": "npm:0.3.3-next.0"
-    "@backstage/plugin-catalog-backend-module-scaffolder-entity-model": "npm:0.2.13-next.0"
-    "@backstage/plugin-catalog-node": "npm:1.19.0"
-    "@backstage/plugin-events-node": "npm:0.4.15"
-    "@backstage/plugin-permission-common": "npm:0.9.1"
-    "@backstage/plugin-permission-node": "npm:0.10.4"
-    "@backstage/plugin-scaffolder-backend-module-azure": "npm:0.2.14-next.0"
-    "@backstage/plugin-scaffolder-backend-module-bitbucket": "npm:0.3.15-next.0"
-    "@backstage/plugin-scaffolder-backend-module-bitbucket-cloud": "npm:0.2.14-next.0"
-    "@backstage/plugin-scaffolder-backend-module-bitbucket-server": "npm:0.2.14-next.0"
-    "@backstage/plugin-scaffolder-backend-module-gerrit": "npm:0.2.14-next.0"
-    "@backstage/plugin-scaffolder-backend-module-gitea": "npm:0.2.14-next.0"
-    "@backstage/plugin-scaffolder-backend-module-github": "npm:0.9.1-next.0"
-    "@backstage/plugin-scaffolder-backend-module-gitlab": "npm:0.9.6-next.0"
-    "@backstage/plugin-scaffolder-common": "npm:1.7.2-next.0"
-    "@backstage/plugin-scaffolder-node": "npm:0.12.0-next.0"
-    "@backstage/types": "npm:1.2.2"
+    "@backstage/backend-openapi-utils": "npm:^0.6.7"
+    "@backstage/backend-plugin-api": "npm:^1.8.0"
+    "@backstage/catalog-model": "npm:^1.7.7"
+    "@backstage/config": "npm:^1.3.6"
+    "@backstage/errors": "npm:^1.2.7"
+    "@backstage/integration": "npm:^2.0.0"
+    "@backstage/plugin-catalog-node": "npm:^2.1.0"
+    "@backstage/plugin-events-node": "npm:^0.4.20"
+    "@backstage/plugin-permission-common": "npm:^0.9.7"
+    "@backstage/plugin-permission-node": "npm:^0.10.11"
+    "@backstage/plugin-scaffolder-common": "npm:^2.0.0"
+    "@backstage/plugin-scaffolder-node": "npm:^0.13.0"
+    "@backstage/types": "npm:^1.2.2"
     "@opentelemetry/api": "npm:^1.9.0"
     "@types/luxon": "npm:^3.0.0"
-    concat-stream: "npm:^2.0.0"
-    express: "npm:^4.17.1"
+    express: "npm:^4.22.0"
     fs-extra: "npm:^11.2.0"
     globby: "npm:^11.0.0"
     isbinaryfile: "npm:^5.0.0"
-    isolated-vm: "npm:^5.0.1"
+    isolated-vm: "npm:^6.0.1"
     jsonschema: "npm:^1.5.0"
     knex: "npm:^3.0.0"
     lodash: "npm:^4.17.21"
     logform: "npm:^2.3.2"
     luxon: "npm:^3.0.0"
     nunjucks: "npm:^3.2.3"
-    p-limit: "npm:^3.1.0"
     p-queue: "npm:^6.6.2"
     prom-client: "npm:^15.0.0"
-    tar: "npm:^6.1.12"
     triple-beam: "npm:^1.4.1"
     uuid: "npm:^11.0.0"
     winston: "npm:^3.2.1"
     winston-transport: "npm:^4.7.0"
     yaml: "npm:^2.0.0"
     zen-observable: "npm:^0.10.0"
-    zod: "npm:^3.22.4"
-    zod-to-json-schema: "npm:^3.20.4"
-  checksum: 10c0/dd5c00094449dfb4784048576ec50a70951cc8f58862a224963b37a1352863b5235ea6390027c870ca42d590e0cdd9c6f4f3ddf6cb88db1996165a4a85356997
+    zod: "npm:^3.25.76 || ^4.0.0"
+    zod-to-json-schema: "npm:^3.25.1"
+  checksum: 10c0/c06fe90c40b1b4c669f321da7e7a6dd978aceec99c493d1d82c4dcefb0c2d0d181609b184debf1b60f5cec84e20a8e0f91bf0c3d533a226b0afab772583e5fe7
   languageName: node
   linkType: hard
 
@@ -3946,6 +3884,25 @@ __metadata:
     uri-template: "npm:^2.0.0"
     zen-observable: "npm:^0.10.0"
   checksum: 10c0/00b527c0ee1fb01c2f116c3babf0b7b8317686dbf120f547287e7baee6b2d8ac11cdd2e0f1f14badb750f733867dbc358344f6948924bd5f07595368558b4ef9
+  languageName: node
+  linkType: hard
+
+"@backstage/plugin-scaffolder-common@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "@backstage/plugin-scaffolder-common@npm:2.0.0"
+  dependencies:
+    "@backstage/catalog-model": "npm:^1.7.7"
+    "@backstage/errors": "npm:^1.2.7"
+    "@backstage/integration": "npm:^2.0.0"
+    "@backstage/plugin-permission-common": "npm:^0.9.7"
+    "@backstage/types": "npm:^1.2.2"
+    "@microsoft/fetch-event-source": "npm:^2.0.1"
+    "@types/json-schema": "npm:^7.0.9"
+    cross-fetch: "npm:^4.0.0"
+    json-schema: "npm:^0.4.0"
+    uri-template: "npm:^2.0.0"
+    zen-observable: "npm:^0.10.0"
+  checksum: 10c0/441d16cc5cc1800bbee5fa791e8a72314a9df9e15f19ed58ffbff92d837f125192ba2c89953d4846ac9da8ac040cfef18f8cacb3fc4e9332232cd44df1d86963
   languageName: node
   linkType: hard
 
@@ -3974,6 +3931,39 @@ __metadata:
     zod: "npm:^3.22.4"
     zod-to-json-schema: "npm:^3.20.4"
   checksum: 10c0/ae7eeb5e90812b6deeefa35bd09ab86cc1ac2d5b7646c3c946cc08d1bac39f1eb30bb35edf96a01fae596ef4d7409f45a20d34766f16ae36418f3fe730142236
+  languageName: node
+  linkType: hard
+
+"@backstage/plugin-scaffolder-node@npm:^0.13.0":
+  version: 0.13.0
+  resolution: "@backstage/plugin-scaffolder-node@npm:0.13.0"
+  dependencies:
+    "@backstage/backend-plugin-api": "npm:^1.8.0"
+    "@backstage/catalog-model": "npm:^1.7.7"
+    "@backstage/errors": "npm:^1.2.7"
+    "@backstage/integration": "npm:^2.0.0"
+    "@backstage/plugin-permission-common": "npm:^0.9.7"
+    "@backstage/plugin-scaffolder-common": "npm:^2.0.0"
+    "@backstage/types": "npm:^1.2.2"
+    "@isomorphic-git/pgp-plugin": "npm:^0.0.7"
+    concat-stream: "npm:^2.0.0"
+    fs-extra: "npm:^11.2.0"
+    globby: "npm:^11.0.0"
+    isomorphic-git: "npm:^1.23.0"
+    jsonschema: "npm:^1.5.0"
+    lodash: "npm:^4.17.21"
+    p-limit: "npm:^3.1.0"
+    tar: "npm:^7.5.6"
+    winston: "npm:^3.2.1"
+    winston-transport: "npm:^4.7.0"
+    zod: "npm:^3.25.76 || ^4.0.0"
+    zod-to-json-schema: "npm:^3.25.1"
+  peerDependencies:
+    "@backstage/backend-test-utils": ^1.11.1
+  peerDependenciesMeta:
+    "@backstage/backend-test-utils":
+      optional: true
+  checksum: 10c0/13432e89adbfe5efc82211643b66eda6e08075b5983abb8ad88d5901e8fc9f3825f690631953c3865ec5dd4f2ee3149cc10464c2b57436df337a2b1743df61f0
   languageName: node
   linkType: hard
 
@@ -5492,39 +5482,6 @@ __metadata:
   dependencies:
     tslib: "npm:^2.8.0"
   checksum: 10c0/bacbedd508519c1bb5ca2620e89dc38f12101be59439aa14aa472b222915b462cb7d679726640f6dcf52a05dd218b5aa27ccd60f2e5010bb96f1d4929848cde0
-  languageName: node
-  linkType: hard
-
-"@gitbeaker/core@npm:^41.3.0":
-  version: 41.3.0
-  resolution: "@gitbeaker/core@npm:41.3.0"
-  dependencies:
-    "@gitbeaker/requester-utils": "npm:^41.3.0"
-    qs: "npm:^6.12.2"
-    xcase: "npm:^2.0.1"
-  checksum: 10c0/80181536c0d2edfa86c81d436d3f571913c59e15f37008008bfb15dd3d9e11ce20d498a4b5216f447eb03a57e55f8bd00bbc320a933d70e50115c9942dce0477
-  languageName: node
-  linkType: hard
-
-"@gitbeaker/requester-utils@npm:^41.2.0, @gitbeaker/requester-utils@npm:^41.3.0":
-  version: 41.3.0
-  resolution: "@gitbeaker/requester-utils@npm:41.3.0"
-  dependencies:
-    picomatch-browser: "npm:^2.2.6"
-    qs: "npm:^6.12.2"
-    rate-limiter-flexible: "npm:^4.0.1"
-    xcase: "npm:^2.0.1"
-  checksum: 10c0/12fec1a67fbe3e18d1a4af1cd8b915c0b07cd73c9ad9072e4b2210d099486ada393e39ab31148256feb56ed73f55c12c5ed97d54d5ffb181e46ac8d70110dba0
-  languageName: node
-  linkType: hard
-
-"@gitbeaker/rest@npm:^41.2.0":
-  version: 41.3.0
-  resolution: "@gitbeaker/rest@npm:41.3.0"
-  dependencies:
-    "@gitbeaker/core": "npm:^41.3.0"
-    "@gitbeaker/requester-utils": "npm:^41.3.0"
-  checksum: 10c0/253e29e7b968c6b195da470d4cfd5b1d982d896e58506cb56f2186989a7cacb9fc98d98c6f7bde0e13ac73c9393b754849838539223c7db11b5ba6c7b4718be2
   languageName: node
   linkType: hard
 
@@ -15110,16 +15067,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"azure-devops-node-api@npm:^14.0.0":
-  version: 14.1.0
-  resolution: "azure-devops-node-api@npm:14.1.0"
-  dependencies:
-    tunnel: "npm:0.0.6"
-    typed-rest-client: "npm:2.1.0"
-  checksum: 10c0/7cfb4d9e5359e568dbcaaa5f6e0e1518994802ef840594d515652981ead99e6eeeeb05846b38fb264f05c24f06db360139f7eca0a614c69903b5fb8875243d16
-  languageName: node
-  linkType: hard
-
 "b4a@npm:^1.6.4":
   version: 1.7.2
   resolution: "b4a@npm:1.7.2"
@@ -15265,7 +15212,7 @@ __metadata:
     "@backstage/plugin-permission-common": "npm:^0.9.1"
     "@backstage/plugin-permission-node": "npm:^0.10.4"
     "@backstage/plugin-proxy-backend": "npm:^0.6.6"
-    "@backstage/plugin-scaffolder-backend": "npm:^3.0.0-next.0"
+    "@backstage/plugin-scaffolder-backend": "npm:^3.1.5"
     "@backstage/plugin-scaffolder-backend-module-github": "npm:^0.9.1-next.0"
     "@backstage/plugin-scaffolder-backend-module-notifications": "npm:^0.1.15-next.0"
     "@backstage/plugin-search-backend": "npm:^2.0.7-next.0"
@@ -15379,7 +15326,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"before-after-hook@npm:^2.1.0, before-after-hook@npm:^2.2.0":
+"before-after-hook@npm:^2.2.0":
   version: 2.2.3
   resolution: "before-after-hook@npm:2.2.3"
   checksum: 10c0/0488c4ae12df758ca9d49b3bb27b47fd559677965c52cae7b335784724fb8bf96c42b6e5ba7d7afcbc31facb0e294c3ef717cc41c5bc2f7bd9e76f8b90acd31c
@@ -15453,19 +15400,6 @@ __metadata:
   version: 1.0.2
   resolution: "bintrees@npm:1.0.2"
   checksum: 10c0/132944b20c93c1a8f97bf8aa25980a76c6eb4291b7f2df2dbcd01cb5b417c287d3ee0847c7260c9f05f3d5a4233aaa03dec95114e97f308abe9cc3f72bed4a44
-  languageName: node
-  linkType: hard
-
-"bitbucket@npm:^2.12.0":
-  version: 2.12.0
-  resolution: "bitbucket@npm:2.12.0"
-  dependencies:
-    before-after-hook: "npm:^2.1.0"
-    deepmerge: "npm:^4.2.2"
-    is-plain-object: "npm:^3.0.0"
-    node-fetch: "npm:^2.6.0"
-    url-template: "npm:^2.0.8"
-  checksum: 10c0/ade6ede53a3e5aa2b24d625456e3b5deda9ffd49d75bc392c5fce50881d2ae98209a69b2af6ffc2e5f1d74b204321a31e7818b9ecfdf5240ef42b18ab70e3bb3
   languageName: node
   linkType: hard
 
@@ -17782,7 +17716,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"des.js@npm:^1.0.0, des.js@npm:^1.1.0":
+"des.js@npm:^1.0.0":
   version: 1.1.0
   resolution: "des.js@npm:1.1.0"
   dependencies:
@@ -21822,13 +21756,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"is-plain-object@npm:^3.0.0":
-  version: 3.0.1
-  resolution: "is-plain-object@npm:3.0.1"
-  checksum: 10c0/eac88599d3f030b313aa5a12d09bd3c52ce3b8cd975b2fdda6bb3bb69ac0bc1b93cd292123769eb480b914d1dd1fed7633cdeb490458d41294eb32efdedec230
-  languageName: node
-  linkType: hard
-
 "is-plain-object@npm:^5.0.0":
   version: 5.0.0
   resolution: "is-plain-object@npm:5.0.0"
@@ -22054,13 +21981,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"isolated-vm@npm:^5.0.1":
-  version: 5.0.4
-  resolution: "isolated-vm@npm:5.0.4"
+"isolated-vm@npm:^6.0.1":
+  version: 6.1.2
+  resolution: "isolated-vm@npm:6.1.2"
   dependencies:
     node-gyp: "npm:latest"
-    prebuild-install: "npm:^7.1.2"
-  checksum: 10c0/3576ac27a907d2cd100590276fb31870eb702a0e7aeb43d6cdd8b76f57264211983ff6b8e6815f86c8376377fedb5cf22e94e663171935e04e2e96bffd944ca9
+    node-gyp-build: "npm:^4.8.4"
+  checksum: 10c0/2209032b8296e6af49250f7e04ab904e9c331bbbf1bdf8eeca78e32ed6bd98c84ced42b785127f0f2828a1c5e66d82cb2bf1459e973620e19b485c5a00252e98
   languageName: node
   linkType: hard
 
@@ -22754,13 +22681,6 @@ __metadata:
   version: 1.1.6
   resolution: "js-levenshtein@npm:1.1.6"
   checksum: 10c0/14045735325ea1fd87f434a74b11d8a14380f090f154747e613529c7cff68b5ee607f5230fa40665d5fb6125a3791f4c223f73b9feca754f989b059f5c05864f
-  languageName: node
-  linkType: hard
-
-"js-md4@npm:^0.3.2":
-  version: 0.3.2
-  resolution: "js-md4@npm:0.3.2"
-  checksum: 10c0/8313e00c45f710a53bdadc199c095b48ebaf54ea7b8cdb67a3f1863c270a5e9d0f89f204436b73866002af8c7ac4cacc872fdf271fc70e26614e424c7685b577
   languageName: node
   linkType: hard
 
@@ -26760,13 +26680,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"picomatch-browser@npm:^2.2.6":
-  version: 2.2.6
-  resolution: "picomatch-browser@npm:2.2.6"
-  checksum: 10c0/bf97d3e6f77dee776fe4cc7728037931b681c56e1fd964023ed797de341a0e32dcc1e90a5552cc74923cb97566464870a37be188b09e3db7279f9e9a9b12d977
-  languageName: node
-  linkType: hard
-
 "picomatch@npm:^2.0.4, picomatch@npm:^2.2.1, picomatch@npm:^2.2.3, picomatch@npm:^2.3.1":
   version: 2.3.1
   resolution: "picomatch@npm:2.3.1"
@@ -27398,7 +27311,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"prebuild-install@npm:^7.1.1, prebuild-install@npm:^7.1.2":
+"prebuild-install@npm:^7.1.1":
   version: 7.1.3
   resolution: "prebuild-install@npm:7.1.3"
   dependencies:
@@ -27828,13 +27741,6 @@ __metadata:
   peerDependencies:
     express-rate-limit: ">= 6"
   checksum: 10c0/65ce09b6e7da301a368e76d660d4839316c255173eb7197b69a647e893735116246efe2cb6f89c35cd7c3d72a5b6ff28ba2e1b44ba78bb585702535647134ac8
-  languageName: node
-  linkType: hard
-
-"rate-limiter-flexible@npm:^4.0.1":
-  version: 4.0.1
-  resolution: "rate-limiter-flexible@npm:4.0.1"
-  checksum: 10c0/93db9ed61a62c4d7d411713e12ed9cd7ea196a08b81cb289156f7ff0fe85bd4607916e82be750d2d8c44248dafefaff3f4a1cd4b7caae077b078573ad7f24fa6
   languageName: node
   linkType: hard
 
@@ -31519,13 +31425,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tunnel@npm:0.0.6":
-  version: 0.0.6
-  resolution: "tunnel@npm:0.0.6"
-  checksum: 10c0/e27e7e896f2426c1c747325b5f54efebc1a004647d853fad892b46d64e37591ccd0b97439470795e5262b5c0748d22beb4489a04a0a448029636670bfd801b75
-  languageName: node
-  linkType: hard
-
 "tweetnacl@npm:^0.14.3":
   version: 0.14.5
   resolution: "tweetnacl@npm:0.14.5"
@@ -31663,19 +31562,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typed-rest-client@npm:2.1.0":
-  version: 2.1.0
-  resolution: "typed-rest-client@npm:2.1.0"
-  dependencies:
-    des.js: "npm:^1.1.0"
-    js-md4: "npm:^0.3.2"
-    qs: "npm:^6.10.3"
-    tunnel: "npm:0.0.6"
-    underscore: "npm:^1.12.1"
-  checksum: 10c0/b9d29db5217b6d3d0ae9aa68e87e84be8c2d885e7a932f4df3eca070bb615ded5f390035f26857996911803830d28ba2296d6cb748072dbc6d8657916107132d
-  languageName: node
-  linkType: hard
-
 "typedarray@npm:^0.0.6":
   version: 0.0.6
   resolution: "typedarray@npm:0.0.6"
@@ -31808,7 +31694,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"underscore@npm:^1.12.1, underscore@npm:^1.13.3":
+"underscore@npm:^1.13.3":
   version: 1.13.7
   resolution: "underscore@npm:1.13.7"
   checksum: 10c0/fad2b4aac48847674aaf3c30558f383399d4fdafad6dd02dd60e4e1b8103b52c5a9e5937e0cc05dacfd26d6a0132ed0410ab4258241240757e4a4424507471cd
@@ -32082,13 +31968,6 @@ __metadata:
     querystringify: "npm:^2.1.1"
     requires-port: "npm:^1.0.0"
   checksum: 10c0/bd5aa9389f896974beb851c112f63b466505a04b4807cea2e5a3b7092f6fbb75316f0491ea84e44f66fed55f1b440df5195d7e3a8203f64fcefa19d182f5be87
-  languageName: node
-  linkType: hard
-
-"url-template@npm:^2.0.8":
-  version: 2.0.8
-  resolution: "url-template@npm:2.0.8"
-  checksum: 10c0/56a15057eacbcf05d52b0caed8279c8451b3dd9d32856a1fdd91c6dc84dcb1646f12bafc756b7ade62ca5b1564da8efd7baac5add35868bafb43eb024c62805b
   languageName: node
   linkType: hard
 
@@ -32905,13 +32784,6 @@ __metadata:
   dependencies:
     is-wsl: "npm:^3.1.0"
   checksum: 10c0/44318f3585eb97be994fc21a20ddab2649feaf1fbe893f1f866d936eea3d5f8c743bec6dc02e49fbdd3c0e69e9b36f449d90a0b165a4f47dd089747af4cf2377
-  languageName: node
-  linkType: hard
-
-"xcase@npm:^2.0.1":
-  version: 2.0.1
-  resolution: "xcase@npm:2.0.1"
-  checksum: 10c0/11b8ae8f6734b29d442a5acf1dff3a896cabbf49e7ffa01472ff6fa687a6e6f6a25889d06c10a41950e7a90fe89239fa78d95eab0c5eb654ca75f0ccd71ba8ed
   languageName: node
   linkType: hard
 
