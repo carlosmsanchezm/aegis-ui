@@ -4,14 +4,22 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  IconButton,
   Paper,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@material-ui/core';
+import DeleteIcon from '@material-ui/icons/Delete';
 import { makeStyles } from '@material-ui/core/styles';
 import {
   Content,
@@ -30,6 +38,7 @@ import {
 import { keycloakAuthApiRef } from '../../apis';
 import {
   ClusterSummary,
+  destroyCluster,
   listClusters,
   listProjects,
   ProjectRecord,
@@ -116,6 +125,9 @@ const phaseChipColor = (phase?: string): 'default' | 'primary' | 'secondary' => 
   if (normalized === 'error' || normalized === 'degraded' || normalized === 'unhealthy') {
     return 'secondary';
   }
+  if (normalized === 'destroyed') {
+    return 'secondary';
+  }
   return 'default';
 };
 
@@ -133,6 +145,8 @@ export const AegisClustersPage = () => {
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [destroyTarget, setDestroyTarget] = useState<ClusterSummary | null>(null);
+  const [destroying, setDestroying] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -157,6 +171,23 @@ export const AegisClustersPage = () => {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const handleDestroyConfirm = useCallback(async () => {
+    if (!destroyTarget) return;
+    setDestroying(true);
+    try {
+      const res = await destroyCluster(fetchApi, discoveryApi, identityApi, authApi, {
+        clusterId: destroyTarget.id,
+        projectId: destroyTarget.projectId,
+      });
+      setDestroyTarget(null);
+      navigate(`/aegis/provisioning/status/${encodeURIComponent(res.job.id)}`);
+    } catch (err: any) {
+      alertApi.post({ message: `Failed to destroy cluster: ${err.message}`, severity: 'error' });
+    } finally {
+      setDestroying(false);
+    }
+  }, [destroyTarget, fetchApi, discoveryApi, identityApi, authApi, alertApi, navigate]);
 
   const projectNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -276,6 +307,7 @@ export const AegisClustersPage = () => {
                 <TableCell>Region</TableCell>
                 <TableCell>Phase</TableCell>
                 <TableCell>Created</TableCell>
+                <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -297,19 +329,39 @@ export const AegisClustersPage = () => {
                   </TableCell>
                   <TableCell>{cluster.provider || '—'}</TableCell>
                   <TableCell>{cluster.region || '—'}</TableCell>
-                  <TableCell>
+                  <TableCell onClick={e => {
+                    const actionablePhases = ['provisioning', 'destroying', 'error'];
+                    if (actionablePhases.includes((cluster.phase ?? '').toLowerCase())) {
+                      e.stopPropagation();
+                      const jobId = `infra-${cluster.projectId}-${cluster.name || cluster.id}`;
+                      navigate(`/aegis/provisioning/status/${encodeURIComponent(jobId)}`);
+                    }
+                  }}>
                     <Chip
                       label={cluster.phase || 'Unknown'}
                       color={phaseChipColor(cluster.phase)}
                       size="small"
+                      clickable={['provisioning', 'destroying', 'error'].includes((cluster.phase ?? '').toLowerCase())}
                     />
                   </TableCell>
                   <TableCell>{formatTimestamp(cluster.createdAt)}</TableCell>
+                  <TableCell onClick={e => e.stopPropagation()}>
+                    {!['destroyed', 'destroying'].includes((cluster.phase ?? '').toLowerCase()) && (
+                      <Tooltip title="Destroy cluster">
+                        <IconButton
+                          size="small"
+                          onClick={() => setDestroyTarget(cluster)}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {!loading && filteredClusters.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Box paddingY={4} textAlign="center">
                       <Typography variant="subtitle1">No clusters found</Typography>
                       <Typography variant="body2" color="textSecondary">
@@ -323,6 +375,30 @@ export const AegisClustersPage = () => {
           </Table>
         </Paper>
       </Content>
+
+      <Dialog open={!!destroyTarget} onClose={() => setDestroyTarget(null)}>
+        <DialogTitle>Destroy Cluster</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will permanently destroy cluster{' '}
+            <strong>{destroyTarget?.name || destroyTarget?.id}</strong> and all its AWS
+            infrastructure. Running workloads will be terminated. This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDestroyTarget(null)} disabled={destroying}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDestroyConfirm}
+            color="secondary"
+            variant="contained"
+            disabled={destroying}
+          >
+            {destroying ? 'Destroying...' : 'Destroy'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Page>
   );
 };

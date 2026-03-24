@@ -1,0 +1,62 @@
+# Cloud EKS deployment values for aegis-ui (Backstage)
+# Deploy with:
+#   helm upgrade --install aegis-ui ~/code/aegis-ui/charts/aegis-ui \
+#     -n aegis-system \
+#     -f ~/code/aegis-ui/charts/aegis-ui/values-cloud.yaml \
+#     --set env.BACKEND_SECRET="$(openssl rand -hex 32)" \
+#     --set keycloak.clientSecret="<keycloak-client-secret>"
+
+replicaCount: 1
+
+image:
+  repository: 195714074609.dkr.ecr.us-east-1.amazonaws.com/aegis/ui
+  tag: ""  # set via --set or override; defaults to chart appVersion
+  pullPolicy: Always
+
+service:
+  type: LoadBalancer
+  port: 7007
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+ingress:
+  enabled: false
+
+env:
+  APP_BASE_URL: "http://ui.aegis-platform.tech:7007"
+  BACKEND_BASE_URL: "http://ui.aegis-platform.tech:7007"
+  BACKEND_SECRET: ""  # set via --set at deploy time
+  NODE_ENV: production
+
+aegisPlatform:
+  apiUrl: "http://aegis-platform-api.aegis-system.svc.cluster.local:8080"
+
+postgres:
+  host: "platform-postgres.aegis-system.svc.cluster.local"
+  port: "5432"
+  user: "aegis_platform"
+  existingSecret: "aegis-platform-api-secret"
+  existingSecretPasswordKey: "db-password"
+
+extraEnv:
+  NODE_EXTRA_CA_CERTS: "/etc/aegis-trust/ca.crt"
+
+extraVolumeMounts:
+  - name: trust-bundle
+    mountPath: /etc/aegis-trust
+    readOnly: true
+
+extraVolumes:
+  - name: trust-bundle
+    secret:
+      secretName: aegis-trust-bundle
+      items:
+        - key: ca.crt
+          path: ca.crt
+
+keycloak:
+  baseUrl: "https://aegis-keycloak-service.aegis-system.svc.cluster.local:8443"
+  realm: aegis
+  clientId: aegis-ui
+  clientSecret: ""  # set via --set at deploy time

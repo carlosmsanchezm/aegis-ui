@@ -160,7 +160,7 @@ const normalizeResourceType = (type: string): string => {
 const generateProvisioningStagesFromLogs = (
   logs: LogEntry[],
   jobStatus?: string,
-  clusterConfig?: ClusterConfigResponse,
+  _clusterConfig?: ClusterConfigResponse,
   currentTime?: Date,
 ): ProvisioningStage[] => {
   const statusUpper = jobStatus?.toUpperCase();
@@ -311,21 +311,6 @@ const generateProvisioningStagesFromLogs = (
     buildStage('compute', 'Compute Node Groups', stageMap.compute),
     buildStage('addons', 'Cluster Add-ons & Configuration', stageMap.addons),
   ];
-};
-
-// Resource weights based on expected duration (in relative units)
-// EKS cluster takes ~10 min, node groups ~5 min, IAM/networking ~10 sec, helm ~30 sec
-const RESOURCE_WEIGHTS: Record<string, number> = {
-  'aws:eks:Cluster': 60,        // ~10 minutes
-  'aws:eks/cluster:Cluster': 60,
-  'aws:eks:NodeGroup': 30,       // ~5 minutes each
-  'aws:eks/nodeGroup:NodeGroup': 30,
-  'kubernetes:helm.sh/v3:Release': 5,  // ~30 seconds
-  // Everything else defaults to 1
-};
-
-const getResourceWeight = (resourceType: string): number => {
-  return RESOURCE_WEIGHTS[resourceType] || 1;
 };
 
 // Calculate progress based on weighted resource completion
@@ -729,20 +714,6 @@ export const ClusterProvisioningDetailsPage = () => {
     if (status === 'CANCELED') return 'Canceled';
     return 'Building';
   };
-
-  const displayProgress = (() => {
-    if (typeof job.progress !== 'number' || Number.isNaN(job.progress)) {
-      return undefined;
-    }
-    const statusUpper = job.status?.toUpperCase();
-    if (statusUpper === 'FAILED') {
-      return Math.min(job.progress, 99);
-    }
-    if (statusUpper === 'SUCCEEDED') {
-      return 100;
-    }
-    return job.progress;
-  })();
 
   // Generate stages from logs (pass currentTime for real-time elapsed duration)
   const stages = generateProvisioningStagesFromLogs(logs, job.status, clusterConfig, currentTime);

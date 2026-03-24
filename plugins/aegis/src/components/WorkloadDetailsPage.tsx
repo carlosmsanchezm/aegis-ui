@@ -43,7 +43,6 @@ import {
   WorkloadStatusIndicator,
   isRunningStatus,
 } from './WorkloadStatusIndicator';
-import { demoWorkloads } from '../demoData';
 
 const useStyles = makeStyles(theme => ({
   header: {
@@ -233,6 +232,7 @@ const setStoredFlag = (key: string, value: boolean) => {
 };
 
 const HELPER_FLAG = 'aegis.helper.installed';
+const VSCODE_SETUP_FLAG = 'aegis.vscode.extension.setup.complete';
 const SYSTEM_ACK_FLAG = 'aegis.system.use.ack';
 const RULES_ACK_FLAG = 'aegis.rules.of.behavior.ack';
 const DEFAULT_EMPTY = '—';
@@ -260,6 +260,9 @@ export const WorkloadDetailsPage: FC = () => {
   const [helperInstalled, setHelperInstalled] = useState(() =>
     getStoredFlag(HELPER_FLAG),
   );
+  const [_vscodeSetupComplete, setVscodeSetupComplete] = useState(() =>
+    getStoredFlag(VSCODE_SETUP_FLAG),
+  );
   const [systemAcked, setSystemAcked] = useState(() =>
     getStoredFlag(SYSTEM_ACK_FLAG),
   );
@@ -270,13 +273,6 @@ export const WorkloadDetailsPage: FC = () => {
   const load = useCallback(async () => {
     if (!id) {
       setError('Missing workload id');
-      return;
-    }
-
-    // Check for demo data first
-    const demoItem = demoWorkloads.find(w => w.id === id);
-    if (demoItem) {
-      setWorkload(demoItem);
       return;
     }
 
@@ -466,6 +462,8 @@ export const WorkloadDetailsPage: FC = () => {
   const handleHelperConfirmed = useCallback(() => {
     setHelperInstalled(true);
     setStoredFlag(HELPER_FLAG, true);
+    setStoredFlag(VSCODE_SETUP_FLAG, true);
+    setVscodeSetupComplete(true);
   }, []);
 
   const loc = parseKubernetesUrl(workload?.url);
@@ -559,6 +557,16 @@ export const WorkloadDetailsPage: FC = () => {
                 {workload?.message && (
                   <Typography variant="body2" className={classes.muted}>
                     {workload.message}
+                  </Typography>
+                )}
+                {workload?.suspendReason && (
+                  <Typography variant="body2" className={classes.muted}>
+                    Reason: {workload.suspendReason === 'idle_timeout' ? 'Idle timeout exceeded' :
+                             workload.suspendReason === 'budget_exceeded' ? 'Budget limit reached' :
+                             workload.suspendReason === 'admin_action' ? 'Suspended by administrator' :
+                             workload.suspendReason === 'pod_failure' ? 'Pod failed to start' :
+                             workload.suspendReason}
+                    {workload.suspendedAtUtc && ` at ${new Date(workload.suspendedAtUtc).toLocaleString()}`}
                   </Typography>
                 )}
               </Box>
@@ -828,6 +836,10 @@ export const WorkloadDetailsPage: FC = () => {
         pendingSession={pendingSession}
         helperInstalled={helperInstalled}
         onConfirmHelper={handleHelperConfirmed}
+        onConfirmVscodeSetup={() => {
+          setStoredFlag(VSCODE_SETUP_FLAG, true);
+          setVscodeSetupComplete(true);
+        }}
         systemAcked={systemAcked}
         onAcknowledgeSystemUse={handleSystemAck}
         rulesAcked={rulesAcked}

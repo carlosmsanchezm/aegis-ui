@@ -22,13 +22,14 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
 import AddIcon from '@material-ui/icons/Add';
 import CloseIcon from '@material-ui/icons/Close';
 import RefreshIcon from '@material-ui/icons/Refresh';
-import { Content, ContentHeader, Page } from '@backstage/core-components';
+import { Content, ContentHeader, Page, WarningPanel } from '@backstage/core-components';
 
 type ConnectorProvider = 'github' | 'gitlab' | 'bitbucket' | 'codecommit';
 
@@ -86,41 +87,8 @@ const useStyles = makeStyles(theme => ({
   },
 }));
 
-const connectorsSeed: IaCConnector[] = [
-  {
-    id: 'gh-platform',
-    provider: 'github',
-    name: 'GitHub – Platform Blueprints',
-    project: 'Platform Engineering',
-    status: 'Connected',
-    lastSync: '2024-05-18T13:45:00Z',
-    repositories: 6,
-    enforcement: 'PlanAndApply',
-    approvalsRequired: true,
-  },
-  {
-    id: 'gl-data-science',
-    provider: 'gitlab',
-    name: 'GitLab – ML Infra',
-    project: 'Mission Analytics',
-    status: 'Pending Approval',
-    lastSync: '2024-05-18T10:10:00Z',
-    repositories: 3,
-    enforcement: 'PlanOnly',
-    approvalsRequired: true,
-  },
-  {
-    id: 'bb-shared-services',
-    provider: 'bitbucket',
-    name: 'Bitbucket – Shared Services',
-    project: 'Shared Services',
-    status: 'Error',
-    lastSync: '2024-05-17T22:02:00Z',
-    repositories: 4,
-    enforcement: 'PlanAndApply',
-    approvalsRequired: false,
-  },
-];
+/** No backend endpoint for IaC connectors yet - initialize with empty data. */
+const initialConnectors: IaCConnector[] = [];
 
 const providerLabel: Record<ConnectorProvider, string> = {
   github: 'GitHub',
@@ -141,7 +109,7 @@ const statusColor = (status: IaCConnector['status']): 'default' | 'primary' | 's
 
 export const IaCConnectorsAdminPage = () => {
   const classes = useStyles();
-  const [connectors, setConnectors] = useState(connectorsSeed);
+  const [connectors] = useState(initialConnectors);
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<IaCConnector | null>(null);
 
@@ -172,19 +140,13 @@ export const IaCConnectorsAdminPage = () => {
       <Content className={classes.root}>
         <ContentHeader title="IaC Connectors">
           <Chip label="Pulumi / Terraform / GitOps" color="secondary" variant="outlined" />
-          <Button startIcon={<AddIcon />} color="primary" variant="contained" onClick={() => setDraft({
-            id: 'new-connector',
-            provider: 'github',
-            name: '',
-            project: '',
-            status: 'Pending Approval',
-            lastSync: new Date().toISOString(),
-            repositories: 0,
-            enforcement: 'PlanOnly',
-            approvalsRequired: true,
-          })}>
-            Register connector
-          </Button>
+          <Tooltip title="API not yet connected">
+            <span>
+              <Button startIcon={<AddIcon />} color="primary" variant="contained" disabled>
+                Register connector
+              </Button>
+            </span>
+          </Tooltip>
         </ContentHeader>
 
         <div className={classes.summaryGrid}>
@@ -239,6 +201,20 @@ export const IaCConnectorsAdminPage = () => {
               </TableRow>
             </TableHead>
             <TableBody>
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9} align="center">
+                    <Box py={6}>
+                      <Typography variant="h6" color="textSecondary">
+                        No IaC connectors configured
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>
+                        IaC connector management will be available once the connector API is deployed.
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              )}
               {filtered.map(connector => (
                 <TableRow key={connector.id} hover>
                   <TableCell>
@@ -265,18 +241,31 @@ export const IaCConnectorsAdminPage = () => {
                   <TableCell>{connector.approvalsRequired ? 'Required' : 'Optional'}</TableCell>
                   <TableCell>{new Date(connector.lastSync).toLocaleString()}</TableCell>
                   <TableCell align="right">
-                    <Button size="small" startIcon={<RefreshIcon />}>
-                      Sync
-                    </Button>
-                    <Button size="small" onClick={() => setDraft(connector)}>
-                      Edit
-                    </Button>
+                    <Tooltip title="API not yet connected">
+                      <span>
+                        <Button size="small" startIcon={<RefreshIcon />} disabled>
+                          Sync
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="API not yet connected">
+                      <span>
+                        <Button size="small" disabled>
+                          Edit
+                        </Button>
+                      </span>
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </Paper>
+
+        <WarningPanel severity="info" title="API integration pending">
+          The IaC connectors API is not yet available in the backend. Connector registration, syncing,
+          and editing will be enabled once the API endpoint is deployed.
+        </WarningPanel>
       </Content>
 
       <Dialog open={Boolean(draft)} onClose={() => setDraft(null)} maxWidth="sm" fullWidth>
@@ -323,6 +312,7 @@ export const IaCConnectorsAdminPage = () => {
                 <TextField
                   label="Display name"
                   variant="outlined"
+                  required
                   value={draft.name}
                   onChange={event =>
                     setDraft(prev => (prev ? { ...prev, name: event.target.value } : prev))
@@ -331,6 +321,7 @@ export const IaCConnectorsAdminPage = () => {
                 <TextField
                   label="Project"
                   variant="outlined"
+                  required
                   value={draft.project}
                   onChange={event =>
                     setDraft(prev => (prev ? { ...prev, project: event.target.value } : prev))
@@ -388,23 +379,13 @@ export const IaCConnectorsAdminPage = () => {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setDraft(null)}>Cancel</Button>
-              <Button color="primary" variant="contained" onClick={() => {
-                if (draft.id === 'new-connector') {
-                  setConnectors(prev => [
-                    ...prev,
-                    {
-                      ...draft,
-                      id: `${draft.provider}-${Date.now()}`,
-                      status: 'Pending Approval',
-                    },
-                  ]);
-                } else {
-                  setConnectors(prev => prev.map(item => (item.id === draft.id ? draft : item)));
-                }
-                setDraft(null);
-              }}>
-                Save connector
-              </Button>
+              <Tooltip title="API not yet connected">
+                <span>
+                  <Button color="primary" variant="contained" disabled>
+                    Save connector
+                  </Button>
+                </span>
+              </Tooltip>
             </DialogActions>
           </>
         ) : null}

@@ -41,7 +41,6 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   ProjectDefinition,
   ProjectEnvironment,
-  projectManagementCatalog,
   visibilityCopy,
 } from './projectManagementCatalog';
 
@@ -315,15 +314,7 @@ export const ProjectManagementPage: FC = () => {
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const combinedProjects = useMemo(() => {
-    const merged = [...dynamicProjects];
-    projectManagementCatalog.forEach(project => {
-      if (!merged.some(item => item.id === project.id)) {
-        merged.push(project);
-      }
-    });
-    return merged;
-  }, [dynamicProjects]);
+  const combinedProjects = useMemo(() => dynamicProjects, [dynamicProjects]);
 
   const selectedProject = useMemo(() => {
     if (combinedProjects.length === 0) {

@@ -378,7 +378,7 @@ type TimelineStep = {
   hint?: string;
 };
 
-type AgentConnectionStatus = 'idle' | 'waiting' | 'connected' | 'failed';
+type AgentConnectionStatus = 'idle' | 'waiting' | 'connected' | 'timed_out' | 'failed';
 
 const baseTimeline = (): TimelineStep[] => [
   { id: 'submit', label: 'Submit spec', status: 'pending' },
@@ -555,11 +555,7 @@ export const AegisClusterCreatePage = () => {
   const jobStatusNotifiedRef = useRef<string | null>(null);
   const importNavigateRef = useRef(false);
   const projectHasAwsCredentials = (project?: ProjectRecord | null) =>
-    Boolean(
-      project?.aws?.accountId &&
-        project.aws?.roleArn &&
-        project.aws?.externalId,
-    );
+    Boolean(project?.aws?.accountId);
 
   const selectedProfile = useMemo(
     () => profileCards.find(card => card.id === activeProfileId) ?? null,
@@ -875,8 +871,10 @@ export const AegisClusterCreatePage = () => {
       if (cancelled) {
         return;
       }
-      setAgentConnectionStatus('failed');
-      setAgentConnectionError('The agent did not connect within 60 seconds. Verify it was deployed, then retry.');
+      setAgentConnectionStatus('timed_out');
+      setAgentConnectionError(
+        'Cluster import succeeded, but no agent heartbeat was observed within 60 seconds. Verify deployment and retry status check.',
+      );
       stop();
     }, 60000);
 
@@ -1295,7 +1293,7 @@ export const AegisClusterCreatePage = () => {
           {selectedProjectRecord && !selectedProjectHasAws && (
             <Box mt={2}>
               <WarningPanel severity="warning" title="Project missing AWS credentials">
-                Update the project in the admin portal with the AWS account ID, IAM role ARN, and external ID before launching
+                Update the project in the admin portal with the AWS account ID before launching
                 clusters.
               </WarningPanel>
             </Box>
@@ -1931,7 +1929,7 @@ export const AegisClusterCreatePage = () => {
                   <CircularProgress size={18} />
                 ) : agentConnectionStatus === 'connected' ? (
                   <DoneIcon color="primary" />
-                ) : agentConnectionStatus === 'failed' ? (
+                ) : agentConnectionStatus === 'timed_out' || agentConnectionStatus === 'failed' ? (
                   <ErrorOutlineIcon color="secondary" />
                 ) : null}
                 <Typography variant="body2">
@@ -1939,6 +1937,8 @@ export const AegisClusterCreatePage = () => {
                     ? 'Waiting for agent connection...'
                     : agentConnectionStatus === 'connected'
                       ? 'Agent connected. Redirecting to cluster details...'
+                      : agentConnectionStatus === 'timed_out'
+                        ? 'Still waiting for first agent heartbeat.'
                       : agentConnectionStatus === 'failed'
                         ? 'Connection failed.'
                         : 'Status check pending.'}
@@ -1950,13 +1950,23 @@ export const AegisClusterCreatePage = () => {
                 </Typography>
               ) : null}
               <Box mt={2} display="flex" style={{ gap: 8, flexWrap: 'wrap' }}>
-                {agentConnectionStatus === 'failed' ? (
+                {agentConnectionStatus === 'timed_out' || agentConnectionStatus === 'failed' ? (
                   <Button
                     variant="contained"
                     color="primary"
                     onClick={() => setAgentConnectionAttempt(value => value + 1)}
                   >
                     Retry status check
+                  </Button>
+                ) : null}
+                {importResult ? (
+                  <Button
+                    variant="outlined"
+                    onClick={() =>
+                      navigate(`/aegis/clusters/${encodeURIComponent(importResult.clusterId)}`)
+                    }
+                  >
+                    Open cluster details
                   </Button>
                 ) : null}
                 <Button variant="outlined" onClick={resetImportFlow}>

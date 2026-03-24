@@ -1,12 +1,21 @@
-import { ChangeEvent, useCallback, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Page,
   Content,
   ContentHeader,
   HeaderLabel,
+  Progress,
   Table,
   TableColumn,
+  WarningPanel,
 } from '@backstage/core-components';
+import {
+  alertApiRef,
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
 import {
   Box,
   Button,
@@ -23,49 +32,24 @@ import {
 
 import EditIcon from '@material-ui/icons/Edit';
 
+import {
+  BudgetRecord,
+  ProjectRecord,
+  listBudgets,
+  listProjects,
+  upsertBudget,
+} from '../api/aegisClient';
+import { keycloakAuthApiRef } from '../api/refs';
+
 export type QuotaRow = {
-  project: string;
+  projectId: string;
+  projectName: string;
+  queue: string;
   budget: number;
-  maxGpuHours: number;
   currentSpend: number;
-  currentGpuHours: number;
+  utilization: number;
   policy: 'monitor' | 'enforce';
 };
-
-const mockQuotas: QuotaRow[] = [
-  {
-    project: 'p-aurora',
-    budget: 60000,
-    maxGpuHours: 4200,
-    currentSpend: 42820,
-    currentGpuHours: 2980,
-    policy: 'monitor',
-  },
-  {
-    project: 'p-atlas',
-    budget: 45000,
-    maxGpuHours: 3600,
-    currentSpend: 31220,
-    currentGpuHours: 2488,
-    policy: 'enforce',
-  },
-  {
-    project: 'p-vanguard',
-    budget: 80000,
-    maxGpuHours: 5400,
-    currentSpend: 61240,
-    currentGpuHours: 4012,
-    policy: 'enforce',
-  },
-  {
-    project: 'p-demo',
-    budget: 25000,
-    maxGpuHours: 1800,
-    currentSpend: 22180,
-    currentGpuHours: 1462,
-    policy: 'monitor',
-  },
-];
 
 const useStyles = makeStyles(theme => ({
   content: {
@@ -93,39 +77,118 @@ const useStyles = makeStyles(theme => ({
     display: 'flex',
     gap: theme.spacing(2),
   },
+  emptyState: {
+    marginTop: theme.spacing(3),
+    borderRadius: theme.shape.borderRadius * 2,
+    border: '1px dashed var(--aegis-card-border)',
+    padding: theme.spacing(6, 3),
+    background: 'var(--aegis-card-surface)',
+    textAlign: 'center',
+  },
 }));
+
+const budgetToRow = (
+  project: ProjectRecord,
+  budget: BudgetRecord,
+): QuotaRow => {
+  const spent = budget.spentUsd ?? 0;
+  const limit = budget.limitUsd ?? 0;
+  const pct = limit > 0 ? (spent / limit) * 100 : 0;
+  const policyMode = budget.policyMode ?? 'monitor';
+  return {
+    projectId: project.id,
+    projectName: project.displayName ?? project.id,
+    queue: budget.queue ?? 'default',
+    budget: limit,
+    currentSpend: spent,
+    utilization: Math.round(pct),
+    policy: policyMode === 'enforce' ? 'enforce' : 'monitor',
+  };
+};
 
 export const AegisQuotaManagementPage = () => {
   const classes = useStyles();
-  const [rows, setRows] = useState<QuotaRow[]>(mockQuotas);
-  const [editing, setEditing] = useState<QuotaRow | null>(mockQuotas[0]);
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
+  const alertApi = useApi(alertApiRef);
+
+  const [rows, setRows] = useState<QuotaRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<QuotaRow | null>(null);
   const [draft, setDraft] = useState({
-    budget: mockQuotas[0].budget,
-    maxGpuHours: mockQuotas[0].maxGpuHours,
-    policy: mockQuotas[0].policy,
+    budget: 0,
+    policy: 'monitor' as 'monitor' | 'enforce',
   });
+  const [budgetError, setBudgetError] = useState<string | undefined>();
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const projectsResponse = await listProjects(
+        fetchApi,
+        discoveryApi,
+        identityApi,
+        authApi,
+      );
+      const projects = projectsResponse?.items ?? [];
+
+      const allRows: QuotaRow[] = [];
+      await Promise.all(
+        projects.map(async project => {
+          try {
+            const budgets = await listBudgets(
+              fetchApi,
+              discoveryApi,
+              identityApi,
+              authApi,
+              project.id,
+            );
+            budgets.forEach(b => allRows.push(budgetToRow(project, b)));
+          } catch {
+            // Project may not have budgets configured yet
+          }
+        }),
+      );
+
+      setRows(allRows);
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      setError(msg);
+      alertApi.post({
+        message: `Failed to load quotas: ${msg}`,
+        severity: 'error',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchApi, discoveryApi, identityApi, authApi, alertApi]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const handleEdit = useCallback((row: QuotaRow) => {
     setEditing(row);
     setDraft({
       budget: row.budget,
-      maxGpuHours: row.maxGpuHours,
       policy: row.policy,
     });
   }, []);
 
   const columns = useMemo<TableColumn<QuotaRow>[]>(
     () => [
-      { title: 'Project', field: 'project', defaultSort: 'asc' },
+      { title: 'Project', field: 'projectName', defaultSort: 'asc' },
+      { title: 'Queue', field: 'queue' },
       {
         title: 'Budget ($)',
         field: 'budget',
         render: row => `$${row.budget.toLocaleString()}`,
-      },
-      {
-        title: 'Max GPU Hours',
-        field: 'maxGpuHours',
-        render: row => row.maxGpuHours.toLocaleString(),
       },
       {
         title: 'Current Spend ($)',
@@ -133,9 +196,9 @@ export const AegisQuotaManagementPage = () => {
         render: row => `$${row.currentSpend.toLocaleString()}`,
       },
       {
-        title: 'Current GPU Hours',
-        field: 'currentGpuHours',
-        render: row => row.currentGpuHours.toLocaleString(),
+        title: 'Utilization',
+        field: 'utilization',
+        render: row => `${row.utilization}%`,
       },
       {
         title: 'Policy',
@@ -165,59 +228,109 @@ export const AegisQuotaManagementPage = () => {
   );
 
   const handleBudgetChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setDraft(prev => ({ ...prev, budget: Number(event.target.value) }));
-  };
-
-  const handleHoursChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setDraft(prev => ({ ...prev, maxGpuHours: Number(event.target.value) }));
+    const value = Number(event.target.value);
+    setDraft(prev => ({ ...prev, budget: value }));
+    if (isNaN(value) || value <= 0) {
+      setBudgetError('Budget must be a positive number');
+    } else {
+      setBudgetError(undefined);
+    }
   };
 
   const handlePolicyChange = (event: ChangeEvent<{ value: unknown }>) => {
-    setDraft(prev => ({ ...prev, policy: event.target.value as 'monitor' | 'enforce' }));
+    setDraft(prev => ({
+      ...prev,
+      policy: event.target.value as 'monitor' | 'enforce',
+    }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editing) {
       return;
     }
 
-    setRows(prevRows =>
-      prevRows.map(row =>
-        row.project === editing.project
-          ? {
-              ...row,
-              budget: draft.budget,
-              maxGpuHours: draft.maxGpuHours,
-              policy: draft.policy,
-            }
-          : row,
-      ),
-    );
+    if (isNaN(draft.budget) || draft.budget <= 0) {
+      setBudgetError('Budget must be a positive number');
+      return;
+    }
 
-    setEditing(prev =>
-      prev
-        ? {
-            ...prev,
-            budget: draft.budget,
-            maxGpuHours: draft.maxGpuHours,
-            policy: draft.policy,
-          }
-        : prev,
-    );
+    try {
+      setSaving(true);
+      await upsertBudget(fetchApi, discoveryApi, identityApi, authApi, {
+        projectId: editing.projectId,
+        queue: editing.queue,
+        limitUsd: draft.budget,
+        policyMode: draft.policy,
+      });
+
+      alertApi.post({
+        message: `Budget updated for ${editing.projectName}`,
+        severity: 'success',
+      });
+
+      // Refresh data from the server
+      await load();
+      setEditing(null);
+    } catch (e: any) {
+      const msg = e?.message ?? String(e);
+      alertApi.post({
+        message: `Failed to save quota: ${msg}`,
+        severity: 'error',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleReset = () => {
     if (!editing) {
       return;
     }
-    const baseline =
-      rows.find(row => row.project === editing.project) ?? mockQuotas[0];
     setDraft({
-      budget: baseline.budget,
-      maxGpuHours: baseline.maxGpuHours,
-      policy: baseline.policy,
+      budget: editing.budget,
+      policy: editing.policy,
     });
+    setBudgetError(undefined);
   };
+
+  const handleCancelEdit = () => {
+    setEditing(null);
+  };
+
+  if (loading) {
+    return (
+      <Page themeId="tool">
+        <Content className={classes.content}>
+          <ContentHeader title="Quota Management">
+            <HeaderLabel label="Guardrails" value="Active" />
+            <HeaderLabel label="Default Currency" value="USD" />
+          </ContentHeader>
+          <Progress />
+        </Content>
+      </Page>
+    );
+  }
+
+  if (error) {
+    return (
+      <Page themeId="tool">
+        <Content className={classes.content}>
+          <ContentHeader title="Quota Management">
+            <HeaderLabel label="Guardrails" value="Active" />
+            <HeaderLabel label="Default Currency" value="USD" />
+          </ContentHeader>
+          <WarningPanel title="Failed to load quotas" severity="error">
+            {error}
+            <Box mt={2}>
+              <Button variant="outlined" onClick={load}>
+                Retry
+              </Button>
+            </Box>
+          </WarningPanel>
+        </Content>
+      </Page>
+    );
+  }
 
   return (
     <Page themeId="tool">
@@ -227,48 +340,58 @@ export const AegisQuotaManagementPage = () => {
           <HeaderLabel label="Default Currency" value="USD" />
         </ContentHeader>
 
-        <Paper elevation={0} className={`${classes.card} ${classes.tableContainer}`}>
-          <Typography variant="h6" gutterBottom>
-            Project Quotas & Budgets
-          </Typography>
-          <Table
-            options={{
-              paging: false,
-              search: false,
-              padding: 'dense',
-            }}
-            data={rows}
-            columns={columns}
-          />
-        </Paper>
+        {rows.length === 0 ? (
+          <Box className={classes.emptyState}>
+            <Typography variant="h6" gutterBottom>
+              No budgets configured
+            </Typography>
+            <Typography variant="body2" color="textSecondary">
+              No projects have budget quotas set. Use the platform API to
+              configure budgets for your projects and they will appear here for
+              management.
+            </Typography>
+          </Box>
+        ) : (
+          <Paper
+            elevation={0}
+            className={`${classes.card} ${classes.tableContainer}`}
+          >
+            <Typography variant="h6" gutterBottom>
+              Project Quotas & Budgets
+            </Typography>
+            <Table
+              options={{
+                paging: false,
+                search: false,
+                padding: 'dense',
+              }}
+              data={rows}
+              columns={columns}
+            />
+          </Paper>
+        )}
 
         {editing && (
           <Paper elevation={0} className={classes.card}>
             <Typography variant="h6" gutterBottom>
-              Set Quota — {editing.project}
+              Set Quota — {editing.projectName} ({editing.queue})
             </Typography>
             <Grid container spacing={3} className={classes.formGrid}>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} md={6}>
                 <TextField
                   label="Budget ($)"
                   type="number"
                   fullWidth
+                  required
                   value={draft.budget}
                   onChange={handleBudgetChange}
                   variant="outlined"
+                  error={Boolean(budgetError)}
+                  helperText={budgetError || 'Enter a positive budget amount in USD'}
+                  inputProps={{ min: 1 }}
                 />
               </Grid>
-              <Grid item xs={12} md={4}>
-                <TextField
-                  label="Max GPU Hours"
-                  type="number"
-                  fullWidth
-                  value={draft.maxGpuHours}
-                  onChange={handleHoursChange}
-                  variant="outlined"
-                />
-              </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={12} md={6}>
                 <FormControl variant="outlined" fullWidth>
                   <InputLabel id="quota-policy-label">Policy</InputLabel>
                   <Select
@@ -285,11 +408,19 @@ export const AegisQuotaManagementPage = () => {
             </Grid>
 
             <Box className={classes.formActions}>
-              <Button variant="contained" color="primary" onClick={handleSave}>
-                Save Quota
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleSave}
+                disabled={saving || Boolean(budgetError)}
+              >
+                {saving ? 'Saving...' : 'Save Quota'}
               </Button>
-              <Button variant="text" onClick={handleReset}>
+              <Button variant="text" onClick={handleReset} disabled={saving}>
                 Reset
+              </Button>
+              <Button variant="text" onClick={handleCancelEdit} disabled={saving}>
+                Cancel
               </Button>
             </Box>
           </Paper>

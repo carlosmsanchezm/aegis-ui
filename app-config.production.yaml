@@ -1,26 +1,35 @@
 app:
-  # Should be the same as backend.baseUrl when using the `app-backend` plugin.
-  baseUrl: http://localhost:7007
+  # REQUIRED: Set to the public URL where the frontend is served
+  baseUrl: ${APP_BASE_URL}
 
 backend:
-  # Note that the baseUrl should be the URL that the browser and other clients
-  # should use when communicating with the backend, i.e. it needs to be
-  # reachable not just from within the backend host, but from all of your
-  # callers. When its value is "http://localhost:7007", it's strictly private
-  # and can't be reached by others.
-  baseUrl: http://localhost:7007
+  # REQUIRED: Set to the public URL where the backend is reachable by browsers
+  baseUrl: ${BACKEND_BASE_URL}
   # The listener can also be expressed as a single <host>:<port> string. In this case we bind to
   # all interfaces, the most permissive setting. The right value depends on your specific deployment.
   listen: ':7007'
   auth:
     keys:
+      # REQUIRED: Generate a secure random secret for backend-to-backend auth
       - secret: ${BACKEND_SECRET}
+    externalAccess:
+      - type: jwks
+        options:
+          # REQUIRED: Keycloak JWKS endpoint for token verification
+          url: ${KEYCLOAK_JWKS_URL}
+          # REQUIRED: Keycloak issuer URL (e.g. https://keycloak.example.com/realms/aegis)
+          issuer: ${KEYCLOAK_ISSUER}
+          audience: backstage
+          subjectPrefix: 'keycloak:'
+        accessRestrictions:
+          - plugin: proxy
     # Session cookie flags (Secure/HttpOnly/SameSite=Lax) are enforced by the deployment ingress.
 
   # config options: https://node-postgres.com/apis/client
   database:
     client: pg
     connection:
+      # REQUIRED: PostgreSQL connection parameters
       host: ${POSTGRES_HOST}
       port: ${POSTGRES_PORT}
       user: ${POSTGRES_USER}
@@ -37,32 +46,44 @@ auth:
   providers:
     keycloak:
       production:
+        # REQUIRED: Keycloak OIDC client credentials
         clientId: ${KEYCLOAK_CLIENT_ID}
         clientSecret: ${KEYCLOAK_CLIENT_SECRET}
+        # REQUIRED: Keycloak realm issuer URL
         issuer: ${KEYCLOAK_ISSUER}
+        # REQUIRED: Keycloak OIDC discovery URL
         metadataUrl: ${KEYCLOAK_METADATA_URL}
         additionalScopes:
           - offline_access
         callbackUrl: '${BACKEND_BASE_URL}/api/auth/keycloak/handler/frame'
         prompt: 'login'
 
+proxy:
+  endpoints:
+    '/aegis':
+      # REQUIRED: URL of the platform-api backend (e.g. https://platform-api.example.com)
+      target: ${AEGIS_API_URL}
+      changeOrigin: true
+      credentials: forward
+      allowedHeaders:
+        - Authorization
+        - authorization
+        - Grpc-Metadata-Authorization
+        - grpc-metadata-authorization
+
 catalog:
   # Overrides the default list locations from app-config.yaml as these contain example data.
   # See https://backstage.io/docs/features/software-catalog/#adding-components-to-the-catalog for more details
   # on how to get entities into the catalog.
   locations:
-    # Local example data, replace this with your production config, these are intended for demo use only.
-    # File locations are relative to the backend process, typically in a deployed context, such as in a Docker container, this will be the root
     - type: file
       target: ./examples/entities.yaml
 
-    # Local example template
     - type: file
       target: ./examples/template/template.yaml
       rules:
         - allow: [Template]
 
-    # Local example organizational data
     - type: file
       target: ./examples/org.yaml
       rules:

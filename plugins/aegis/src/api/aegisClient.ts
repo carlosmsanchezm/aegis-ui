@@ -5,6 +5,14 @@ import {
   OAuthApi,
 } from '@backstage/core-plugin-api';
 
+export type WorkspaceStorage = {
+  persistent?: boolean;
+  storageClass?: string;
+  size?: string;
+  mountPath?: string;
+  existingClaimName?: string;
+};
+
 export type WorkspaceSpec = {
   flavor?: string;
   image?: string;
@@ -13,6 +21,7 @@ export type WorkspaceSpec = {
   ports?: number[];
   env?: Record<string, string>;
   maxDurationSeconds?: number;
+  storage?: WorkspaceStorage;
 };
 
 export type TrainingSpec = {
@@ -30,6 +39,8 @@ export type WorkloadDTO = {
   uiStatus?: string;
   message?: string;
   url?: string;
+  suspendReason?: string;
+  suspendedAtUtc?: string;
   workspace?: WorkspaceSpec;
   training?: TrainingSpec;
 };
@@ -122,7 +133,9 @@ export type ClusterSummary = {
     | 'Error'
     | 'Degraded'
     | 'Upgrading'
-    | 'Scaling';
+    | 'Scaling'
+    | 'Destroying'
+    | 'Destroyed';
   createdAt?: string;
   lastHeartbeat?: string;
   lastSyncedAt?: string;
@@ -282,6 +295,20 @@ export type ClusterDetail = {
   account?: string;
   assumeRoleArn?: string;
   accountId?: string;
+  provisioningJobId?: string;
+  clusterEndpoint?: string;
+  proxyUrl?: string;
+  ilLevel?: string;
+  ttfGpuSecondsP50?: number;
+  availableFlavors?: string[];
+  labels?: Record<string, string>;
+  lastHeartbeat?: string;
+  observability?: {
+    lokiEndpoint?: string;
+    prometheusEndpoint?: string;
+    tempoEndpoint?: string;
+    alertmanagerEndpoint?: string;
+  };
 };
 
 export type PrometheusMetricSample = {
@@ -525,6 +552,32 @@ const normalizeClusterProfile = (
   return normalized;
 };
 
+export type PlatformConfigAwsDefaults = {
+  accountId?: string;
+  roleArn?: string;
+  externalId?: string;
+};
+
+export type PlatformConfig = {
+  devMode: boolean;
+  awsDefaults?: PlatformConfigAwsDefaults;
+};
+
+export const getPlatformConfig = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<PlatformConfig> =>
+  restJson<undefined, PlatformConfig>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/platform/config',
+    { method: 'GET' },
+  );
+
 export type CreateProjectInput = {
   id: string;
   displayName: string;
@@ -656,6 +709,18 @@ export const upsertQueue = async (
   );
 };
 
+export type BudgetRecord = {
+  projectId: string;
+  queue?: string;
+  limitUsd: number;
+  spentUsd?: number;
+  policyMode?: string;
+};
+
+export type ListBudgetsResponse = {
+  items: BudgetRecord[];
+};
+
 export type BudgetInput = {
   projectId: string;
   queue: string;
@@ -691,6 +756,40 @@ export const upsertBudget = async (
     },
   );
 };
+
+export const listBudgets = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  projectId: string,
+): Promise<BudgetRecord[]> => {
+  const res = await restJson<undefined, ListBudgetsResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/budgets/list`,
+    { method: 'GET', requireAuth: true },
+  );
+  return res?.items ?? [];
+};
+
+export const getBudget = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  projectId: string,
+): Promise<BudgetRecord> =>
+  restJson<undefined, BudgetRecord>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/budgets`,
+    { method: 'GET', requireAuth: true },
+  );
 
 const buildProxyUrl = async (
   discoveryApi: DiscoveryApi,
@@ -845,6 +944,7 @@ const restJson = async <TReq extends object | undefined, TRes>(
   return (await response.json()) as TRes;
 };
 
+// @ts-ignore: retained for future gRPC-web style calls
 const postJson = async <TReq extends object, TRes>(
   fetchApi: FetchApi,
   discoveryApi: DiscoveryApi,
@@ -1073,6 +1173,36 @@ export const createCluster = async (
   );
 };
 
+export type DestroyClusterRequest = {
+  clusterId: string;
+  projectId: string;
+};
+
+export type DestroyClusterResponse = {
+  job: Job;
+};
+
+export const destroyCluster = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  req: DestroyClusterRequest,
+): Promise<DestroyClusterResponse> => {
+  return restJson<Record<string, string>, DestroyClusterResponse>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/clusters/${encodeURIComponent(req.clusterId)}/destroy`,
+    {
+      method: 'POST',
+      body: { project_id: req.projectId },
+      requireAuth: true,
+    },
+  );
+};
+
 export const importCluster = async (
   fetchApi: FetchApi,
   discoveryApi: DiscoveryApi,
@@ -1132,14 +1262,13 @@ export const getCluster = async (
   authApi: OAuthApi | undefined,
   clusterId: string,
 ): Promise<ClusterDetail> => {
-  return postJson<{ clusterId: string }, ClusterDetail>(
+  return restJson<undefined, ClusterDetail>(
     fetchApi,
     discoveryApi,
     identityApi,
     authApi,
-    'GetCluster',
-    { clusterId },
-    { requireAuth: true },
+    `/api/v1/clusters/${encodeURIComponent(clusterId)}`,
+    { method: 'GET', requireAuth: true },
   );
 };
 
@@ -1367,3 +1496,26 @@ export const buildKubectlDescribeCommand = (
   }
   return `kubectl -n ${loc.namespace} describe ${loc.kind} ${loc.name}`;
 };
+
+export type ExtensionMetadata = {
+  version: string;
+  sha256: string;
+  vsixUrl: string;
+  setupScriptUrl: string;
+  requiredVscodeVersion: string;
+};
+
+export const getExtensionMetadata = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+): Promise<ExtensionMetadata> =>
+  restJson<undefined, ExtensionMetadata>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    '/api/v1/extension/metadata',
+    { method: 'GET' },
+  );

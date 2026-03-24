@@ -1,0 +1,57 @@
+# Pilot test configuration - points to pilot platform-api on port 19080
+# Ports: frontend=3001, backend=7009
+
+app:
+  baseUrl: http://localhost:3001
+
+backend:
+  baseUrl: http://localhost:7009
+  listen:
+    port: 7009
+  cors:
+    origin: http://localhost:3001
+  auth:
+    keys:
+      - secret: dev-secret
+    externalAccess:
+      - type: jwks
+        options:
+          url: https://keycloak.localtest.me/realms/aegis/protocol/openid-connect/certs
+          issuer: https://keycloak.localtest.me/realms/aegis
+          audience: backstage
+          subjectPrefix: 'keycloak:'
+
+auth:
+  session:
+    secret: dev-session-secret
+    cookie:
+      secure: false
+      sameSite: lax
+      domain: localhost
+  providers:
+    keycloak:
+      development:
+        clientId: backstage
+        clientSecret: local-backstage-client-secret
+        issuer: https://keycloak.localtest.me/realms/aegis
+        metadataUrl: https://keycloak.localtest.me/realms/aegis/.well-known/openid-configuration
+        additionalScopes:
+          - offline_access
+        callbackUrl: http://localhost:7009/api/auth/keycloak/handler/frame
+        prompt: login
+        signIn:
+          resolvers:
+            - resolver: emailMatchingUserEntityProfileEmail
+              dangerouslyAllowSignInWithoutUserInCatalog: true
+            - resolver: emailLocalPartMatchingUserEntityName
+              dangerouslyAllowSignInWithoutUserInCatalog: true
+
+proxy:
+  endpoints:
+    '/aegis':
+      target: 'http://localhost:19080'
+      changeOrigin: true
+      credentials: forward
+      allowedHeaders:
+        - authorization
+        - Authorization

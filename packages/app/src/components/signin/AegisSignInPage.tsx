@@ -198,8 +198,13 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
         profile,
       }),
     );
-    // Always redirect to projects page after login
-    navigate(POST_LOGIN_REDIRECT, { replace: true });
+    // Only redirect to the default page if user is on the root/login page.
+    // On hard-refresh of a deep link, preserve the current URL.
+    const currentPath = window.location.pathname;
+    const isOnRootOrLogin = currentPath === '/' || currentPath === POST_LOGIN_REDIRECT;
+    if (isOnRootOrLogin) {
+      navigate(POST_LOGIN_REDIRECT, { replace: true });
+    }
   };
 
   const handleSignIn = async () => {

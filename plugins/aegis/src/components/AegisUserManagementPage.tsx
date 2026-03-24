@@ -1,35 +1,26 @@
-import { FC, useMemo, useState } from 'react';
+import { FC } from 'react';
 import {
   Page,
   Content,
   ContentHeader,
   HeaderLabel,
-  Table,
-  TableColumn,
+  WarningPanel,
 } from '@backstage/core-components';
 import {
   Box,
   Button,
-  Chip,
-  MenuItem,
   Paper,
-  Select,
-  TextField,
   Typography,
   makeStyles,
 } from '@material-ui/core';
+import OpenInNewIcon from '@material-ui/icons/OpenInNew';
+import VpnKeyIcon from '@material-ui/icons/VpnKey';
 
 const useStyles = makeStyles(theme => ({
   layout: {
     display: 'flex',
     flexDirection: 'column',
     gap: theme.spacing(4),
-  },
-  controls: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: theme.spacing(2),
-    alignItems: 'center',
   },
   card: {
     backgroundColor: 'var(--aegis-card-surface)',
@@ -41,136 +32,30 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'column',
     gap: theme.spacing(3),
   },
+  keycloakInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: theme.spacing(3),
+    padding: theme.spacing(6, 2),
+    textAlign: 'center',
+  },
+  iconWrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: '50%',
+    backgroundColor:
+      theme.palette.type === 'dark'
+        ? 'rgba(96, 165, 250, 0.15)'
+        : 'rgba(79, 70, 229, 0.1)',
+  },
 }));
-
-type Role = 'admin' | 'project-admin' | 'user';
-
-type UserRow = {
-  id: string;
-  name: string;
-  email: string;
-  role: Role;
-  lastActive: string;
-  teams: string[];
-};
-
-const userDirectory: UserRow[] = [
-  {
-    id: 'usr-1982',
-    name: 'Nina Alvarez',
-    email: 'nina.alvarez@aegis.io',
-    role: 'project-admin',
-    lastActive: '5 minutes ago',
-    teams: ['Atlas Vision', 'Labs'],
-  },
-  {
-    id: 'usr-2042',
-    name: 'Jacob Singh',
-    email: 'jacob.singh@aegis.io',
-    role: 'user',
-    lastActive: '32 minutes ago',
-    teams: ['Conversational AI'],
-  },
-  {
-    id: 'usr-2110',
-    name: 'Maya Chen',
-    email: 'maya.chen@aegis.io',
-    role: 'admin',
-    lastActive: 'Active now',
-    teams: ['Platform'],
-  },
-  {
-    id: 'usr-2199',
-    name: 'Ravi Patel',
-    email: 'ravi.patel@aegis.io',
-    role: 'user',
-    lastActive: '1 hour ago',
-    teams: ['Labs'],
-  },
-];
 
 export const AegisUserManagementPage: FC = () => {
   const classes = useStyles();
-  const [users, setUsers] = useState<UserRow[]>(userDirectory);
-  const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | Role>('all');
-
-  const handleRoleChange = (userId: string, newRole: Role) => {
-    setUsers(prev =>
-      prev.map(user => (user.id === userId ? { ...user, role: newRole } : user)),
-    );
-  };
-
-  const filtered = useMemo(() => {
-    return users.filter(user => {
-      const matchesSearch =
-        !search ||
-        user.name.toLowerCase().includes(search.toLowerCase()) ||
-        user.email.toLowerCase().includes(search.toLowerCase());
-      const matchesRole = roleFilter === 'all' || user.role === roleFilter;
-      return matchesSearch && matchesRole;
-    });
-  }, [users, search, roleFilter]);
-
-  const columns = useMemo<TableColumn<UserRow>[]>(
-    () => [
-      {
-        title: 'User',
-        field: 'name',
-        render: row => (
-          <Box display="flex" flexDirection="column">
-            <Typography variant="body1" component="span">
-              {row.name}
-            </Typography>
-            <Typography variant="body2" color="textSecondary">
-              {row.email}
-            </Typography>
-          </Box>
-        ),
-      },
-      {
-        title: 'Teams',
-        field: 'teams',
-        render: row => (
-          <Box display="flex" flexWrap="wrap" gridGap={8}>
-            {row.teams.map(team => (
-              <Chip key={team} label={team} size="small" color="primary" />
-            ))}
-          </Box>
-        ),
-      },
-      {
-        title: 'Role',
-        field: 'role',
-        render: row => (
-          <Select
-            variant="outlined"
-            value={row.role}
-            onChange={event => handleRoleChange(row.id, event.target.value as Role)}
-            style={{ minWidth: 160 }}
-          >
-            <MenuItem value="admin">Platform admin</MenuItem>
-            <MenuItem value="project-admin">Project admin</MenuItem>
-            <MenuItem value="user">Workspace user</MenuItem>
-          </Select>
-        ),
-      },
-      {
-        title: 'Last Active',
-        field: 'lastActive',
-      },
-      {
-        title: 'Access',
-        field: 'id',
-        render: _ => (
-          <Button variant="outlined" color="primary" size="small">
-            Manage Access
-          </Button>
-        ),
-      },
-    ],
-    [handleRoleChange],
-  );
 
   return (
     <Page themeId="tool">
@@ -180,43 +65,38 @@ export const AegisUserManagementPage: FC = () => {
         </ContentHeader>
         <div className={classes.layout}>
           <Paper className={classes.card}>
-            <Typography variant="h6">Directory controls</Typography>
-            <div className={classes.controls}>
-              <TextField
-                variant="outlined"
-                label="Search users"
-                placeholder="Search by name or email"
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-                style={{ minWidth: 280 }}
-              />
-              <TextField
-                select
-                variant="outlined"
-                label="Role filter"
-                value={roleFilter}
-                onChange={event => setRoleFilter(event.target.value as 'all' | Role)}
-                style={{ width: 200 }}
-              >
-                <MenuItem value="all">All roles</MenuItem>
-                <MenuItem value="admin">Platform admin</MenuItem>
-                <MenuItem value="project-admin">Project admin</MenuItem>
-                <MenuItem value="user">Workspace user</MenuItem>
-              </TextField>
-              <Button variant="contained" color="primary">
-                Invite new user
-              </Button>
+            <div className={classes.keycloakInfo}>
+              <div className={classes.iconWrapper}>
+                <VpnKeyIcon color="primary" style={{ fontSize: 32 }} />
+              </div>
+              <Typography variant="h5">
+                Managed through Keycloak
+              </Typography>
+              <Typography variant="body1" color="textSecondary" style={{ maxWidth: 560 }}>
+                User management, roles, and access controls are handled through your
+                Keycloak admin console. Configure users, groups, and role mappings directly
+                in Keycloak to manage access to Aegis.
+              </Typography>
+              <Box display="flex" flexWrap="wrap" justifyContent="center" gridGap={12}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<OpenInNewIcon />}
+                  href="/auth/keycloak"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open Keycloak Console
+                </Button>
+              </Box>
             </div>
           </Paper>
 
-          <Paper className={classes.card}>
-            <Typography variant="h6">Users & access</Typography>
-            <Table
-              options={{ paging: false, search: false, padding: 'dense' }}
-              data={filtered}
-              columns={columns}
-            />
-          </Paper>
+          <WarningPanel severity="info" title="User directory integration">
+            A read-only user directory view will be available in a future release once the
+            Keycloak admin REST API integration is implemented. Until then, all user and role
+            management should be performed directly in the Keycloak admin console.
+          </WarningPanel>
         </div>
       </Content>
     </Page>

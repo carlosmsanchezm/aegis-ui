@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Box,
   Button,
   Chip,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -23,6 +22,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
@@ -150,7 +150,7 @@ const emptyDraft = (): ProfileDraft => ({
       },
     ],
     networking: {
-      vpcId: 'vpc-XXXXX',
+      vpcId: '',
       subnets: ['subnet-a', 'subnet-b', 'subnet-c'],
     },
     storageClasses: ['gp3-encrypted', 'fsx-lustre'],
@@ -186,108 +186,50 @@ const emptyDraft = (): ProfileDraft => ({
     ],
 });
 
-const sampleProfiles: ClusterProfile[] = [
-  {
-    id: 'il5-hardened',
-    name: 'IL5 – GovCloud Hardened',
-    description: 'Baseline compliant IL5 EKS deployment with GPU node group.',
-    version: '2.3.1',
-    provider: 'aws-eks',
-    ilLevel: 'IL-5',
-    fedramp: 'High',
-    gpuSupport: true,
-    parameterCount: 6,
-    costBaselinePerHour: 58.4,
-    status: 'Published',
-    lastUpdated: '2024-05-17T12:35:00Z',
-    policyPackIds: ['il5-baseline', 'fedramp-high'],
-    complianceBoundary: 'AWS GovCloud (US-East)',
-    projects: ['Project Aurora', 'Project Atlas'],
-    groups: ['Mission Platform'],
-    topologyDefaults: {
-      controlPlaneVersion: '1.34',
-      nodePools: [
-        {
-          id: 'cpu-standard',
-          name: 'Control & CPU',
-          instanceType: 'm6i.4xlarge',
-          minSize: 3,
-          maxSize: 48,
-          perNodeHourlyCost: 1.24,
-        },
-        {
-          id: 'gpu-training',
-          name: 'GPU Training',
-          instanceType: 'p5.48xlarge',
-          gpu: 'NVIDIA H100',
-          minSize: 0,
-          maxSize: 8,
-          perNodeHourlyCost: 32.5,
-        },
-      ],
-      networking: {
-        vpcId: 'vpc-0fedbeef',
-        subnets: ['subnet-a', 'subnet-b', 'subnet-c'],
-      },
-      storageClasses: ['gp3-encrypted', 'fsx-lustre'],
-      irsaEnabled: true,
-      autoscalerEnabled: true,
-    },
-    addons: [
-      'aegis-agent',
-      'dcgm-exporter',
-      'fsx-csi',
-      'opa-gatekeeper',
-      'flow-logs',
-    ],
-    guardrails: ['pss-restricted', 'fips-endpoints', 'audit-logs'],
-    parameters: emptyDraft().parameters,
-  },
-  {
-    id: 'il4-cost-optimized',
-    name: 'IL4 – Cost Optimized GPU',
-    description: 'Spot-heavy workload tuned for experimentation in IL4 enclaves.',
-    version: '1.6.0',
-    provider: 'aws-eks',
-    ilLevel: 'IL-4',
-    fedramp: 'Moderate',
-    gpuSupport: true,
-    parameterCount: 4,
-    costBaselinePerHour: 21.75,
-    status: 'Published',
-    lastUpdated: '2024-04-04T08:15:00Z',
-    policyPackIds: ['il4-baseline'],
-    complianceBoundary: 'AWS Commercial',
-    projects: ['Project Borealis'],
-    groups: ['Experimentation'],
-    topologyDefaults: emptyDraft().topologyDefaults,
-    addons: ['aegis-agent', 'gpu-operator', 'opa-gatekeeper'],
-    guardrails: ['pss-baseline', 'audit-logs'],
-    parameters: emptyDraft().parameters,
-  },
-  {
-    id: 'legacy-ml',
-    name: 'Legacy GPU IL5',
-    description: 'Deprecated blueprint kept for traceability.',
-    version: '1.2.2',
-    provider: 'aws-eks',
-    ilLevel: 'IL-5',
-    fedramp: 'High',
-    gpuSupport: false,
-    parameterCount: 3,
-    costBaselinePerHour: 17.1,
-    status: 'Deprecated',
-    lastUpdated: '2023-11-12T15:05:00Z',
-    policyPackIds: ['il5-baseline'],
-    complianceBoundary: 'AWS GovCloud (US-West)',
-    projects: ['Legacy Mission'],
-    groups: ['Platform'],
-    topologyDefaults: emptyDraft().topologyDefaults,
-    addons: ['aegis-agent', 'opa-gatekeeper'],
-    guardrails: ['pss-restricted', 'audit-logs'],
-    parameters: emptyDraft().parameters,
-  },
-];
+type ValidationErrors = {
+  name?: string;
+  vpcId?: string;
+  nodePools?: Record<number, string>;
+};
+
+const PROFILE_NAME_PATTERN = /^[a-zA-Z0-9-]+$/;
+const VPC_ID_PATTERN = /^vpc-[a-z0-9]+$/;
+
+const validateDraft = (profile: ProfileDraft): ValidationErrors => {
+  const errors: ValidationErrors = {};
+
+  if (!profile.name || profile.name.trim().length === 0) {
+    errors.name = 'Profile name is required';
+  } else if (profile.name.trim().length < 3) {
+    errors.name = 'Profile name must be at least 3 characters';
+  } else if (!PROFILE_NAME_PATTERN.test(profile.name.trim())) {
+    errors.name = 'Profile name must contain only letters, numbers, and hyphens';
+  }
+
+  const vpcId = profile.topologyDefaults.networking.vpcId;
+  if (vpcId && vpcId.trim().length > 0 && !VPC_ID_PATTERN.test(vpcId.trim())) {
+    errors.vpcId = 'VPC ID must match pattern vpc-[a-z0-9]+ (e.g. vpc-abc123)';
+  }
+
+  const nodePoolErrors: Record<number, string> = {};
+  profile.topologyDefaults.nodePools.forEach((pool, index) => {
+    if (pool.minSize > pool.maxSize) {
+      nodePoolErrors[index] = `Min nodes (${pool.minSize}) must be less than or equal to max nodes (${pool.maxSize})`;
+    }
+  });
+  if (Object.keys(nodePoolErrors).length > 0) {
+    errors.nodePools = nodePoolErrors;
+  }
+
+  return errors;
+};
+
+const hasValidationErrors = (errors: ValidationErrors): boolean => {
+  return Boolean(errors.name || errors.vpcId || (errors.nodePools && Object.keys(errors.nodePools).length > 0));
+};
+
+/** No backend endpoint for cluster profiles yet - initialize with empty data. */
+const initialProfiles: ClusterProfile[] = [];
 
 const statusColor = (status: ClusterProfileStatus): 'default' | 'primary' | 'secondary' => {
   if (status === 'Published') {
@@ -320,11 +262,11 @@ const fedrampLabel: Record<FedrampLevel, string> = {
 
 export const ClusterProfilesAdminPage = () => {
   const classes = useStyles();
-  const [profiles, setProfiles] = useState(sampleProfiles);
+  const [profiles, _setProfiles] = useState(initialProfiles);
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<ProfileDraft | null>(null);
   const [activeStep, setActiveStep] = useState(0);
-  const [isPublishing, setPublishing] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 
   const filteredProfiles = useMemo(() => {
     if (!search) {
@@ -347,12 +289,28 @@ export const ClusterProfilesAdminPage = () => {
   const handleOpenDraft = (profile?: ClusterProfile) => {
     setDraft(profile ? { ...profile, isNew: false } : emptyDraft());
     setActiveStep(0);
+    setValidationErrors({});
   };
 
   const handleCloseDraft = () => {
     setDraft(null);
     setActiveStep(0);
+    setValidationErrors({});
   };
+
+  const validateCurrentStep = useCallback((): boolean => {
+    if (!draft) return true;
+    const errors = validateDraft(draft);
+    setValidationErrors(errors);
+
+    if (activeStep === 0 && errors.name) {
+      return false;
+    }
+    if (activeStep === 1 && (errors.vpcId || (errors.nodePools && Object.keys(errors.nodePools).length > 0))) {
+      return false;
+    }
+    return true;
+  }, [draft, activeStep]);
 
   const handleDraftChange = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => {
     setDraft(prev => (prev ? { ...prev, [key]: value } : prev));
@@ -392,24 +350,15 @@ export const ClusterProfilesAdminPage = () => {
     setDraft({ ...draft, parameters, parameterCount: parameters.length });
   };
 
-  const handlePublish = async () => {
-    if (!draft) {
+  /** Publish is disabled until the cluster profiles API is available. */
+  const handlePublish = () => {
+    if (!draft) return;
+    const errors = validateDraft(draft);
+    setValidationErrors(errors);
+    if (hasValidationErrors(errors)) {
       return;
     }
-    setPublishing(true);
-    await new Promise(resolve => setTimeout(resolve, 750));
-    setPublishing(false);
-    setProfiles(prev => {
-      const next = draft.isNew
-        ? [...prev, { ...draft, status: 'Published' as ClusterProfileStatus, isNew: undefined }]
-        : prev.map(profile =>
-            profile.id === draft.id
-              ? { ...draft, status: 'Published' as ClusterProfileStatus, isNew: undefined }
-              : profile,
-          );
-      return next.sort((a, b) => a.name.localeCompare(b.name));
-    });
-    handleCloseDraft();
+    // API not yet connected - no-op
   };
 
   const renderedSpec = useMemo(() => {
@@ -463,6 +412,20 @@ export const ClusterProfilesAdminPage = () => {
               </TableRow>
             </TableHead>
             <TableBody>
+              {filteredProfiles.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={11} align="center">
+                    <Box py={6}>
+                      <Typography variant="h6" color="textSecondary">
+                        No cluster profiles available
+                      </Typography>
+                      <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>
+                        Cluster profiles will be manageable once the profile API is available.
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              )}
               {filteredProfiles.map(profile => (
                 <TableRow key={profile.id} hover>
                   <TableCell>
@@ -503,12 +466,20 @@ export const ClusterProfilesAdminPage = () => {
                       <Button size="small" onClick={() => handleOpenDraft(profile)}>
                         Edit
                       </Button>
-                      <Button size="small" startIcon={<FileCopyIcon />}>
-                        Duplicate
-                      </Button>
-                      <Button size="small" startIcon={<PublishIcon />}>
-                        Publish
-                      </Button>
+                      <Tooltip title="API not yet connected">
+                        <span>
+                          <Button size="small" startIcon={<FileCopyIcon />} disabled>
+                            Duplicate
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="API not yet connected">
+                        <span>
+                          <Button size="small" startIcon={<PublishIcon />} disabled>
+                            Publish
+                          </Button>
+                        </span>
+                      </Tooltip>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -517,11 +488,10 @@ export const ClusterProfilesAdminPage = () => {
           </Table>
         </Paper>
 
-        <WarningPanel severity="info" title="Data contract">
-          The table surfaces read-only summaries from <code>/v1/cluster-profiles</code> while
-          the editor persists drafts to <code>/v1/cluster-profiles/:id</code>. Publishing should
-          issue a <code>POST /v1/cluster-profiles/:id/publish</code> that bumps the semantic
-          version and emits an audit event.
+        <WarningPanel severity="info" title="API integration pending">
+          The cluster profiles API (<code>/v1/cluster-profiles</code>) is not yet available in the
+          backend. Profile creation and publishing will be enabled once the API endpoint is deployed.
+          The form editor above can be used to preview the profile schema.
         </WarningPanel>
       </Content>
 
@@ -559,9 +529,17 @@ export const ClusterProfilesAdminPage = () => {
                     <TextField
                       label="Name"
                       value={draft.name}
-                      onChange={event => handleDraftChange('name', event.target.value)}
+                      onChange={event => {
+                        handleDraftChange('name', event.target.value);
+                        if (validationErrors.name) {
+                          setValidationErrors(prev => ({ ...prev, name: undefined }));
+                        }
+                      }}
                       variant="outlined"
                       fullWidth
+                      required
+                      error={Boolean(validationErrors.name)}
+                      helperText={validationErrors.name || 'Alphanumeric and hyphens only, min 3 characters'}
                     />
                     <TextField
                       label="Description"
@@ -682,16 +660,20 @@ export const ClusterProfilesAdminPage = () => {
                           variant="outlined"
                           fullWidth
                           value={draft.topologyDefaults.networking.vpcId}
-                          onChange={event =>
+                          onChange={event => {
                             handleDraftChange('topologyDefaults', {
                               ...draft.topologyDefaults,
                               networking: {
                                 ...draft.topologyDefaults.networking,
                                 vpcId: event.target.value,
                               },
-                            })
-                          }
-                          helperText="Pre-approved VPC for control plane and node groups."
+                            });
+                            if (validationErrors.vpcId) {
+                              setValidationErrors(prev => ({ ...prev, vpcId: undefined }));
+                            }
+                          }}
+                          error={Boolean(validationErrors.vpcId)}
+                          helperText={validationErrors.vpcId || 'Pre-approved VPC for control plane and node groups (e.g. vpc-abc123).'}
                         />
                       </Grid>
                       <Grid item xs={12} sm={6}>
@@ -763,6 +745,9 @@ export const ClusterProfilesAdminPage = () => {
                               variant="outlined"
                               value={pool.minSize}
                               fullWidth
+                              error={Boolean(validationErrors.nodePools?.[index])}
+                              helperText={validationErrors.nodePools?.[index]}
+                              inputProps={{ min: 0 }}
                               onChange={event => {
                                 const nodePools = draft.topologyDefaults.nodePools.map((np, idx) =>
                                   idx === index
@@ -773,6 +758,16 @@ export const ClusterProfilesAdminPage = () => {
                                   ...draft.topologyDefaults,
                                   nodePools,
                                 });
+                                if (validationErrors.nodePools?.[index]) {
+                                  setValidationErrors(prev => {
+                                    const next = { ...prev };
+                                    if (next.nodePools) {
+                                      const { [index]: _, ...rest } = next.nodePools;
+                                      next.nodePools = Object.keys(rest).length > 0 ? rest : undefined;
+                                    }
+                                    return next;
+                                  });
+                                }
                               }}
                             />
                           </Grid>
@@ -783,6 +778,8 @@ export const ClusterProfilesAdminPage = () => {
                               variant="outlined"
                               value={pool.maxSize}
                               fullWidth
+                              error={Boolean(validationErrors.nodePools?.[index])}
+                              inputProps={{ min: 0 }}
                               onChange={event => {
                                 const nodePools = draft.topologyDefaults.nodePools.map((np, idx) =>
                                   idx === index
@@ -793,6 +790,16 @@ export const ClusterProfilesAdminPage = () => {
                                   ...draft.topologyDefaults,
                                   nodePools,
                                 });
+                                if (validationErrors.nodePools?.[index]) {
+                                  setValidationErrors(prev => {
+                                    const next = { ...prev };
+                                    if (next.nodePools) {
+                                      const { [index]: _, ...rest } = next.nodePools;
+                                      next.nodePools = Object.keys(rest).length > 0 ? rest : undefined;
+                                    }
+                                    return next;
+                                  });
+                                }
                               }}
                             />
                           </Grid>
@@ -1046,21 +1053,27 @@ export const ClusterProfilesAdminPage = () => {
                 Back
               </Button>
               {activeStep < 4 ? (
-                <Button color="primary" variant="contained" onClick={() => setActiveStep(step => Math.min(step + 1, 4))}>
+                <Button color="primary" variant="contained" onClick={() => {
+                  if (validateCurrentStep()) {
+                    setActiveStep(step => Math.min(step + 1, 4));
+                  }
+                }}>
                   Continue
                 </Button>
               ) : (
-                <Button
-                  color="primary"
-                  variant="contained"
-                  startIcon={
-                    isPublishing ? <CircularProgress color="inherit" size={18} /> : <PublishIcon />
-                  }
-                  onClick={handlePublish}
-                  disabled={isPublishing}
-                >
-                  Publish profile
-                </Button>
+                <Tooltip title="API not yet connected">
+                  <span>
+                    <Button
+                      color="primary"
+                      variant="contained"
+                      startIcon={<PublishIcon />}
+                      onClick={handlePublish}
+                      disabled
+                    >
+                      Publish profile
+                    </Button>
+                  </span>
+                </Tooltip>
               )}
             </DialogActions>
           </>

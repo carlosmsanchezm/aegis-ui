@@ -9,7 +9,7 @@ metadata:
   #   backstage.io/techdocs-ref: dir:.
 spec:
   type: website
-  owner: john@example.com
+  owner: user:default/cms553
   lifecycle: experimental
 
 ---
@@ -23,4 +23,17 @@ spec:
   profile:
     displayName: cms553
     email: cms553@cornell.edu
+  memberOf: []
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: pilot-test
+  annotations:
+    backstage.io/email: pilot-test@aegis-platform.tech
+spec:
+  profile:
+    displayName: Pilot Tester
+    email: pilot-test@aegis-platform.tech
   memberOf: []

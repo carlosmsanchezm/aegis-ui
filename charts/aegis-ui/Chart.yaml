@@ -1,0 +1,17 @@
+apiVersion: v2
+name: aegis-ui
+description: Aegis UI - Backstage-based frontend for the Aegis GPU control plane
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: "https://github.com/carlosmsanchezm/aegis"
+maintainers:
+  - name: Aegis Team
+    email: team@yourorg.dev
+keywords:
+  - aegis
+  - backstage
+  - ui
+  - kubernetes
+sources:
+  - https://github.com/carlosmsanchezm/aegis

@@ -1,0 +1,133 @@
+replicaCount: 2
+
+image:
+  repository: ""  # REQUIRED: e.g., 123456789.dkr.ecr.us-gov-west-1.amazonaws.com/aegis-ui
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 7007
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: aegis-ui.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: aegis-ui-tls
+  #    hosts:
+  #      - aegis-ui.example.com
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# Environment variables injected into the Backstage container.
+# These map to the ${...} placeholders in app-config.production.yaml.
+env:
+  APP_BASE_URL: ""           # REQUIRED: e.g., https://aegis-ui.example.com
+  BACKEND_BASE_URL: ""       # REQUIRED: e.g., https://aegis-ui.example.com
+  BACKEND_SECRET: ""         # REQUIRED: generate with `openssl rand -hex 32`
+  NODE_ENV: production
+
+# Aegis Platform API connection
+aegisPlatform:
+  apiUrl: ""  # REQUIRED: e.g., https://platform-api.aegis.example.com
+
+# PostgreSQL connection (used by Backstage catalog/scaffolder)
+postgres:
+  host: ""      # REQUIRED: e.g., postgres.aegis.svc.cluster.local
+  port: "5432"
+  user: ""      # REQUIRED
+  password: ""  # REQUIRED: prefer setting via --set or existingSecret
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+# Keycloak OIDC configuration
+keycloak:
+  baseUrl: ""       # REQUIRED: e.g., https://keycloak.aegis.example.com
+  realm: aegis
+  clientId: aegis-ui
+  clientSecret: ""  # REQUIRED: set via --set or secret reference
+  # Derived URLs (auto-computed from baseUrl and realm if left empty)
+  issuer: ""        # default: <baseUrl>/realms/<realm>
+  metadataUrl: ""   # default: <baseUrl>/realms/<realm>/.well-known/openid-configuration
+  jwksUrl: ""       # default: <baseUrl>/realms/<realm>/protocol/openid-connect/certs
+
+# Additional environment variables (key: value pairs)
+extraEnv: {}
+  # MY_CUSTOM_VAR: "value"
+
+# Environment variables from existing secrets
+envFromSecrets: []
+  # - secretName: my-secret
+  #   key: MY_KEY
+  #   envName: MY_ENV_VAR
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod-level security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Container-level security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false  # Backstage needs to write to /tmp and node_modules/.cache
+  capabilities:
+    drop:
+      - ALL
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /healthcheck
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthcheck
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Extra volume mounts and volumes (e.g., for CA trust bundles)
+extraVolumeMounts: []
+extraVolumes: []

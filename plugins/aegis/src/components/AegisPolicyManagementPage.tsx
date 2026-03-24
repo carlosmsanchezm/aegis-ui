@@ -1,4 +1,4 @@
-import { FC, useMemo, useState } from 'react';
+import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Page,
   Content,
@@ -6,18 +6,26 @@ import {
   HeaderLabel,
   Table,
   TableColumn,
+  WarningPanel,
 } from '@backstage/core-components';
+import {
+  discoveryApiRef,
+  fetchApiRef,
+  identityApiRef,
+  useApi,
+} from '@backstage/core-plugin-api';
+import { keycloakAuthApiRef } from '../api/refs';
+import { ApiError, listProjects, ProjectRecord } from '../api/aegisClient';
 import {
   Box,
   Button,
-  Grid,
-  MenuItem,
+  Chip,
+  CircularProgress,
   Paper,
-  Select,
-  TextField,
   Typography,
   makeStyles,
 } from '@material-ui/core';
+import SecurityIcon from '@material-ui/icons/Security';
 
 const useStyles = makeStyles(theme => ({
   layout: {
@@ -35,239 +43,201 @@ const useStyles = makeStyles(theme => ({
     flexDirection: 'column',
     gap: theme.spacing(3),
   },
-  formRow: {
+  chipRow: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: theme.spacing(2),
+    gap: theme.spacing(1),
   },
-  actions: {
+  loadingContainer: {
     display: 'flex',
-    justifyContent: 'flex-end',
-    gap: theme.spacing(1.5),
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing(6),
   },
-  requestActions: {
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: theme.spacing(2),
+    padding: theme.spacing(6, 2),
+    textAlign: 'center',
+  },
+  iconWrapper: {
     display: 'flex',
     alignItems: 'center',
-    gap: theme.spacing(1),
+    justifyContent: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: '50%',
+    backgroundColor:
+      theme.palette.type === 'dark'
+        ? 'rgba(96, 165, 250, 0.15)'
+        : 'rgba(79, 70, 229, 0.1)',
   },
 }));
 
-type PolicyRow = {
+type PolicyProjectRow = {
   id: string;
-  scope: string;
-  constraint: string;
-  value: string;
-  enforcement: 'soft' | 'hard';
+  displayName: string;
+  regions: string;
+  dataLevel: string;
+  denyEgress: string;
 };
 
-type RequestRow = {
-  id: string;
-  requester: string;
-  project: string;
-  requestedAt: string;
-  resources: string;
-  status: 'pending' | 'approved' | 'denied';
-};
-
-const policyData: PolicyRow[] = [
-  {
-    id: 'GPU-GLOBAL-MAX',
-    scope: 'Global',
-    constraint: 'Concurrent GPU Workspaces',
-    value: '32',
-    enforcement: 'hard',
-  },
-  {
-    id: 'TEAM-LABS-T4',
-    scope: 'Team — Labs',
-    constraint: 'Daily GPU Hours',
-    value: '400',
-    enforcement: 'soft',
-  },
-  {
-    id: 'TEAM-ATLAS-A100',
-    scope: 'Team — Atlas',
-    constraint: 'Per-user A100 count',
-    value: '2',
-    enforcement: 'hard',
-  },
-];
-
-const requestQueue: RequestRow[] = [
-  {
-    id: 'REQ-10421',
-    requester: 'Nina Alvarez',
-    project: 'Atlas Vision Training',
-    requestedAt: '2024-04-12 09:14 UTC',
-    resources: 'A100 • 2x • 16h',
-    status: 'pending',
-  },
-  {
-    id: 'REQ-10418',
-    requester: 'Jacob Singh',
-    project: 'Conversational R&D',
-    requestedAt: '2024-04-11 18:02 UTC',
-    resources: 'T4 • 4x • 24h',
-    status: 'approved',
-  },
-  {
-    id: 'REQ-10416',
-    requester: 'Maya Chen',
-    project: 'Model Compression Experiments',
-    requestedAt: '2024-04-10 22:40 UTC',
-    resources: 'A10 • 1x • 8h',
-    status: 'denied',
-  },
-];
+const projectToPolicyRow = (project: ProjectRecord): PolicyProjectRow => ({
+  id: project.id,
+  displayName: project.displayName || project.id,
+  regions: project.policy?.regions?.join(', ') || 'Not configured',
+  dataLevel: project.policy?.dataLevel || 'Not configured',
+  denyEgress:
+    project.policy?.denyEgressByDefault === true
+      ? 'Denied by default'
+      : project.policy?.denyEgressByDefault === false
+      ? 'Allowed'
+      : 'Not configured',
+});
 
 export const AegisPolicyManagementPage: FC = () => {
   const classes = useStyles();
-  const [policyValue, setPolicyValue] = useState('32');
-  const [selectedScope, setSelectedScope] = useState('Global');
-  const [constraint, setConstraint] = useState('Concurrent GPU Workspaces');
+  const fetchApi = useApi(fetchApiRef);
+  const discoveryApi = useApi(discoveryApiRef);
+  const identityApi = useApi(identityApiRef);
+  const authApi = useApi(keycloakAuthApiRef);
 
-  const policyColumns = useMemo<TableColumn<PolicyRow>[]>(
-    () => [
-      { title: 'Policy ID', field: 'id' },
-      { title: 'Scope', field: 'scope' },
-      { title: 'Constraint', field: 'constraint' },
-      { title: 'Value', field: 'value' },
-      {
-        title: 'Enforcement',
-        field: 'enforcement',
-        render: row => (
-          <Typography
-            variant="body2"
-            color={row.enforcement === 'hard' ? 'error' : 'textPrimary'}
-          >
-            {row.enforcement === 'hard' ? 'Hard stop' : 'Advisory'}
-          </Typography>
-        ),
-      },
-    ],
-    [],
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      setLoadError(null);
+      const response = await listProjects(fetchApi, discoveryApi, identityApi, authApi);
+      setProjects(response.items ?? []);
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : 'Failed to load projects from Platform API';
+      setLoadError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchApi, discoveryApi, identityApi, authApi]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const policyRows = useMemo(
+    () => projects.map(projectToPolicyRow),
+    [projects],
   );
 
-  const requestColumns = useMemo<TableColumn<RequestRow>[]>(
+  const policyColumns = useMemo<TableColumn<PolicyProjectRow>[]>(
     () => [
-      { title: 'Request ID', field: 'id' },
-      { title: 'Requester', field: 'requester' },
-      { title: 'Project', field: 'project' },
-      { title: 'Resources', field: 'resources' },
-      { title: 'Requested', field: 'requestedAt' },
+      { title: 'Project ID', field: 'id' },
+      { title: 'Display Name', field: 'displayName' },
       {
-        title: 'Status',
-        field: 'status',
+        title: 'Allowed Regions',
+        field: 'regions',
         render: row => (
-          <Box display="flex" alignItems="center" justifyContent="space-between">
-            <Typography variant="body2" color="textPrimary">
-              {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
+          <div className={classes.chipRow}>
+            {row.regions === 'Not configured' ? (
+              <Typography variant="body2" color="textSecondary">
+                Not configured
+              </Typography>
+            ) : (
+              row.regions.split(', ').map(region => (
+                <Chip key={region} label={region} size="small" color="primary" />
+              ))
+            )}
+          </div>
+        ),
+      },
+      {
+        title: 'Data Classification',
+        field: 'dataLevel',
+        render: row =>
+          row.dataLevel === 'Not configured' ? (
+            <Typography variant="body2" color="textSecondary">
+              Not configured
             </Typography>
-            <div className={classes.requestActions}>
-              <Button
-                variant="outlined"
-                color="primary"
-                size="small"
-                disabled={row.status === 'approved'}
-              >
-                Approve
-              </Button>
-              <Button
-                variant="outlined"
-                color="secondary"
-                size="small"
-                disabled={row.status === 'denied'}
-              >
-                Deny
-              </Button>
-            </div>
-          </Box>
+          ) : (
+            <Chip label={row.dataLevel} size="small" />
+          ),
+      },
+      {
+        title: 'Egress Policy',
+        field: 'denyEgress',
+        render: row => (
+          <Chip
+            label={row.denyEgress}
+            size="small"
+            color={row.denyEgress === 'Denied by default' ? 'secondary' : 'default'}
+          />
         ),
       },
     ],
-    [],
+    [classes.chipRow],
   );
 
   return (
     <Page themeId="tool">
       <Content>
-        <ContentHeader title="Quota & Policy Management">
-          <HeaderLabel label="Administration" value="Workspace governance" />
+        <ContentHeader title="Policy Management">
+          <HeaderLabel label="Administration" value="Compliance policies" />
         </ContentHeader>
         <div className={classes.layout}>
+          {loadError && (
+            <WarningPanel severity="error" title="Failed to load projects">
+              {loadError}
+              <Box mt={2}>
+                <Button variant="outlined" onClick={load}>
+                  Retry
+                </Button>
+              </Box>
+            </WarningPanel>
+          )}
+
           <Paper className={classes.card}>
-            <Typography variant="h6">Set policy guardrails</Typography>
-            <div className={classes.formRow}>
-              <TextField
-                label="Scope"
-                select
-                variant="outlined"
-                value={selectedScope}
-                onChange={event => setSelectedScope(event.target.value)}
-                style={{ minWidth: 200 }}
-              >
-                <MenuItem value="Global">Global</MenuItem>
-                <MenuItem value="Team — Labs">Team — Labs</MenuItem>
-                <MenuItem value="Team — Atlas">Team — Atlas</MenuItem>
-              </TextField>
-              <TextField
-                label="Constraint"
-                select
-                variant="outlined"
-                value={constraint}
-                onChange={event => setConstraint(event.target.value)}
-                style={{ minWidth: 220 }}
-              >
-                <MenuItem value="Concurrent GPU Workspaces">
-                  Concurrent GPU Workspaces
-                </MenuItem>
-                <MenuItem value="Daily GPU Hours">Daily GPU Hours</MenuItem>
-                <MenuItem value="Per-user A100 count">Per-user A100 count</MenuItem>
-              </TextField>
-              <TextField
-                label="Value"
-                variant="outlined"
-                value={policyValue}
-                onChange={event => setPolicyValue(event.target.value)}
-                style={{ width: 160 }}
+            <Typography variant="h6">Project compliance policies</Typography>
+            <Typography variant="body2" color="textSecondary">
+              Policy domains are configured per project and enforced at workload submission time.
+              Each project can define allowed regions, data classification levels, and egress
+              restrictions.
+            </Typography>
+            {loading ? (
+              <Box className={classes.loadingContainer}>
+                <CircularProgress />
+              </Box>
+            ) : policyRows.length === 0 && !loadError ? (
+              <div className={classes.emptyState}>
+                <div className={classes.iconWrapper}>
+                  <SecurityIcon color="primary" style={{ fontSize: 32 }} />
+                </div>
+                <Typography variant="h6" color="textSecondary">
+                  No projects with policies
+                </Typography>
+                <Typography variant="body2" color="textSecondary" style={{ maxWidth: 480 }}>
+                  No projects have been created yet. Create a project with compliance
+                  policies using the platform API to see policy configurations here.
+                </Typography>
+              </div>
+            ) : (
+              <Table
+                options={{ paging: false, search: true, padding: 'dense' }}
+                data={policyRows}
+                columns={policyColumns}
               />
-              <Select value="hard" variant="outlined" style={{ width: 160 }}>
-                <MenuItem value="hard">Hard stop</MenuItem>
-                <MenuItem value="soft">Advisory</MenuItem>
-              </Select>
-            </div>
-            <div className={classes.actions}>
-              <Button variant="outlined" color="secondary">
-                Reset
-              </Button>
-              <Button color="primary" variant="contained">
-                Update Policy
-              </Button>
-            </div>
+            )}
           </Paper>
 
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Paper className={classes.card}>
-                <Typography variant="h6">Active policies</Typography>
-                <Table
-                  options={{ paging: false, search: false, padding: 'dense' }}
-                  data={policyData}
-                  columns={policyColumns}
-                />
-              </Paper>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Paper className={classes.card}>
-                <Typography variant="h6">Workspace requests</Typography>
-                <Table
-                  options={{ paging: false, search: false, padding: 'dense' }}
-                  data={requestQueue}
-                  columns={requestColumns}
-                />
-              </Paper>
-            </Grid>
-          </Grid>
+          <WarningPanel severity="info" title="Policy editing coming soon">
+            Policy updates are not yet available from this page. To modify project policies,
+            use the project management API (<code>PUT /api/v1/projects</code>) or the project
+            creation form. A dedicated policy editor will be available in a future release.
+          </WarningPanel>
         </div>
       </Content>
     </Page>
