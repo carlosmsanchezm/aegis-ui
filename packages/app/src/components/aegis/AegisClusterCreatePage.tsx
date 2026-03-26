@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
   Card,
@@ -31,6 +34,7 @@ import {
   Typography,
   makeStyles,
 } from '@material-ui/core';
+import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import GitHubIcon from '@material-ui/icons/GitHub';
 import DescriptionIcon from '@material-ui/icons/Description';
 import CodeIcon from '@material-ui/icons/Code';
@@ -225,7 +229,7 @@ const schemaFields: SchemaField[] = [
     path: 'cluster.id',
     title: 'Cluster slug',
     type: 'string',
-    description: 'DNS-safe identifier for ProjectInfra and Pulumi stacks.',
+    description: 'Unique cluster name. Auto-generated from profile and project.',
     required: true,
     defaultValue: 'atlas-train-govcloud',
     roleVisibility: ['platform-admin', 'cluster-creator'],
@@ -494,7 +498,7 @@ export const AegisClusterCreatePage = () => {
   const identityApi = useApi(identityApiRef);
   const authApi = useApi(keycloakAuthApiRef);
   const [tab, setTab] = useState(0);
-  const [persona, setPersona] = useState<Persona>('cluster-creator');
+  const [persona] = useState<Persona>('ml-engineer');
   const [activeProfileId, setActiveProfileId] = useState<string | null>(
     profileCards[0].id,
   );
@@ -568,18 +572,6 @@ export const AegisClusterCreatePage = () => {
   );
   const selectedProjectHasAws = projectHasAwsCredentials(selectedProjectRecord);
 
-  const personaLabel = useMemo(() => {
-    switch (persona) {
-      case 'platform-admin':
-        return 'Platform Admin';
-      case 'cluster-creator':
-        return 'Cluster Creator';
-      case 'ml-engineer':
-        return 'ML / AI Engineer';
-      default:
-        return 'User';
-    }
-  }, [persona]);
 
   useEffect(() => {
     let active = true;
@@ -1214,31 +1206,7 @@ export const AegisClusterCreatePage = () => {
       {fromProfileStep === 0 && (
         <Box mt={3}>
           <Box display="flex" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6">Select a published profile</Typography>
-            <FormControl component="fieldset">
-              <FormHelperText>Persona preview</FormHelperText>
-              <RadioGroup
-                row
-                value={persona}
-                onChange={event => setPersona(event.target.value as Persona)}
-              >
-                <FormControlLabel
-                  value="platform-admin"
-                  control={<Radio color="primary" />}
-                  label="Platform Admin"
-                />
-                <FormControlLabel
-                  value="cluster-creator"
-                  control={<Radio color="primary" />}
-                  label="Cluster Creator"
-                />
-                <FormControlLabel
-                  value="ml-engineer"
-                  control={<Radio color="primary" />}
-                  label="ML/AI Engineer"
-                />
-              </RadioGroup>
-            </FormControl>
+            <Typography variant="h6">Select a cluster profile</Typography>
           </Box>
           {projectError && (
             <WarningPanel severity="warning" title="Projects unavailable">
@@ -1337,11 +1305,9 @@ export const AegisClusterCreatePage = () => {
         <Box mt={3}>
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">Parameters</Typography>
-            <Chip label={`Persona: ${personaLabel}`} color="primary" />
           </Box>
           <Typography variant="body2" color="textSecondary" paragraph>
-            These inputs are generated from the profile JSONSchema. Disabled fields are
-            hidden or locked for your role.
+            Configure your {selectedProfile?.name || 'cluster'} settings.
           </Typography>
           <div className={classes.formGrid}>
             {renderedParameters.map(field => {
@@ -1467,20 +1433,30 @@ export const AegisClusterCreatePage = () => {
                     <strong>{field.title}:</strong> {String(formState[field.path] ?? '—')}
                   </div>
                 ))}
+                <Divider style={{ margin: '12px 0' }} />
+                <div>
+                  <strong>Estimated cost:</strong> ${estimatedCost.toFixed(1)} / hr
+                </div>
               </Typography>
             </InfoCard>
-            <InfoCard title="IaC payload" subheader="Generated inputs">
-              <Typography
-                variant="body2"
-                component="pre"
-                style={{
-                  whiteSpace: 'pre-wrap',
-                  fontFamily: 'Source Code Pro, monospace',
-                }}
-              >
-                {`profileRef: ${selectedProfile.id}@${selectedProfile.version}\nregion: ${formState['region']}\nparameters:\n  gpu:\n    count: ${formState['gpu.count'] ?? 0}\n    type: ${formState['gpu.type'] ?? '(profile default)'}\n  nodePool:\n    spotAllowed: ${Boolean(formState['nodePool.spotAllowed'])}\n`}
-              </Typography>
-            </InfoCard>
+            <Accordion elevation={0} defaultExpanded={false}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle2">Technical details (IaC payload)</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography
+                  variant="body2"
+                  component="pre"
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'Source Code Pro, monospace',
+                    width: '100%',
+                  }}
+                >
+                  {`profileRef: ${selectedProfile.id}@${selectedProfile.version}\nregion: ${formState['region']}\nparameters:\n  gpu:\n    count: ${formState['gpu.count'] ?? 0}\n    type: ${formState['gpu.type'] ?? '(profile default)'}\n  nodePool:\n    spotAllowed: ${Boolean(formState['nodePool.spotAllowed'])}\n`}
+                </Typography>
+              </AccordionDetails>
+            </Accordion>
           </div>
           <Box display="flex" style={{ gap: 8 }}>
             {isLaunching || (!!job && !isTerminalStatus(job.status)) ? (
@@ -1523,27 +1499,29 @@ export const AegisClusterCreatePage = () => {
       )}
 
       <Box mt={3} display="flex" justifyContent="space-between">
-        <Button
-          disabled={fromProfileStep === 0}
-          onClick={() => setFromProfileStep(step => Math.max(0, step - 1))}
-        >
-          Back
-        </Button>
-        <Button
-          color="primary"
-          variant="contained"
-          disabled={
-            (fromProfileStep === 0 && !activeProfileId) ||
-            (fromProfileStep === 1 && persona === 'ml-engineer')
-          }
-          onClick={() =>
-            setFromProfileStep(step =>
-              Math.min(2, step + (step === 2 ? 0 : 1)),
-            )
-          }
-        >
-          {fromProfileStep === 2 ? 'Ready' : 'Continue'}
-        </Button>
+        {fromProfileStep === 0 ? (
+          <Button component={RouterLink} to="/aegis/clusters">
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            onClick={() => setFromProfileStep(step => Math.max(0, step - 1))}
+          >
+            Back
+          </Button>
+        )}
+        {fromProfileStep < 2 && (
+          <Button
+            color="primary"
+            variant="contained"
+            disabled={fromProfileStep === 0 && !activeProfileId}
+            onClick={() =>
+              setFromProfileStep(step => Math.min(2, step + 1))
+            }
+          >
+            Continue
+          </Button>
+        )}
       </Box>
     </Box>
   );

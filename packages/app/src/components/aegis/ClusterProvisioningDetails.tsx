@@ -142,6 +142,7 @@ const useStyles = makeStyles(theme => ({
   },
   detailValue: {
     fontWeight: 500,
+    color: '#F9FAFB',
   },
   statusBadge: {
     display: 'flex',
@@ -448,18 +449,20 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
           >
             View Pulumi Console
           </Button>
-          <Button
-            variant="contained"
-            onClick={onConnectToCluster}
-            disabled={status !== 'Ready'}
-            style={{
-              backgroundColor: status === 'Ready' ? '#ffffff' : '#333333',
-              color: status === 'Ready' ? '#000000' : '#666666',
-            }}
-            startIcon={<LaunchIcon />}
-          >
-            Connect to Cluster
-          </Button>
+          <span title={status !== 'Ready' ? 'Available when cluster reaches Running state' : ''}>
+            <Button
+              variant="contained"
+              onClick={onConnectToCluster}
+              disabled={status !== 'Ready'}
+              style={{
+                backgroundColor: status === 'Ready' ? '#ffffff' : '#333333',
+                color: status === 'Ready' ? '#000000' : '#666666',
+              }}
+              startIcon={<LaunchIcon />}
+            >
+              Connect to Cluster
+            </Button>
+          </span>
         </div>
       </div>
 
@@ -551,31 +554,33 @@ export const ClusterProvisioningDetails: React.FC<ClusterProvisioningDetailsProp
                   <span className={classes.errorText}>{jobError}</span>
                 </div>
               )}
-              <Box mt={2} pt={2} style={{ borderTop: '1px solid #333333' }}>
-                <Typography variant="caption" style={{ color: '#9CA3AF', marginBottom: 8, display: 'block' }}>
-                  Source
-                </Typography>
-                <Typography variant="body2" className={classes.detailValue}>
-                  <Chip
-                    label={branch}
-                    size="small"
-                    style={{
-                      backgroundColor: '#374151',
-                      color: '#ffffff',
-                      fontFamily: 'monospace',
-                      fontSize: '0.75rem',
-                      marginRight: 8,
-                    }}
-                  />
-                  @{' '}
-                  <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#60A5FA' }}>
-                    {commitHash}
-                  </span>
-                </Typography>
-                <Typography variant="caption" style={{ color: '#D1D5DB', marginTop: 4, display: 'block' }}>
-                  {commitMessage}
-                </Typography>
-              </Box>
+              {branch && branch !== '—' && commitHash && commitHash !== '—' && (
+                <Box mt={2} pt={2} style={{ borderTop: '1px solid #333333' }}>
+                  <Typography variant="caption" style={{ color: '#9CA3AF', marginBottom: 8, display: 'block' }}>
+                    Source
+                  </Typography>
+                  <Typography variant="body2" className={classes.detailValue}>
+                    <Chip
+                      label={branch}
+                      size="small"
+                      style={{
+                        backgroundColor: '#374151',
+                        color: '#ffffff',
+                        fontFamily: 'monospace',
+                        fontSize: '0.75rem',
+                        marginRight: 8,
+                      }}
+                    />
+                    @{' '}
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#60A5FA' }}>
+                      {commitHash}
+                    </span>
+                  </Typography>
+                  <Typography variant="caption" style={{ color: '#D1D5DB', marginTop: 4, display: 'block' }}>
+                    {commitMessage}
+                  </Typography>
+                </Box>
+              )}
             </div>
           </Paper>
 
