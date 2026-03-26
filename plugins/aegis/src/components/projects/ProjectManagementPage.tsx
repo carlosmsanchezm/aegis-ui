@@ -21,6 +21,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Box,
+  Breadcrumbs,
   Button,
   Card,
   Chip,
@@ -29,14 +30,17 @@ import {
   List,
   ListItem,
   ListItemText,
+  Tooltip,
   Typography,
   makeStyles,
 } from '@material-ui/core';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
+import FolderOpenIcon from '@material-ui/icons/FolderOpen';
 import PolicyIcon from '@material-ui/icons/Policy';
 import SecurityIcon from '@material-ui/icons/Security';
 import TimelineIcon from '@material-ui/icons/Timeline';
+import NavigateNextIcon from '@material-ui/icons/NavigateNext';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   ProjectDefinition,
@@ -173,6 +177,43 @@ const useStyles = makeStyles(theme => ({
     display: 'flex',
     gap: theme.spacing(1),
     flexWrap: 'wrap',
+  },
+  breadcrumbs: {
+    marginBottom: theme.spacing(1),
+    '& .MuiBreadcrumbs-separator': {
+      color: theme.palette.text.secondary,
+    },
+  },
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing(2),
+    padding: theme.spacing(6, 3),
+    textAlign: 'center',
+  },
+  emptyIcon: {
+    fontSize: '3.5rem',
+    color: theme.palette.text.secondary,
+    opacity: 0.5,
+  },
+  conceptGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: theme.spacing(1.5),
+    marginTop: theme.spacing(1),
+  },
+  conceptItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    padding: theme.spacing(1, 1.5),
+    borderRadius: theme.shape.borderRadius,
+    backgroundColor:
+      theme.palette.type === 'dark'
+        ? 'rgba(255,255,255,0.06)'
+        : 'rgba(79,70,229,0.06)',
   },
 }));
 
@@ -370,11 +411,17 @@ export const ProjectManagementPage: FC = () => {
   return (
     <Page themeId="tool">
       <Content>
+        <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} className={classes.breadcrumbs}>
+          <Typography variant="body2" color="textSecondary">Admin</Typography>
+          <Typography variant="body2" color="textPrimary">Projects</Typography>
+        </Breadcrumbs>
         <ContentHeader title="Projects">
           <Typography variant="body2" color="textSecondary">
-            Budgets, guardrails, and access policies for ÆGIS workspaces.
+            Organize compute, data, and budgets for your ML workloads.
           </Typography>
-          <HeaderLabel label="Persona" value="Project Admin" />
+          <Tooltip title="Your assigned role determines which actions are available">
+            <HeaderLabel label="Role" value="Data Scientist" />
+          </Tooltip>
           {selectedProject && (
             <HeaderLabel label="Budget" value={budgetCopy(selectedProject.budget)} />
           )}
@@ -391,11 +438,26 @@ export const ProjectManagementPage: FC = () => {
         )}
         <div className={classes.root}>
           <Card className={classes.heroCard}>
-            <Typography className={classes.heroTitle}>Project-centric controls with budget guardrails.</Typography>
+            <Typography className={classes.heroTitle}>Your ML workloads, organized and governed.</Typography>
             <Typography variant="body1" color="textSecondary">
-              Projects wrap policies, data, and compute access. Launch workspaces confidently knowing each compute
-              profile honors guardrails, chargeback tags, and compliance tiers across AWS, Azure, and GCP.
+              A project groups everything you need to run ML experiments: GPU compute profiles,
+              training data connections, secret credentials, and budget guardrails — similar to a
+              Kubeflow profile but with built-in cost controls and multi-cloud support.
             </Typography>
+            <div className={classes.conceptGrid}>
+              <div className={classes.conceptItem}>
+                <Typography variant="caption"><strong>Budget caps</strong> — monthly spend limits with alerts</Typography>
+              </div>
+              <div className={classes.conceptItem}>
+                <Typography variant="caption"><strong>GPU profiles</strong> — A10, L4, A100, H100 queues</Typography>
+              </div>
+              <div className={classes.conceptItem}>
+                <Typography variant="caption"><strong>Data connections</strong> — S3, Postgres, Lakehouse</Typography>
+              </div>
+              <div className={classes.conceptItem}>
+                <Typography variant="caption"><strong>Secrets</strong> — API keys, credentials</Typography>
+              </div>
+            </div>
             <div className={classes.heroActions}>
               <Button
                 component={RouterLink}
@@ -406,9 +468,13 @@ export const ProjectManagementPage: FC = () => {
               >
                 Create Project
               </Button>
-              <Button variant="outlined" color="primary">
-                View Chargeback Reports
-              </Button>
+              <Tooltip title="Available after creating your first project">
+                <span>
+                  <Button variant="outlined" color="primary" disabled={combinedProjects.length === 0}>
+                    View Chargeback Reports
+                  </Button>
+                </span>
+              </Tooltip>
             </div>
           </Card>
 
@@ -424,25 +490,47 @@ export const ProjectManagementPage: FC = () => {
                     color="primary"
                   />
                 </div>
-                <Typography variant="body2" color="textSecondary">
-                  Select a project to view budgets, compute access, and data guardrails.
-                </Typography>
-                <List className={classes.projectList} disablePadding>
-                  {combinedProjects.map(project => (
-                    <ListItem
-                      button
-                      key={project.id}
-                      selected={selectedProject?.id === project.id}
-                      onClick={() => setSelectedProjectId(project.id)}
-                      className={classes.listItem}
+                {combinedProjects.length === 0 && !loadingProjects ? (
+                  <div className={classes.emptyState}>
+                    <FolderOpenIcon className={classes.emptyIcon} />
+                    <Typography variant="h6">No projects yet</Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      Create your first project to start launching ML workspaces
+                      with budget guardrails and GPU compute access.
+                    </Typography>
+                    <Button
+                      component={RouterLink}
+                      to="/aegis/admin/projects/create"
+                      variant="contained"
+                      color="primary"
+                      startIcon={<AddCircleOutlineIcon />}
                     >
-                      <ListItemText
-                        primary={project.name}
-                        secondary={`${environmentCopy[project.environment]} · ${visibilityCopy[project.visibility].label}`}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
+                      Create Project
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Typography variant="body2" color="textSecondary">
+                      Select a project to view budgets, compute access, and data guardrails.
+                    </Typography>
+                    <List className={classes.projectList} disablePadding>
+                      {combinedProjects.map(project => (
+                        <ListItem
+                          button
+                          key={project.id}
+                          selected={selectedProject?.id === project.id}
+                          onClick={() => setSelectedProjectId(project.id)}
+                          className={classes.listItem}
+                        >
+                          <ListItemText
+                            primary={project.name}
+                            secondary={`${environmentCopy[project.environment]} · ${visibilityCopy[project.visibility].label}`}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  </>
+                )}
               </div>
             </div>
 

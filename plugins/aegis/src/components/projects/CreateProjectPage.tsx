@@ -2,7 +2,6 @@ import { ChangeEvent, FC, FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   Content,
   ContentHeader,
-  HeaderLabel,
   Page,
   WarningPanel,
 } from '@backstage/core-components';
@@ -11,6 +10,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Box,
+  Breadcrumbs,
   Button,
   Card,
   CardContent,
@@ -27,6 +27,8 @@ import {
   makeStyles,
 } from '@material-ui/core';
 import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
+import NavigateNextIcon from '@material-ui/icons/NavigateNext';
+import InfoOutlinedIcon from '@material-ui/icons/InfoOutlined';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   alertApiRef,
@@ -59,11 +61,8 @@ const useStyles = makeStyles(theme => ({
   },
   layout: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(420px, 1.15fr) minmax(320px, 0.85fr)',
-    gap: theme.spacing(3),
-    [theme.breakpoints.down('md')]: {
-      gridTemplateColumns: '1fr',
-    },
+    gap: theme.spacing(2),
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
   },
   card: {
     borderRadius: theme.shape.borderRadius,
@@ -99,6 +98,30 @@ const useStyles = makeStyles(theme => ({
     display: 'flex',
     justifyContent: 'flex-end',
     columnGap: theme.spacing(2),
+  },
+  breadcrumbs: {
+    marginBottom: theme.spacing(1),
+  },
+  minViableHint: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    padding: theme.spacing(1.5, 2),
+    borderRadius: theme.shape.borderRadius,
+    backgroundColor:
+      theme.palette.type === 'dark'
+        ? 'rgba(96,165,250,0.12)'
+        : 'rgba(79,70,229,0.08)',
+    marginBottom: theme.spacing(1),
+  },
+  infoIcon: {
+    fontSize: '1.2rem',
+    color: theme.palette.primary.main,
+  },
+  emptyHelp: {
+    color: theme.palette.text.secondary,
+    fontStyle: 'italic',
+    padding: theme.spacing(1, 0),
   },
 }));
 
@@ -197,8 +220,8 @@ export const CreateProjectPage: FC = () => {
     dataConnections: [] as string[],
     secretScopes: [] as string[],
     computeProfiles: defaultProfiles.map(profile => profile.id),
-    enableFips: true,
-    enforceNetworkIsolation: true,
+    enableFips: false,
+    enforceNetworkIsolation: false,
     awsAccountId: '',
     awsRoleArn: '',
     awsExternalId: '',
@@ -253,9 +276,13 @@ export const CreateProjectPage: FC = () => {
     };
 
   const handleEnvironmentChange = (event: ChangeEvent<{ value: unknown }>) => {
+    const env = event.target.value as ProjectEnvironment;
+    const isProd = env === 'prod';
     setForm(prev => ({
       ...prev,
-      environment: event.target.value as ProjectEnvironment,
+      environment: env,
+      enableFips: isProd,
+      enforceNetworkIsolation: isProd,
     }));
   };
 
@@ -389,100 +416,83 @@ export const CreateProjectPage: FC = () => {
   return (
     <Page themeId="tool">
       <Content>
-        <ContentHeader title="Create Project">
-          <HeaderLabel label="Guardrails" value="Budget · Policy · Data" />
-        </ContentHeader>
-        <form onSubmit={handleSubmit} className={classes.root}>
-          <div className={classes.layout}>
-            <Card elevation={0} className={classes.card}>
-              <CardContent className={classes.cardContent}>
-                <div>
-                  <Typography variant="h6" className={classes.sectionTitle}>
-                    Project basics
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Projects are the primary container for budgets, policies, data, and
-                    workspace guardrails. Stick to one environment per project.
-                  </Typography>
-                </div>
-                <TextField
-                  label="Display name"
-                  variant="outlined"
-                  required
-                  value={form.displayName}
-                  onChange={handleTextField('displayName')}
-                  fullWidth
-                />
-                <TextField
-                  label="Project slug"
-                  variant="outlined"
-                  value={form.slug}
-                  onChange={handleTextField('slug')}
-                  helperText="Used for namespaces, workspace names, and tagging (e.g. acme-vision-dev)."
-                  fullWidth
-                  required
-                />
-                <FormControl variant="outlined" fullWidth>
-                  <InputLabel id="environment-label">Environment</InputLabel>
-                  <Select
-                    labelId="environment-label"
-                    value={form.environment}
-                    onChange={handleEnvironmentChange}
-                    label="Environment"
-                  >
-                    {environments.map(option => (
-                      <MenuItem key={option} value={option}>
-                        {environmentsCopy[option].label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <TextField
-                  label="Project owners"
-                  variant="outlined"
-                  value={form.owners}
-                  onChange={handleTextField('owners')}
-                  helperText="Comma-separated list of admins."
-                  fullWidth
-                />
-              </CardContent>
-            </Card>
+        <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} className={classes.breadcrumbs}>
+          <Typography
+            variant="body2"
+            color="textSecondary"
+            component={RouterLink}
+            to="/aegis/admin/projects"
+            style={{ textDecoration: 'none', color: 'inherit' }}
+          >
+            Projects
+          </Typography>
+          <Typography variant="body2" color="textPrimary">Create</Typography>
+        </Breadcrumbs>
+        <ContentHeader title="Create Project" />
 
-            <Card elevation={0} className={`${classes.card} ${classes.summaryCard}`}>
-              <Typography variant="subtitle1" className={classes.sectionTitle}>
-                Naming & chargeback
-              </Typography>
-              <Box>
-                <Typography variant="caption" color="textSecondary">
-                  Namespace
+        <div className={classes.minViableHint}>
+          <InfoOutlinedIcon className={classes.infoIcon} />
+          <Typography variant="body2">
+            <strong>Minimum to get started:</strong> name, slug, environment, and AWS account ID.
+            Everything else can be configured later.
+          </Typography>
+        </div>
+
+        <form onSubmit={handleSubmit} className={classes.root}>
+          <Card elevation={0} className={classes.card}>
+            <CardContent className={classes.cardContent}>
+              <div>
+                <Typography variant="h6" className={classes.sectionTitle}>
+                  Project basics
                 </Typography>
-                <Typography variant="body1">{form.slug || 'project-slug'}</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="textSecondary">
-                  Workspace naming pattern
+                <Typography variant="body2" color="textSecondary">
+                  A project is like a Kubeflow profile with built-in budgets and compute governance.
+                  Name it, pick an environment, and you're ready to launch workspaces.
                 </Typography>
-                <Typography variant="body1">
-                  {(form.slug || 'project-slug') + '-<purpose>-abc12'}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="textSecondary">
-                  Budget policy
-                </Typography>
-                <Typography variant="body1">
-                  {formatCurrency(form.monthlyBudget)} monthly cap · alerts at{' '}
-                  {form.monthlyAlertPercent}%
-                </Typography>
-              </Box>
-              <Box className={classes.badgeRow}>
-                {form.enableFips && <Chip label="FIPS images" size="small" />}
-                {form.enforceNetworkIsolation && (
-                  <Chip label="Network isolation" size="small" />
-                )}
-              </Box>
-            </Card>
-          </div>
+              </div>
+              <TextField
+                label="Display name"
+                variant="outlined"
+                required
+                value={form.displayName}
+                onChange={handleTextField('displayName')}
+                helperText="A human-readable name for your project (e.g. 'Vision Training Dev')."
+                fullWidth
+              />
+              <TextField
+                label="Project slug"
+                variant="outlined"
+                value={form.slug}
+                onChange={handleTextField('slug')}
+                helperText="Used for namespaces, workspace names, and tagging (e.g. acme-vision-dev). Auto-generated from name."
+                fullWidth
+                required
+              />
+              <FormControl variant="outlined" fullWidth>
+                <InputLabel id="environment-label">Environment</InputLabel>
+                <Select
+                  labelId="environment-label"
+                  value={form.environment}
+                  onChange={handleEnvironmentChange}
+                  label="Environment"
+                >
+                  {environments.map(option => (
+                    <MenuItem key={option} value={option}>
+                      {environmentsCopy[option].label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label="Project owners"
+                variant="outlined"
+                value={form.owners}
+                onChange={handleTextField('owners')}
+                helperText="Email addresses of project admins, comma-separated (e.g. alice@acme.com, bob@acme.com)."
+                fullWidth
+              />
+            </CardContent>
+          </Card>
 
           <Card elevation={0} className={classes.card}>
             <CardContent className={classes.cardContent}>
@@ -532,52 +542,59 @@ export const CreateProjectPage: FC = () => {
             </CardContent>
           </Card>
 
-          <Card elevation={0} className={classes.card}>
-            <CardContent className={classes.cardContent}>
-              <Typography variant="h6" className={classes.sectionTitle}>
-                AWS deployment credentials
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                {devMode
-                  ? 'Dev mode: only the AWS account ID is required. Role ARN and external ID are optional (ambient credentials will be used).'
-                  : 'Provide the account, IAM role ARN, and external ID configured for this project\u2019s spoke account.'}
-              </Typography>
-              {devMode && (
-                <Chip label="Dev Mode" size="small" color="default" />
-              )}
-              <div className={classes.gridRow}>
-                <TextField
-                  label="AWS Account ID"
-                  variant="outlined"
-                  required
-                  value={form.awsAccountId}
-                  onChange={handleTextField('awsAccountId')}
-                  inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
-                  helperText="12-digit AWS account where the EKS cluster will be deployed."
-                />
-                <TextField
-                  label="IAM Role ARN"
-                  variant="outlined"
-                  required={!devMode}
-                  value={form.awsRoleArn}
-                  onChange={handleTextField('awsRoleArn')}
-                  helperText={devMode
-                    ? 'Optional in dev mode. Cross-account role that Pulumi assumes.'
-                    : 'Cross-account role that Pulumi assumes (e.g. arn:aws:iam::123456789012:role/AegisPlatformRole).'}
-                />
-                <TextField
-                  label="External ID"
-                  variant="outlined"
-                  required={!devMode}
-                  value={form.awsExternalId}
-                  onChange={handleTextField('awsExternalId')}
-                  helperText={devMode
-                    ? 'Optional in dev mode. External ID on the IAM role trust policy.'
-                    : 'External ID configured on the IAM role trust policy.'}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <Accordion elevation={0} defaultExpanded={!!form.awsAccountId}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Box display="flex" alignItems="center" style={{ gap: 12 }}>
+                <Typography variant="h6" className={classes.sectionTitle}>
+                  AWS deployment credentials
+                </Typography>
+                {devMode && <Chip label="Dev Mode" size="small" color="default" />}
+                {!form.awsAccountId && (
+                  <Chip label="Required" size="small" color="secondary" variant="outlined" />
+                )}
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Box display="flex" flexDirection="column" style={{ gap: 20, width: '100%' }}>
+                <Typography variant="body2" color="textSecondary">
+                  {devMode
+                    ? 'Dev mode: only the AWS account ID is required. Role ARN and external ID are optional (ambient credentials will be used).'
+                    : "Don't have these values? Ask your platform team for the AWS account ID, IAM role ARN, and external ID for your project's account."}
+                </Typography>
+                <div className={classes.gridRow}>
+                  <TextField
+                    label="AWS Account ID"
+                    variant="outlined"
+                    required
+                    value={form.awsAccountId}
+                    onChange={handleTextField('awsAccountId')}
+                    inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                    helperText="12-digit AWS account ID (e.g. 123456789012). Ask your platform admin if unsure."
+                  />
+                  <TextField
+                    label="IAM Role ARN"
+                    variant="outlined"
+                    required={!devMode}
+                    value={form.awsRoleArn}
+                    onChange={handleTextField('awsRoleArn')}
+                    helperText={devMode
+                      ? 'Optional in dev mode — ambient credentials will be used.'
+                      : 'Provided by your platform team (e.g. arn:aws:iam::123456789012:role/AegisPlatformRole).'}
+                  />
+                  <TextField
+                    label="External ID"
+                    variant="outlined"
+                    required={!devMode}
+                    value={form.awsExternalId}
+                    onChange={handleTextField('awsExternalId')}
+                    helperText={devMode
+                      ? 'Optional in dev mode.'
+                      : 'Provided by your platform team. Used to secure the cross-account trust.'}
+                  />
+                </div>
+              </Box>
+            </AccordionDetails>
+          </Accordion>
 
           <Card elevation={0} className={classes.card}>
             <CardContent className={classes.cardContent}>
@@ -585,8 +602,8 @@ export const CreateProjectPage: FC = () => {
                 Compute access
               </Typography>
               <Typography variant="body2" color="textSecondary">
-                Choose the compute profiles this project can launch. You can adjust
-                grants later from Project → Compute Access.
+                Choose which GPU profiles your team can launch. Each profile maps to a specific
+                GPU type, vCPU/RAM allocation, and cluster. You can adjust these later.
               </Typography>
               <FormControl variant="outlined" fullWidth>
                 <InputLabel id="compute-profiles-label">Compute profiles</InputLabel>
@@ -625,36 +642,46 @@ export const CreateProjectPage: FC = () => {
                   <Typography variant="h6" className={classes.sectionTitle}>
                     Data connections
                   </Typography>
-                  <FormControl variant="outlined" fullWidth>
-                    <InputLabel id="data-connections-label">Connections</InputLabel>
-                    <Select
-                      labelId="data-connections-label"
-                      multiple
-                      value={form.dataConnections}
-                      onChange={handleMultiSelect('dataConnections')}
-                      label="Connections"
-                      renderValue={selected =>
-                        (selected as string[])
-                          .map(
-                            id =>
-                              availableDataConnections.find(connection => connection.id === id)?.name,
-                          )
-                          .filter(Boolean)
-                          .join(', ')
-                      }
-                    >
-                      {availableDataConnections.map(connection => (
-                        <MenuItem key={connection.id} value={connection.id}>
-                          <Box display="flex" flexDirection="column">
-                            <Typography variant="body1">{connection.name}</Typography>
-                            <Typography variant="caption" color="textSecondary">
-                              {connection.uri}
-                            </Typography>
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  <Typography variant="body2" color="textSecondary">
+                    S3 buckets, databases, or lakehouse endpoints that workspaces in this project can access.
+                    You can add connections later from the project settings.
+                  </Typography>
+                  {availableDataConnections.length > 0 ? (
+                    <FormControl variant="outlined" fullWidth>
+                      <InputLabel id="data-connections-label">Connections</InputLabel>
+                      <Select
+                        labelId="data-connections-label"
+                        multiple
+                        value={form.dataConnections}
+                        onChange={handleMultiSelect('dataConnections')}
+                        label="Connections"
+                        renderValue={selected =>
+                          (selected as string[])
+                            .map(
+                              id =>
+                                availableDataConnections.find(connection => connection.id === id)?.name,
+                            )
+                            .filter(Boolean)
+                            .join(', ')
+                        }
+                      >
+                        {availableDataConnections.map(connection => (
+                          <MenuItem key={connection.id} value={connection.id}>
+                            <Box display="flex" flexDirection="column">
+                              <Typography variant="body1">{connection.name}</Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                {connection.uri}
+                              </Typography>
+                            </Box>
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  ) : (
+                    <Typography variant="body2" className={classes.emptyHelp}>
+                      No connections configured yet. You can set these up after creating the project.
+                    </Typography>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -664,36 +691,45 @@ export const CreateProjectPage: FC = () => {
                   <Typography variant="h6" className={classes.sectionTitle}>
                     Secret scopes
                   </Typography>
-                  <FormControl variant="outlined" fullWidth>
-                    <InputLabel id="secret-scopes-label">Secrets</InputLabel>
-                    <Select
-                      labelId="secret-scopes-label"
-                      multiple
-                      value={form.secretScopes}
-                      onChange={handleMultiSelect('secretScopes')}
-                      label="Secrets"
-                      renderValue={selected =>
-                        (selected as string[])
-                          .map(
-                            id =>
-                              availableSecretScopes.find(scope => scope.id === id)?.name,
-                          )
-                          .filter(Boolean)
-                          .join(', ')
-                      }
-                    >
-                      {availableSecretScopes.map(scope => (
-                        <MenuItem key={scope.id} value={scope.id}>
-                          <Box display="flex" flexDirection="column">
-                            <Typography variant="body1">{scope.name}</Typography>
-                            <Typography variant="caption" color="textSecondary">
-                              {scope.provider}
-                            </Typography>
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  <Typography variant="body2" color="textSecondary">
+                    API keys, credentials, and certificates from AWS Secrets Manager, Azure Key Vault, or GCP Secret Manager.
+                  </Typography>
+                  {availableSecretScopes.length > 0 ? (
+                    <FormControl variant="outlined" fullWidth>
+                      <InputLabel id="secret-scopes-label">Secrets</InputLabel>
+                      <Select
+                        labelId="secret-scopes-label"
+                        multiple
+                        value={form.secretScopes}
+                        onChange={handleMultiSelect('secretScopes')}
+                        label="Secrets"
+                        renderValue={selected =>
+                          (selected as string[])
+                            .map(
+                              id =>
+                                availableSecretScopes.find(scope => scope.id === id)?.name,
+                            )
+                            .filter(Boolean)
+                            .join(', ')
+                        }
+                      >
+                        {availableSecretScopes.map(scope => (
+                          <MenuItem key={scope.id} value={scope.id}>
+                            <Box display="flex" flexDirection="column">
+                              <Typography variant="body1">{scope.name}</Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                {scope.provider}
+                              </Typography>
+                            </Box>
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  ) : (
+                    <Typography variant="body2" className={classes.emptyHelp}>
+                      No secret scopes available yet. You can configure these after project creation.
+                    </Typography>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -728,6 +764,69 @@ export const CreateProjectPage: FC = () => {
               </Grid>
             </AccordionDetails>
           </Accordion>
+
+          <Card elevation={0} className={`${classes.card} ${classes.summaryCard}`}>
+            <Typography variant="subtitle1" className={classes.sectionTitle}>
+              Review
+            </Typography>
+            <Typography variant="caption" color="textSecondary">
+              Summary of what will be created. Updates as you fill in the form above.
+            </Typography>
+            <div className={classes.gridRow}>
+              <Box>
+                <Typography variant="caption" color="textSecondary">
+                  Project
+                </Typography>
+                <Typography variant="body1">{form.displayName || 'Untitled project'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="textSecondary">
+                  Namespace
+                </Typography>
+                <Typography variant="body1">{form.slug || 'project-slug'}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="textSecondary">
+                  Environment
+                </Typography>
+                <Typography variant="body1">
+                  {environmentsCopy[form.environment].label}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="textSecondary">
+                  Budget policy
+                </Typography>
+                <Typography variant="body1">
+                  {formatCurrency(form.monthlyBudget)} monthly cap · alerts at{' '}
+                  {form.monthlyAlertPercent}%
+                </Typography>
+              </Box>
+            </div>
+            <Box>
+              <Typography variant="caption" color="textSecondary">
+                Workspace naming pattern
+              </Typography>
+              <Typography variant="body1">
+                {(form.slug || 'project-slug') + '-<purpose>-abc12'}
+              </Typography>
+            </Box>
+            <Box className={classes.badgeRow}>
+              {form.enableFips && <Chip label="FIPS images" size="small" />}
+              {form.enforceNetworkIsolation && (
+                <Chip label="Network isolation" size="small" />
+              )}
+              {form.computeProfiles.length > 0 && (
+                <Chip
+                  label={availableProfiles
+                    .filter(p => form.computeProfiles.includes(p.id))
+                    .map(p => p.gpuSku)
+                    .join(', ')}
+                  size="small"
+                />
+              )}
+            </Box>
+          </Card>
 
           {error && (
             <WarningPanel severity="error" title="Unable to create project">

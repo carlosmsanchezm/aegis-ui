@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '@material-ui/core';
+import { Button, Typography } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
 import {
   BackstageIdentityResponse,
@@ -179,6 +179,33 @@ const useStyles = makeStyles(theme => ({
     color: '#6B7280',
     fontSize: '0.9rem',
   },
+  guestButton: {
+    width: '100%',
+    marginTop: theme.spacing(2),
+    padding: theme.spacing(1.5, 3),
+    fontSize: '0.875rem',
+    fontWeight: 500,
+    borderRadius: 14,
+    textTransform: 'none',
+    color: '#9CA3AF',
+    border: '1px solid rgba(255,255,255,0.12)',
+    '&:hover': {
+      border: '1px solid rgba(255,255,255,0.25)',
+      background: 'rgba(255,255,255,0.04)',
+    },
+  },
+  divider: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(2),
+    marginTop: theme.spacing(2.5),
+    marginBottom: theme.spacing(0.5),
+    '& hr': {
+      flex: 1,
+      border: 'none',
+      borderTop: '1px solid rgba(255,255,255,0.1)',
+    },
+  },
 }));
 
 export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
@@ -221,6 +248,25 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
     } catch (err) {
       setError(err as Error);
     }
+  };
+
+  const handleGuestSignIn = () => {
+    onSignInSuccess(
+      UserIdentity.create({
+        identity: {
+          type: 'user',
+          userEntityRef: 'user:default/guest-datascientist',
+          ownershipEntityRefs: ['user:default/guest-datascientist'],
+        },
+        authApi,
+        profile: {
+          email: 'datascientist@acme.com',
+          displayName: 'Dr. Alex Chen',
+          picture: undefined,
+        },
+      }),
+    );
+    navigate(POST_LOGIN_REDIRECT, { replace: true });
   };
 
   useEffect(() => {
@@ -272,6 +318,20 @@ export const AegisSignInPage = ({ onSignInSuccess }: SignInPageProps) => {
             disableElevation
           >
             Sign in with SSO
+          </Button>
+
+          <div className={classes.divider}>
+            <hr />
+            <Typography variant="caption" style={{ color: '#6B7280' }}>or</Typography>
+            <hr />
+          </div>
+
+          <Button
+            variant="outlined"
+            className={classes.guestButton}
+            onClick={handleGuestSignIn}
+          >
+            Continue as Dr. Alex Chen (Data Scientist)
           </Button>
 
           {error && (
