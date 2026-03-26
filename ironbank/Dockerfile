@@ -119,10 +119,11 @@ COPY --chown=1000:1000 --from=build /app/plugins/aegis/package.json plugins/aegi
 # Install production deps only (rebuilds native modules against UBI9 runtime)
 RUN yarn workspaces focus --all --production && rm -rf "$(yarn cache clean)"
 
-# Copy built backend and app output
-COPY --chown=1000:1000 --from=build /app/packages/backend/dist packages/backend/dist
-COPY --chown=1000:1000 --from=build /app/packages/app/dist packages/app/dist
-COPY --chown=1000:1000 --from=build /app/plugins/aegis/dist plugins/aegis/dist
+# Extract the backend bundle (backstage-cli produces bundle.tar.gz + skeleton.tar.gz)
+COPY --chown=1000:1000 --from=build /app/packages/backend/dist/skeleton.tar.gz /tmp/
+RUN tar -xzf /tmp/skeleton.tar.gz -C /app && rm /tmp/skeleton.tar.gz
+COPY --chown=1000:1000 --from=build /app/packages/backend/dist/bundle.tar.gz /tmp/
+RUN tar -xzf /tmp/bundle.tar.gz -C /app && rm /tmp/bundle.tar.gz
 
 # Copy app configs
 COPY --chown=1000:1000 --from=build /app/app-config.yaml /app/app-config.production.yaml ./
