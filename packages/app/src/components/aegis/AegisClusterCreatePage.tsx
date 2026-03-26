@@ -1428,11 +1428,16 @@ export const AegisClusterCreatePage = () => {
             </InfoCard>
             <InfoCard title="Parameters" subheader="Launch configuration">
               <Typography variant="body2" component="div">
-                {renderedParameters.map(field => (
-                  <div key={field.path}>
-                    <strong>{field.title}:</strong> {String(formState[field.path] ?? '—')}
-                  </div>
-                ))}
+                <div><strong>Project:</strong> {selectedProjectId || '—'}</div>
+                <div><strong>Cluster:</strong> {String(formState['cluster.id'] || '—')}</div>
+                <div><strong>Region:</strong> {String(formState['region'] || '—')}</div>
+                {renderedParameters
+                  .filter(field => !['project', 'cluster.id', 'region'].includes(field.path))
+                  .map(field => (
+                    <div key={field.path}>
+                      <strong>{field.title}:</strong> {String(formState[field.path] ?? '—')}
+                    </div>
+                  ))}
                 <Divider style={{ margin: '12px 0' }} />
                 <div>
                   <strong>Estimated cost:</strong> ${estimatedCost.toFixed(1)} / hr
