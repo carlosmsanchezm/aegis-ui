@@ -57,10 +57,12 @@ COPY --chown=node:node --from=build /app/plugins/aegis/package.json plugins/aegi
 RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
     yarn workspaces focus --all --production && rm -rf "$(yarn cache clean)"
 
-# Copy built backend and app output
-COPY --chown=node:node --from=build /app/packages/backend/dist packages/backend/dist
-COPY --chown=node:node --from=build /app/packages/app/dist packages/app/dist
-COPY --chown=node:node --from=build /app/plugins/aegis/dist plugins/aegis/dist
+# Extract the backend bundle (newer backstage-cli produces bundle.tar.gz + skeleton.tar.gz
+# instead of individual dist/ files). The bundle contains all compiled output.
+COPY --chown=node:node --from=build /app/packages/backend/dist/skeleton.tar.gz /tmp/
+RUN tar -xzf /tmp/skeleton.tar.gz -C /app && rm /tmp/skeleton.tar.gz
+COPY --chown=node:node --from=build /app/packages/backend/dist/bundle.tar.gz /tmp/
+RUN tar -xzf /tmp/bundle.tar.gz -C /app && rm /tmp/bundle.tar.gz
 
 # Copy app configs
 COPY --chown=node:node --from=build /app/app-config.yaml /app/app-config.production.yaml ./
