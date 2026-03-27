@@ -166,7 +166,7 @@ const profileCards: ProfileCard[] = [
     name: 'Atlas GPU Training',
     version: '1.5.0',
     provider: 'aws',
-    description: 'EKS-based GPU-accelerated cluster with on-demand GPU scaling (Kubeflow pattern).',
+    description: 'EKS-based GPU-accelerated cluster with on-demand GPU scaling and autoscaler support.',
     ilLevel: 'IL-5',
     fedramp: 'High',
     gpu: 'NVIDIA T4 (on-demand)',

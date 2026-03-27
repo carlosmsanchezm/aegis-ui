@@ -442,7 +442,7 @@ export const ProjectManagementPage: FC = () => {
             <Typography variant="body1" color="textSecondary">
               A project groups everything you need to run ML experiments: GPU compute profiles,
               training data connections, secret credentials, and budget guardrails — similar to a
-              Kubeflow profile but with built-in cost controls and multi-cloud support.
+              Kubernetes namespace but with built-in cost controls and multi-cloud support.
             </Typography>
             <div className={classes.conceptGrid}>
               <div className={classes.conceptItem}>

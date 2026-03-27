@@ -446,7 +446,7 @@ export const CreateProjectPage: FC = () => {
                   Project basics
                 </Typography>
                 <Typography variant="body2" color="textSecondary">
-                  A project is like a Kubeflow profile with built-in budgets and compute governance.
+                  A project is like a Kubernetes namespace with built-in budgets and compute governance.
                   Name it, pick an environment, and you're ready to launch workspaces.
                 </Typography>
               </div>
