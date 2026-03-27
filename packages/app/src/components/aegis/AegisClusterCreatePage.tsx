@@ -1313,8 +1313,7 @@ export const AegisClusterCreatePage = () => {
             {renderedParameters.map(field => {
               const value = formState[field.path] ?? '';
               const disabled =
-                persona === 'ml-engineer' ||
-                (field.roleVisibility && !field.roleVisibility.includes(persona));
+                field.roleVisibility != null && !field.roleVisibility.includes(persona);
 
               if (field.type === 'boolean') {
                 return (
