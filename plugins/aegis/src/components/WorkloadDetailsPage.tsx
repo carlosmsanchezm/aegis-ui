@@ -516,7 +516,7 @@ export const WorkloadDetailsPage: FC = () => {
     },
     {
       label: 'Daily Cost',
-      value: '$186 / day',
+      value: isRunning ? '$186 / day' : 'Calculating…',
     },
   ];
 
@@ -546,7 +546,7 @@ export const WorkloadDetailsPage: FC = () => {
                 </Typography>
               </Breadcrumbs>
               <Typography variant="h4" className={classes.headerTitle}>
-                Workload Details
+                {workload && getFlavor(workload) ? `${getFlavor(workload)} workspace` : 'Workload Details'}
               </Typography>
               <Box className={classes.statusRow}>
                 {workload && (
@@ -573,14 +573,16 @@ export const WorkloadDetailsPage: FC = () => {
             </Box>
             <Box className={classes.headerActions}>
               {canConnect && (
-                <Button
-                  variant="contained"
-                  className={classes.primaryCta}
-                  disabled={connectButtonDisabled}
-                  onClick={handleConnect}
-                >
-                  {sessionLoading ? 'Preparing session…' : 'Connect'}
-                </Button>
+                <span title={connectButtonDisabled && !sessionLoading ? 'Available once workspace is running' : ''}>
+                  <Button
+                    variant="contained"
+                    className={classes.primaryCta}
+                    disabled={connectButtonDisabled}
+                    onClick={handleConnect}
+                  >
+                    {sessionLoading ? 'Preparing session…' : isRunning ? 'Connect' : 'Waiting for workspace…'}
+                  </Button>
+                </span>
               )}
               <Button
                 variant="outlined"
@@ -751,19 +753,19 @@ export const WorkloadDetailsPage: FC = () => {
                       {[
                         {
                           label: 'Total Cost to Date',
-                          value: '$24,680',
+                          value: isRunning ? '$24,680' : 'Calculating…',
                           helper: 'Includes compute, storage, and network egress',
                         },
                         {
                           label: 'Estimated Run Rate',
-                          value: '$186 / day',
+                          value: isRunning ? '$186 / day' : 'Calculating…',
                           helper: 'Projected using trailing 7-day utilization',
                         },
                         {
                           label: 'Budget Utilization',
-                          value: '72% of $34,000 cap',
+                          value: isRunning ? '72% of $34,000 cap' : 'Calculating…',
                           helper: 'Alerts fire at 85% threshold',
-                          tone: 'warning',
+                          tone: isRunning ? 'warning' : undefined,
                         },
                         {
                           label: 'Last Invoice Amount',

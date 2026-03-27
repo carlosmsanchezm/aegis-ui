@@ -511,10 +511,8 @@ const StepIconComponent = (props: StepIconProps) => {
 };
 
 const randomId = () => {
-  if (typeof crypto?.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `workspace-${Math.random().toString(16).slice(2, 10)}`;
+  const hex = Math.random().toString(16).slice(2, 6);
+  return `workspace-${hex}`;
 };
 
 const templateEnvToText = (env?: Record<string, string>): string => {
@@ -748,8 +746,11 @@ export const LaunchWorkspacePage: FC = () => {
         if (!active) {
           return;
         }
-        const message =
-          err instanceof ApiError
+        const isAuthError = err instanceof AuthorizationError || err instanceof AuthenticationError ||
+          (err instanceof ApiError && (err.status === 401 || err.status === 403));
+        const message = isAuthError
+          ? 'Select a project you have access to.'
+          : err instanceof ApiError
             ? err.message
             : 'Unable to load clusters for this project.';
         setClusterError(message);
@@ -1081,9 +1082,9 @@ export const LaunchWorkspacePage: FC = () => {
       <Content>
         <ContentHeader title="Launch Interactive Workspace">
           <Typography variant="body1" className={classes.hero}>
-            Compose DoD/IC-grade workspaces with the same minimal flow your
-            operators expect from modern tooling. Choose a template, tune
-            compute, then launch to ÆGIS clusters in a few decisive steps.
+            Launch governed ML workspaces with built-in cost controls, compute
+            guardrails, and compliance. Choose a template, tune compute, then
+            launch to your cluster in a few steps.
           </Typography>
         </ContentHeader>
         <form onSubmit={handleSubmit} className={classes.content}>
@@ -1104,6 +1105,9 @@ export const LaunchWorkspacePage: FC = () => {
                   <div className={classes.formSection}>
                     <Typography variant="overline" color="textSecondary">
                       Project context
+                    </Typography>
+                    <Typography variant="caption" color="textSecondary" style={{ display: 'block', marginBottom: 8 }}>
+                      A project groups your compute, data, budget, and access policies — like a governed Kubeflow namespace.
                     </Typography>
                     <div>
                       <Autocomplete
@@ -1163,13 +1167,13 @@ export const LaunchWorkspacePage: FC = () => {
                       )}
                     </div>
                     <TextField
-                      label="Workspace ID"
+                      label="Workspace name"
                       value={form.workloadId}
                       onChange={handleFormFieldChange('workloadId')}
                       variant="outlined"
                       required
                       fullWidth
-                      helperText="Identifier visible to mission operators"
+                      helperText="A name for your workspace (e.g. pytorch-experiment-1)"
                     />
                     {selectedCatalogProject && (
                       <div className={classes.projectOverview}>
@@ -1302,8 +1306,8 @@ export const LaunchWorkspacePage: FC = () => {
                     Template presets
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
-                    Start from a mission-ready template or bring your own
-                    container profile.
+                    Start from a pre-configured template or bring your own
+                    container image.
                   </Typography>
                   {renderTemplateCards()}
                 </Grid>
@@ -1317,8 +1321,8 @@ export const LaunchWorkspacePage: FC = () => {
                     Compute flavors
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
-                    Match GPU, CPU, and memory to mission objectives. ÆGIS
-                    enforces guardrails based on queue policy.
+                    Match GPU, CPU, and memory to your workload requirements.
+                    Guardrails are enforced based on your project's queue policy.
                   </Typography>
                   {renderFlavorCards()}
                 </Grid>
@@ -1334,7 +1338,7 @@ export const LaunchWorkspacePage: FC = () => {
                       <Select
                         labelId="launch-workspace-image-template"
                         label="Workspace image"
-                        value={selectedTemplate?.id === 'custom' ? 'custom' : (form.image || 'default')}
+                        value={selectedTemplate?.id === 'custom' ? 'custom' : 'default'}
                         onChange={(e) => {
                           const val = e.target.value as string;
                           if (val === 'custom') {
@@ -1400,45 +1404,40 @@ export const LaunchWorkspacePage: FC = () => {
                         style={{ marginTop: 8 }}
                       />
                     )}
-                    <FormControl
-                      variant="outlined"
-                      fullWidth
-                      disabled={queueOptions.length === 0}
-                    >
-                      <InputLabel id="launch-workspace-queue">
-                        Execution queue
-                      </InputLabel>
-                      <Select
-                        labelId="launch-workspace-queue"
-                        label="Execution queue"
-                        value={form.queue}
-                        onChange={handleQueueSelect}
-                      >
-                        {queueOptions.map(queue => (
-                          <MenuItem key={queue.id} value={queue.id}>
-                            <div className={classes.selectMenuContent}>
-                              <Typography variant="subtitle2">{queue.name}</Typography>
-                              <Typography variant="body2" color="textSecondary">
-                                {queue.description}
-                              </Typography>
-                            </div>
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      <FormHelperText>
-                        {queueOptions.length === 0
-                          ? 'No queues are listed for this project. Enter one manually or leave blank for the project default.'
-                          : 'Stay on the default queue or opt into another guardrail managed by this project.'}
-                      </FormHelperText>
-                    </FormControl>
-                    {queueOptions.length === 0 && (
+                    {queueOptions.length > 0 ? (
+                      <FormControl variant="outlined" fullWidth>
+                        <InputLabel id="launch-workspace-queue">
+                          Queue (optional)
+                        </InputLabel>
+                        <Select
+                          labelId="launch-workspace-queue"
+                          label="Queue (optional)"
+                          value={form.queue}
+                          onChange={handleQueueSelect}
+                        >
+                          {queueOptions.map(queue => (
+                            <MenuItem key={queue.id} value={queue.id}>
+                              <div className={classes.selectMenuContent}>
+                                <Typography variant="subtitle2">{queue.name}</Typography>
+                                <Typography variant="body2" color="textSecondary">
+                                  {queue.description}
+                                </Typography>
+                              </div>
+                            </MenuItem>
+                          ))}
+                        </Select>
+                        <FormHelperText>
+                          Leave blank to use the project's default queue.
+                        </FormHelperText>
+                      </FormControl>
+                    ) : (
                       <TextField
-                        label="Execution queue (optional)"
+                        label="Queue (optional)"
                         value={form.queue}
                         onChange={handleFormFieldChange('queue')}
                         variant="outlined"
                         fullWidth
-                        helperText="Enter a queue ID from your project or leave blank to use its default."
+                        helperText="Leave blank to use the project's default queue."
                       />
                     )}
                     {selectedQueue && (
