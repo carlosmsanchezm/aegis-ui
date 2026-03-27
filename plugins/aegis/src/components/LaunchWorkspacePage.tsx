@@ -1107,7 +1107,7 @@ export const LaunchWorkspacePage: FC = () => {
                       Project context
                     </Typography>
                     <Typography variant="caption" color="textSecondary" style={{ display: 'block', marginBottom: 8 }}>
-                      A project groups your compute, data, budget, and access policies — like a governed Kubeflow namespace.
+                      A project groups your compute, data, budget, and access policies — like a governed Kubernetes namespace.
                     </Typography>
                     <div>
                       <Autocomplete
