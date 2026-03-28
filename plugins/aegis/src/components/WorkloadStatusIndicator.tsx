@@ -111,6 +111,8 @@ export const WorkloadStatusIndicator: FC<WorkloadStatusIndicatorProps> = ({
         return <CheckCircleIcon fontSize="small" />;
       case 'failed':
         return <ErrorOutlineIcon fontSize="small" />;
+      case 'warning':
+        return <PauseCircleOutlineIcon fontSize="small" />;
       case 'stopping':
       case 'terminated':
         return <PauseCircleOutlineIcon fontSize="small" />;
@@ -151,10 +153,13 @@ export const getWorkloadStatusDescription = (status?: string): string => {
   ) {
     return 'Workspace is shutting down.';
   }
+  if (normalized === 'SUSPENDED') {
+    return 'Workspace is suspended due to inactivity. Resume to reconnect.';
+  }
   if (normalized === 'SUCCEEDED' || normalized === 'TERMINATED') {
     return 'Workspace has terminated.';
   }
-  return 'Starting your GPU workspace...';
+  return 'Starting your workspace...';
 };
 
 export const isProvisioningStatus = (status?: string): boolean =>
