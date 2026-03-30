@@ -865,10 +865,10 @@ export const AegisClusterCreatePage = () => {
       }
       setAgentConnectionStatus('timed_out');
       setAgentConnectionError(
-        'Cluster import succeeded, but no agent heartbeat was observed within 60 seconds. Verify deployment and retry status check.',
+        'Cluster import succeeded, but no agent heartbeat was observed within 3 minutes. If Aegis is installing the spoke agent automatically, this may take a few more moments. Click "Retry status check" to continue polling.',
       );
       stop();
-    }, 60000);
+    }, 180000);
 
     return () => {
       cancelled = true;
@@ -1131,7 +1131,9 @@ export const AegisClusterCreatePage = () => {
           message:
             response.status === 'active'
               ? `Cluster ${response.clusterId} is connected - redirecting to details...`
-              : `Cluster ${response.clusterId} imported - waiting for agent connection...`,
+              : response.status === 'installing'
+                ? `Cluster ${response.clusterId} importing - installing spoke agent automatically...`
+                : `Cluster ${response.clusterId} imported - waiting for agent connection...`,
         });
       }
     } catch (error) {
@@ -1916,7 +1918,9 @@ export const AegisClusterCreatePage = () => {
                 ) : null}
                 <Typography variant="body2">
                   {agentConnectionStatus === 'waiting'
-                    ? 'Waiting for agent connection...'
+                    ? importResult?.status === 'installing'
+                      ? 'Installing spoke agent on remote cluster...'
+                      : 'Waiting for agent connection...'
                     : agentConnectionStatus === 'connected'
                       ? 'Agent connected. Redirecting to cluster details...'
                       : agentConnectionStatus === 'timed_out'

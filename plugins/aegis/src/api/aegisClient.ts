@@ -195,7 +195,7 @@ export type ImportClusterHelmValues = {
   };
 };
 
-export type ImportClusterStatus = 'pending_agent' | 'registering' | 'active';
+export type ImportClusterStatus = 'pending_agent' | 'registering' | 'installing' | 'active';
 
 export type ImportClusterResponse = {
   clusterId: string;
@@ -1016,6 +1016,27 @@ export const getWorkload = async (
     authApi,
     `/api/v1/workloads/${encodeURIComponent(id)}`,
     { method: 'GET', requireAuth: true },
+  );
+
+export const terminateWorkload = async (
+  fetchApi: FetchApi,
+  discoveryApi: DiscoveryApi,
+  identityApi: IdentityApi,
+  authApi: OAuthApi | undefined,
+  workloadId: string,
+  reason: string = 'user_requested',
+): Promise<WorkloadDTO> =>
+  restJson<{ reason: string }, WorkloadDTO>(
+    fetchApi,
+    discoveryApi,
+    identityApi,
+    authApi,
+    `/api/v1/workloads/${encodeURIComponent(workloadId)}/terminate`,
+    {
+      method: 'POST',
+      body: { reason },
+      requireAuth: true,
+    },
   );
 
 export const createConnectionSession = async (
